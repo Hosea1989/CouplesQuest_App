@@ -169,7 +169,7 @@ EXP for level N = 100 × (N-1)^1.5
 Private project for personal use.
 
 ## Credits
-Damien H.
-Ryan M.
+- Damien H.
+- Ryan M.
 Built with SwiftUI and a lot of caffeine ☕
 
