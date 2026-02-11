@@ -1,4 +1,4 @@
-# CouplesQuest
+# DuoCraft
 
 A gamified task management iOS app for couples. Complete real-life tasks to earn EXP, level up your character, and send them on AFK missions while you're away.
 
