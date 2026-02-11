@@ -171,5 +171,5 @@ Private project for personal use.
 ## Credits
 - Damien H.
 - Ryan M.
-Built with SwiftUI and a lot of caffeine ☕
+- Built with SwiftUI and a lot of caffeine ☕
 
