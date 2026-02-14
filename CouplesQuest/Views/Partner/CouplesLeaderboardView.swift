@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// Friendly competition leaderboard between partners
-struct CouplesLeaderboardView: View {
+/// Party Leaderboard — ranked list of 1-4 members with fun titles, period filters,
+/// and a solo fallback that shows personal records when party size = 1.
+struct PartyLeaderboardView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var characters: [PlayerCharacter]
     @Query(sort: \GameTask.createdAt, order: .reverse) private var allTasks: [GameTask]
@@ -12,6 +13,12 @@ struct CouplesLeaderboardView: View {
     
     private var character: PlayerCharacter? { characters.first }
     private var bond: Bond? { bonds.first }
+    
+    /// Whether the player has no allies (solo mode)
+    private var isSolo: Bool {
+        guard let character = character else { return true }
+        return !character.isInParty && character.partnerCharacterID == nil
+    }
     
     enum LeaderboardPeriod: String, CaseIterable {
         case today = "Today"
@@ -34,19 +41,20 @@ struct CouplesLeaderboardView: View {
                         // Period Selector
                         periodSelector
                         
-                        // Score Cards
-                        scoreComparison
-                        
-                        // Category Breakdown
-                        categoryBreakdown
-                        
-                        // Fun Titles
-                        funTitles
+                        if isSolo {
+                            // Solo fallback: personal records board
+                            soloPersonalRecords
+                        } else {
+                            // Party mode: score comparison + category breakdown + awards
+                            scoreComparison
+                            categoryBreakdown
+                            funTitles
+                        }
                     }
                     .padding()
                 }
             }
-            .navigationTitle("Leaderboard")
+            .navigationTitle("Party Leaderboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -76,11 +84,128 @@ struct CouplesLeaderboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
     
-    // MARK: - Score Comparison
+    // MARK: - Solo Personal Records
+    
+    private var soloPersonalRecords: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "medal.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("Personal Records")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                Spacer()
+            }
+            
+            // Best Week
+            recordRow(
+                icon: "calendar.badge.checkmark",
+                title: "Best Week",
+                value: "\(bestWeekCount) tasks",
+                color: Color("AccentGold")
+            )
+            
+            Divider()
+            
+            // Best Day
+            recordRow(
+                icon: "sun.max.fill",
+                title: "Best Day",
+                value: "\(character?.recordMostTasksInDay ?? 0) tasks",
+                color: Color("AccentOrange")
+            )
+            
+            Divider()
+            
+            // Longest Streak
+            recordRow(
+                icon: "flame.fill",
+                title: "Longest Streak",
+                value: "\(character?.longestStreak ?? 0) days",
+                color: Color("AccentOrange")
+            )
+            
+            Divider()
+            
+            // Total Tasks Completed
+            recordRow(
+                icon: "checkmark.circle.fill",
+                title: "Total Completed",
+                value: "\(myAllTimeCompleted.count) tasks",
+                color: Color("AccentGreen")
+            )
+            
+            Divider()
+            
+            // Strongest Category
+            if let strongest = strongestCategory {
+                recordRow(
+                    icon: strongest.category.icon,
+                    title: "Strongest Category",
+                    value: "\(strongest.category.rawValue) (\(strongest.count))",
+                    color: Color(strongest.category.color)
+                )
+            }
+            
+            Divider()
+            
+            // Current period stats
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This Period")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                    .foregroundColor(.secondary)
+                
+                HStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("\(myCompletedTasks.count)")
+                            .font(.custom("Avenir-Heavy", size: 28))
+                            .foregroundColor(Color("AccentGold"))
+                        Text("Tasks Done")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: 4) {
+                        Text("\(myTotalEXP)")
+                            .font(.custom("Avenir-Heavy", size: 28))
+                            .foregroundColor(Color("AccentGold"))
+                        Text("EXP Earned")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        )
+    }
+    
+    private func recordRow(icon: String, title: String, value: String, color: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .frame(width: 24)
+            
+            Text(title)
+                .font(.custom("Avenir-Heavy", size: 14))
+            
+            Spacer()
+            
+            Text(value)
+                .font(.custom("Avenir-Heavy", size: 14))
+                .foregroundColor(color)
+        }
+    }
+    
+    // MARK: - Score Comparison (Party Mode)
     
     private var scoreComparison: some View {
         VStack(spacing: 16) {
-            // Header
             HStack {
                 Text("Score Comparison")
                     .font(.custom("Avenir-Heavy", size: 18))
@@ -106,7 +231,7 @@ struct CouplesLeaderboardView: View {
                 
                 // Partner score
                 scoreCard(
-                    name: character?.partnerName ?? "Partner",
+                    name: character?.partnerName ?? "Ally",
                     tasksCompleted: partnerCompletedTasks.count,
                     totalEXP: partnerTotalEXP,
                     color: Color("AccentPurple"),
@@ -234,17 +359,45 @@ struct CouplesLeaderboardView: View {
             Text("Awards")
                 .font(.custom("Avenir-Heavy", size: 18))
             
-            let physicalMy = myCompletedTasks.filter { $0.category == .physical }.count
-            let physicalPartner = partnerCompletedTasks.filter { $0.category == .physical }.count
-            let fitnessChamp = physicalMy >= physicalPartner ? (character?.name ?? "You") : (character?.partnerName ?? "Partner")
+            // Task Machine — highest count overall
+            let overallWinner = myCompletedTasks.count >= partnerCompletedTasks.count
+                ? (character?.name ?? "You")
+                : (character?.partnerName ?? "Ally")
+            awardRow(icon: "bolt.fill", title: "Task Machine", winner: overallWinner, color: Color("AccentGold"))
             
-            let mentalMy = myCompletedTasks.filter { $0.category == .mental }.count
-            let mentalPartner = partnerCompletedTasks.filter { $0.category == .mental }.count
-            let scholarChamp = mentalMy >= mentalPartner ? (character?.name ?? "You") : (character?.partnerName ?? "Partner")
+            // EXP Hunter — highest EXP
+            let expWinner = myTotalEXP >= partnerTotalEXP
+                ? (character?.name ?? "You")
+                : (character?.partnerName ?? "Ally")
+            awardRow(icon: "sparkles", title: "EXP Hunter", winner: expWinner, color: Color("AccentGold"))
             
-            awardRow(icon: "figure.run", title: "Fitness Champion", winner: fitnessChamp, color: Color(TaskCategory.physical.color))
-            awardRow(icon: "brain.head.profile", title: "Scholar Champion", winner: scholarChamp, color: Color(TaskCategory.mental.color))
-            awardRow(icon: "flame.fill", title: "Streak Master", winner: character?.name ?? "You", color: Color("AccentOrange"))
+            // Streak Lord — best streak
+            awardRow(icon: "flame.fill", title: "Streak Lord", winner: character?.name ?? "You", color: Color("AccentOrange"))
+            
+            // Category champions
+            let categoryAwards: [(icon: String, title: String, category: TaskCategory)] = [
+                ("figure.run", "Gym Warrior", .physical),
+                ("brain.head.profile", "Scholar", .mental),
+                ("person.2.fill", "Social Butterfly", .social),
+                ("house.fill", "Homekeeper", .household),
+                ("heart.fill", "Wellness Guru", .wellness),
+                ("paintbrush.fill", "Creative Mind", .creative),
+            ]
+            
+            ForEach(categoryAwards, id: \.title) { award in
+                let myCount = myCompletedTasks.filter { $0.category == award.category }.count
+                let pCount = partnerCompletedTasks.filter { $0.category == award.category }.count
+                let winner = myCount >= pCount ? (character?.name ?? "You") : (character?.partnerName ?? "Ally")
+                awardRow(icon: award.icon, title: award.title, winner: winner, color: Color(award.category.color))
+            }
+            
+            // Jack of All Trades — most categories with completions
+            let myCategoryCount = Set(myCompletedTasks.map { $0.category }).count
+            let partnerCategoryCount = Set(partnerCompletedTasks.map { $0.category }).count
+            let jackWinner = myCategoryCount >= partnerCategoryCount
+                ? (character?.name ?? "You")
+                : (character?.partnerName ?? "Ally")
+            awardRow(icon: "star.fill", title: "Jack of All Trades", winner: jackWinner, color: Color("AccentPurple"))
             
             if let bond = bond {
                 awardRow(icon: "heart.circle.fill", title: "Most Kudos Given", winner: bond.kudosSent > 0 ? (character?.name ?? "You") : "No one yet", color: Color("AccentPink"))
@@ -319,8 +472,39 @@ struct CouplesLeaderboardView: View {
     private var partnerTotalEXP: Int {
         partnerCompletedTasks.reduce(0) { $0 + $1.expReward }
     }
+    
+    private var myAllTimeCompleted: [GameTask] {
+        guard let characterID = character?.id else { return [] }
+        let completedStatus = TaskStatus.completed.rawValue
+        return allTasks.filter { $0.status.rawValue == completedStatus && $0.completedBy == characterID }
+    }
+    
+    /// Best week task count (simple approximation: check rolling 7-day windows)
+    private var bestWeekCount: Int {
+        guard let characterID = character?.id else { return 0 }
+        let completedStatus = TaskStatus.completed.rawValue
+        let completed = allTasks.filter { $0.status.rawValue == completedStatus && $0.completedBy == characterID }
+        
+        // Simple approach: group by calendar week
+        let calendar = Calendar.current
+        let weekCounts = Dictionary(grouping: completed) { task -> Int in
+            guard let date = task.completedAt else { return 0 }
+            return calendar.component(.weekOfYear, from: date) + calendar.component(.year, from: date) * 100
+        }
+        return weekCounts.values.map(\.count).max() ?? 0
+    }
+    
+    /// Strongest category across all time
+    private var strongestCategory: (category: TaskCategory, count: Int)? {
+        let counts = Dictionary(grouping: myAllTimeCompleted, by: { $0.category })
+        guard let best = counts.max(by: { $0.value.count < $1.value.count }) else { return nil }
+        return (best.key, best.value.count)
+    }
 }
 
+/// Backwards-compatible typealias for existing call sites
+typealias CouplesLeaderboardView = PartyLeaderboardView
+
 #Preview {
-    CouplesLeaderboardView()
+    PartyLeaderboardView()
 }

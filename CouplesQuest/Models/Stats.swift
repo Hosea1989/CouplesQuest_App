@@ -22,13 +22,17 @@ final class Stats {
     /// Fortune favors the bold - affects rare loot, critical successes
     var luck: Int
     
+    /// Damage reduction and survivability — reduces HP loss in dungeons and arena
+    var defense: Int
+    
     init(
         strength: Int = 5,
         wisdom: Int = 5,
         endurance: Int = 0,
         charisma: Int = 5,
         dexterity: Int = 5,
-        luck: Int = 5
+        luck: Int = 5,
+        defense: Int = 5
     ) {
         self.strength = strength
         self.wisdom = wisdom
@@ -36,11 +40,12 @@ final class Stats {
         self.charisma = charisma
         self.dexterity = dexterity
         self.luck = luck
+        self.defense = defense
     }
     
     /// Total stat points (endurance no longer counted)
     var total: Int {
-        strength + wisdom + charisma + dexterity + luck
+        strength + wisdom + charisma + dexterity + luck + defense
     }
     
     /// Get stat value by type
@@ -52,6 +57,7 @@ final class Stats {
         case .charisma: return charisma
         case .dexterity: return dexterity
         case .luck: return luck
+        case .defense: return defense
         }
     }
     
@@ -64,6 +70,7 @@ final class Stats {
         case .charisma: charisma += amount
         case .dexterity: dexterity += amount
         case .luck: luck += amount
+        case .defense: defense += amount
         }
     }
     
@@ -76,6 +83,7 @@ final class Stats {
         case .charisma: charisma = max(floor, charisma - amount)
         case .dexterity: dexterity = max(floor, dexterity - amount)
         case .luck: luck = max(floor, luck - amount)
+        case .defense: defense = max(floor, defense - amount)
         }
     }
 }
@@ -89,15 +97,16 @@ enum StatType: String, Codable {
     case charisma = "Charisma"
     case dexterity = "Dexterity"
     case luck = "Luck"
+    case defense = "Defense"
     
     /// Active stat cases (excludes legacy endurance)
     static var allCases: [StatType] {
-        [.strength, .wisdom, .charisma, .dexterity, .luck]
+        [.strength, .wisdom, .charisma, .dexterity, .defense, .luck]
     }
     
     /// Stats the player can allocate bonus points to during character creation (luck excluded)
     static var allocatable: [StatType] {
-        [.strength, .wisdom, .charisma, .dexterity]
+        [.strength, .wisdom, .charisma, .dexterity, .defense]
     }
     
     var icon: String {
@@ -108,6 +117,7 @@ enum StatType: String, Codable {
         case .charisma: return "person.2.fill"
         case .dexterity: return "figure.run"
         case .luck: return "dice.fill"
+        case .defense: return "shield.lefthalf.filled"
         }
     }
     
@@ -119,6 +129,7 @@ enum StatType: String, Codable {
         case .charisma: return "StatCharisma"
         case .dexterity: return "StatDexterity"
         case .luck: return "StatLuck"
+        case .defense: return "StatDefense"
         }
     }
     
@@ -130,6 +141,20 @@ enum StatType: String, Codable {
         case .charisma: return "Social skill from partner activities"
         case .dexterity: return "Speed, agility, and stamina from cardio and movement"
         case .luck: return "Random fortune that boosts drops and gold"
+        case .defense: return "Toughness and resilience that reduces damage taken"
+        }
+    }
+    
+    /// Short abbreviated name for compact UI display (3 letters)
+    var shortName: String {
+        switch self {
+        case .strength: return "STR"
+        case .wisdom: return "WIS"
+        case .endurance: return "DEX"
+        case .charisma: return "CHA"
+        case .dexterity: return "DEX"
+        case .luck: return "LCK"
+        case .defense: return "DEF"
         }
     }
 }

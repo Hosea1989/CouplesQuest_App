@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 
 struct TasksView: View {
+    /// When true, the view is pushed inside an existing NavigationStack and should not create its own.
+    var isEmbedded: Bool = false
+    
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var gameEngine: GameEngine
     @Query(sort: \GameTask.createdAt, order: .reverse) private var allTasks: [GameTask]
@@ -21,6 +24,20 @@ struct TasksView: View {
     @State private var timerTick = 0 // triggers UI refresh for timer countdown
     @State private var showSudoku = false
     @State private var sudokuDuty: GameTask?
+    @State private var showMemoryMatch = false
+    @State private var memoryMatchDuty: GameTask?
+    @State private var showMathBlitz = false
+    @State private var mathBlitzDuty: GameTask?
+    @State private var showWordSearch = false
+    @State private var wordSearchDuty: GameTask?
+    @State private var show2048 = false
+    @State private var game2048Duty: GameTask?
+    @State private var showMeditationSession = false
+    @State private var meditationDuty: GameTask?
+    @State private var showCoopChoice = false
+    @State private var dutyPendingCoopChoice: GameTask?
+    @State private var showRefreshConfirm = false
+    @State private var refreshRotation: Double = 0
     
     private var character: PlayerCharacter? {
         characters.first
@@ -32,12 +49,17 @@ struct TasksView: View {
     
     /// Partner quests: tasks from partner that aren't completed
     private var partnerQuests: [GameTask] {
-        allTasks.filter { $0.isFromPartner && $0.status != .completed && !$0.isDailyDuty }
+        allTasks.filter { $0.isFromPartner && $0.status != .completed && !$0.isDailyDuty && !$0.isHabit }
     }
     
-    /// My tasks: user-created tasks that aren't daily duties or from partner
+    /// Active duties: tasks that aren't on the duty board, daily board slots, habits, or from partner, and aren't done/expired
     private var myTasks: [GameTask] {
-        allTasks.filter { !$0.isDailyDuty && !$0.isFromPartner && $0.status != .completed }
+        allTasks.filter { !$0.isOnDutyBoard && !$0.isDailyDuty && !$0.isFromPartner && !$0.isHabit && $0.status != .completed && $0.status != .expired }
+    }
+    
+    /// Habits (always shown, tap to mark done)
+    private var habits: [GameTask] {
+        allTasks.filter { $0.isHabit }
     }
     
     /// Completed tasks (all types)
@@ -67,18 +89,28 @@ struct TasksView: View {
         dailyDuties.filter { $0.status == .inProgress }.count
     }
     
-    /// How many duties the player has claimed today (accepted + completed)
+    /// How many duties the player has claimed today (persisted in UserDefaults)
     private var dutiesClaimedToday: Int {
-        dailyDuties.filter { $0.status == .inProgress || $0.status == .completed }.count
+        DutyBoardGenerator.dutiesClaimedToday
     }
     
-    /// Whether the player has reached the daily duty selection limit
+    /// Whether the player has reached the daily duty selection limit (persisted)
     private var reachedDailyDutyLimit: Bool {
-        dutiesClaimedToday >= DutyBoardGenerator.maxDutySelectionsPerDay
+        DutyBoardGenerator.reachedDailyDutyLimit
     }
     
     var body: some View {
-        NavigationStack {
+        if isEmbedded {
+            tasksListContent
+        } else {
+            NavigationStack {
+                tasksListContent
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var tasksListContent: some View {
             ZStack {
                 // Background
                 LinearGradient(
@@ -93,13 +125,18 @@ struct TasksView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
+                        // 0. Daily Habits (above everything)
+                        if !habits.isEmpty {
+                            dailyHabitsSection
+                        }
+                        
                         // 1. Duty Board (front and center)
                         dutyBoardSection
                         
                         // 2. Partner Quests (if any or if partnered)
                         partnerQuestsSection
                         
-                        // 3. My Tasks
+                        // 3. Active Duties
                         myTasksSection
                         
                         // 4. View Completed
@@ -108,9 +145,15 @@ struct TasksView: View {
                     .padding()
                 }
             }
-            .navigationTitle("Tasks")
+            .navigationTitle("Daily Tasks")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink(destination: GoalsView()) {
+                        Image(systemName: "flag.fill")
+                            .foregroundColor(Color("AccentGold"))
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showCreateTask = true }) {
                         Image(systemName: "plus.circle.fill")
@@ -127,7 +170,7 @@ struct TasksView: View {
             .sheet(isPresented: $showCompletionCelebration) {
                 if let result = lastCompletionResult {
                     TaskCompletionCelebration(result: result)
-                        .presentationDetents([.medium, .large])
+                        .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                 }
             }
@@ -144,14 +187,119 @@ struct TasksView: View {
                 }
             }
             .fullScreenCover(isPresented: $showSudoku) {
-                SudokuGameView {
-                    completeSudokuDuty()
+                SudokuGameView { elapsedSeconds in
+                    completeSudokuDuty(elapsedSeconds: elapsedSeconds)
+                }
+            }
+            .fullScreenCover(isPresented: $showMemoryMatch) {
+                MemoryMatchGameView { elapsedSeconds in
+                    let tier = MemoryMatchRewardTier.tier(for: elapsedSeconds)
+                    completeMiniGameDuty(
+                        task: memoryMatchDuty,
+                        elapsedSeconds: elapsedSeconds,
+                        gold: tier.gold,
+                        statBonus: tier.wisdomBonus,
+                        bonusStat: .luck,
+                        consumableName: tier.consumableName,
+                        consumableIcon: tier.consumableIcon,
+                        consumableCount: tier.consumableCount,
+                        gameName: "Memory Match"
+                    )
+                    memoryMatchDuty = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showMathBlitz) {
+                MathBlitzGameView { elapsedSeconds in
+                    let tier = MathBlitzRewardTier.tier(for: elapsedSeconds)
+                    completeMiniGameDuty(
+                        task: mathBlitzDuty,
+                        elapsedSeconds: elapsedSeconds,
+                        gold: tier.gold,
+                        statBonus: tier.wisdomBonus,
+                        bonusStat: .wisdom,
+                        consumableName: tier.consumableName,
+                        consumableIcon: tier.consumableIcon,
+                        consumableCount: tier.consumableCount,
+                        gameName: "Math Blitz"
+                    )
+                    mathBlitzDuty = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showWordSearch) {
+                WordSearchGameView { elapsedSeconds in
+                    let tier = WordSearchRewardTier.tier(for: elapsedSeconds)
+                    completeMiniGameDuty(
+                        task: wordSearchDuty,
+                        elapsedSeconds: elapsedSeconds,
+                        gold: tier.gold,
+                        statBonus: tier.wisdomBonus,
+                        bonusStat: .charisma,
+                        consumableName: tier.consumableName,
+                        consumableIcon: tier.consumableIcon,
+                        consumableCount: tier.consumableCount,
+                        gameName: "Word Search"
+                    )
+                    wordSearchDuty = nil
+                }
+            }
+            .fullScreenCover(isPresented: $show2048) {
+                Game2048View { elapsedSeconds in
+                    complete2048Duty(elapsedSeconds: elapsedSeconds)
+                }
+            }
+            .fullScreenCover(isPresented: $showMeditationSession) {
+                NavigationStack {
+                    MeditationView(
+                        dutyTask: meditationDuty,
+                        onMeditationComplete: {
+                            completeMeditationDuty()
+                        }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Close") {
+                                showMeditationSession = false
+                            }
+                            .foregroundColor(Color("AccentGold"))
+                        }
+                    }
                 }
             }
             .alert("Not Yet!", isPresented: $showTimerAlert) {
                 Button("OK") {}
             } message: {
                 Text(timerAlertMessage)
+            }
+            .confirmationDialog(
+                "Do this duty together?",
+                isPresented: $showCoopChoice,
+                titleVisibility: .visible
+            ) {
+                Button("Solo") {
+                    if let task = dutyPendingCoopChoice {
+                        finalizeDutyAccept(task, asCoop: false)
+                        dutyPendingCoopChoice = nil
+                    }
+                }
+                Button("Co-op with \(character?.partnerName ?? "Partner")") {
+                    if let task = dutyPendingCoopChoice {
+                        finalizeDutyAccept(task, asCoop: true)
+                        dutyPendingCoopChoice = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    dutyPendingCoopChoice = nil
+                }
+            } message: {
+                Text("Co-op duties give 1.5× rewards and Bond EXP when you both complete it!")
+            }
+            .alert("Shuffle Duty Board?", isPresented: $showRefreshConfirm) {
+                Button("Shuffle", role: .destructive) {
+                    refreshDutyBoard()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Get 4 new duties from different categories. You can shuffle once per day.")
             }
             .sensoryFeedback(.success, trigger: showCompletionCelebration) { _, newValue in
                 newValue
@@ -162,8 +310,88 @@ struct TasksView: View {
             }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
                 timerTick += 1
+                expireOverdueTasks()
+                checkHabitDeadlines()
+            }
+    }
+    
+    // MARK: - Daily Habits Section
+    
+    private var dailyHabitsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "repeat.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(Color("AccentGreen"))
+                
+                Text("Daily Habits")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                
+                Spacer()
+                
+                let doneCount = habits.filter { $0.isHabitCompletedToday }.count
+                Text("\(doneCount)/\(habits.count)")
+                    .font(.custom("Avenir-Heavy", size: 14))
+                    .foregroundColor(doneCount == habits.count ? Color("AccentGreen") : .secondary)
+            }
+            
+            ForEach(habits, id: \.id) { habit in
+                HabitRow(
+                    habit: habit,
+                    onComplete: { completeHabitTask(habit) },
+                    onDelete: { deleteTask(habit) },
+                    timerTick: timerTick,
+                    characterLevel: character?.level ?? 1
+                )
             }
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+        )
+    }
+    
+    private func completeHabitTask(_ habit: GameTask) {
+        guard let character = character else { return }
+        guard !habit.isHabitCompletedToday else { return }
+        
+        // Update habit streak before gameEngine completes it
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        if let lastCompleted = habit.habitLastCompletedDate {
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+            if calendar.isDate(lastCompleted, inSameDayAs: yesterday) {
+                habit.habitStreak += 1
+            } else if !calendar.isDate(lastCompleted, inSameDayAs: today) {
+                habit.habitStreak = 1
+            }
+        } else {
+            habit.habitStreak = 1
+        }
+        habit.habitLongestStreak = max(habit.habitLongestStreak, habit.habitStreak)
+        habit.habitLastCompletedDate = today
+        
+        // Use GameEngine's completeTask for proper EXP/reward flow
+        let result = gameEngine.completeTask(habit, character: character, context: modelContext)
+        lastCompletionResult = result
+        showCompletionCelebration = true
+        
+        // Update daily quest progress and materials
+        gameEngine.updateStreak(for: character, completedTaskToday: true)
+        gameEngine.updateDailyQuestProgress(
+            task: habit,
+            expGained: result.expGained,
+            goldGained: result.goldGained,
+            character: character,
+            context: modelContext
+        )
+        gameEngine.awardMaterialsForTask(
+            task: habit,
+            character: character,
+            context: modelContext
+        )
     }
     
     // MARK: - Duty Board Section
@@ -181,6 +409,33 @@ struct TasksView: View {
                 
                 Spacer()
                 
+                // Refresh button
+                Button(action: { showRefreshConfirm = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 13, weight: .semibold))
+                            .rotationEffect(.degrees(refreshRotation))
+                        Text("Shuffle")
+                            .font(.custom("Avenir-Heavy", size: 12))
+                    }
+                    .foregroundColor(DutyBoardGenerator.canRefreshToday ? Color("AccentOrange") : .secondary.opacity(0.5))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(DutyBoardGenerator.canRefreshToday
+                                  ? Color("AccentOrange").opacity(0.15)
+                                  : Color.secondary.opacity(0.08))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(DutyBoardGenerator.canRefreshToday
+                                    ? Color("AccentOrange").opacity(0.3)
+                                    : Color.clear, lineWidth: 1)
+                    )
+                }
+                .disabled(!DutyBoardGenerator.canRefreshToday || reachedDailyDutyLimit)
+                
                 // Progress + timer
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(dutiesClaimedToday)/\(DutyBoardGenerator.maxDutySelectionsPerDay)")
@@ -197,9 +452,19 @@ struct TasksView: View {
                 }
             }
             
-            Text("Pick 1 duty per day — complete it for EXP and gold!")
-                .font(.custom("Avenir-Medium", size: 13))
-                .foregroundColor(.secondary)
+            HStack(spacing: 0) {
+                Text("Pick 1 duty per day — complete it for EXP and gold!")
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.secondary)
+                
+                if !DutyBoardGenerator.canRefreshToday {
+                    Spacer()
+                    Text("Shuffled today")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .italic()
+                }
+            }
             
             // Duty notes grid (2 columns)
             if dailyDuties.isEmpty {
@@ -223,6 +488,7 @@ struct TasksView: View {
                         DutyNoteCard(
                             task: duty,
                             isLocked: reachedDailyDutyLimit,
+                            characterLevel: character?.level ?? 1,
                             onAccept: { acceptDuty(duty) }
                         )
                     }
@@ -323,6 +589,7 @@ struct TasksView: View {
                                 PartnerQuestCard(
                                     task: task,
                                     partnerName: character?.partnerName,
+                                    characterLevel: character?.level ?? 1,
                                     onComplete: { completeTask(task) }
                                 )
                             }
@@ -340,7 +607,7 @@ struct TasksView: View {
         }
     }
     
-    // MARK: - My Tasks Section
+    // MARK: - Active Duties Section
     
     private var myTasksSection: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -350,7 +617,7 @@ struct TasksView: View {
                     .font(.callout)
                     .foregroundColor(Color("AccentGold"))
                 
-                Text("My Tasks")
+                Text("Active Duties")
                     .font(.custom("Avenir-Heavy", size: 18))
                 
                 Spacer()
@@ -361,44 +628,65 @@ struct TasksView: View {
             }
             
             if myTasks.isEmpty {
-                // Empty state
-                VStack(spacing: 12) {
-                    Image(systemName: "plus.square.dashed")
-                        .font(.system(size: 36))
+                // Empty state — direct user to the duty board
+                VStack(spacing: 10) {
+                    Image(systemName: "scroll")
+                        .font(.system(size: 32))
                         .foregroundColor(.secondary)
                     
-                    Text("No tasks yet — create your first!")
-                        .font(.custom("Avenir-Medium", size: 14))
+                    Text("No active duties")
+                        .font(.custom("Avenir-Heavy", size: 15))
                         .foregroundColor(.secondary)
                     
-                    Button(action: { showCreateTask = true }) {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Create Task")
-                        }
-                        .font(.custom("Avenir-Heavy", size: 14))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color("AccentGold"))
-                        .clipShape(Capsule())
+                    Text("Pick a duty from the Duty Board above to get started!")
+                        .font(.custom("Avenir-Medium", size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Scroll up to Duty Board")
+                            .font(.custom("Avenir-Heavy", size: 13))
                     }
+                    .foregroundColor(Color("AccentOrange"))
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
             } else {
                 ForEach(myTasks, id: \.id) { task in
-                    if isSudokuDuty(task) {
-                        // Sudoku task — tapping opens the game
+                    if isMeditationDuty(task) && !task.isDeadlineExpired && task.status != .expired {
+                        // Meditation task — tapping opens the meditation session
                         Button {
-                            openSudoku(for: task)
+                            meditationDuty = task
+                            showMeditationSession = true
                         } label: {
                             TaskCard(
                                 task: task,
-                                onComplete: { openSudoku(for: task) },
+                                onComplete: {
+                                    meditationDuty = task
+                                    showMeditationSession = true
+                                },
                                 onDelete: { deleteTask(task) },
                                 timerTick: timerTick,
-                                isSudoku: true
+                                isMiniGame: true,
+                                characterLevel: character?.level ?? 1
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else if miniGameType(for: task) != nil && !task.isDeadlineExpired && task.status != .expired {
+                        // Mini-game task — tapping opens the game
+                        Button {
+                            openMiniGame(for: task)
+                        } label: {
+                            TaskCard(
+                                task: task,
+                                onComplete: { openMiniGame(for: task) },
+                                onDelete: { deleteTask(task) },
+                                timerTick: timerTick,
+                                isMiniGame: true,
+                                characterLevel: character?.level ?? 1
                             )
                         }
                         .buttonStyle(.plain)
@@ -408,7 +696,8 @@ struct TasksView: View {
                                 task: task,
                                 onComplete: { startAndComplete(task) },
                                 onDelete: { deleteTask(task) },
-                                timerTick: timerTick
+                                timerTick: timerTick,
+                                characterLevel: character?.level ?? 1
                             )
                         }
                         .buttonStyle(.plain)
@@ -461,9 +750,54 @@ struct TasksView: View {
         )
     }
     
-    /// Whether this task has an in-app mini-game (Sudoku).
+    private func refreshDutyBoard() {
+        guard let character = character else { return }
+        // Spin the icon
+        withAnimation(.easeInOut(duration: 0.5)) {
+            refreshRotation += 360
+        }
+        // Regenerate duties with a new seed
+        dailyDuties = DutyBoardGenerator.refreshDutyBoard(
+            characterID: character.id,
+            context: modelContext
+        )
+        AudioManager.shared.play(.tabSwitch)
+    }
+    
+    /// Identifies which mini-game (if any) a task corresponds to.
+    private enum MiniGameType {
+        case sudoku
+        case memoryMatch
+        case mathBlitz
+        case wordSearch
+        case game2048
+    }
+    
+    private func miniGameType(for task: GameTask) -> MiniGameType? {
+        switch task.title {
+        case "Sudoku Challenge", "Solve a Puzzle":
+            return .sudoku
+        case "Memory Match":
+            return .memoryMatch
+        case "Math Blitz":
+            return .mathBlitz
+        case "Word Search":
+            return .wordSearch
+        case "2048 Challenge":
+            return .game2048
+        default:
+            return nil
+        }
+    }
+    
+    /// Legacy helper — kept for backward compatibility
     private func isSudokuDuty(_ task: GameTask) -> Bool {
-        task.title == "Solve a Puzzle"
+        miniGameType(for: task) != nil
+    }
+    
+    /// Whether this task is the meditation duty
+    private func isMeditationDuty(_ task: GameTask) -> Bool {
+        task.title == "Meditate for 5 Minutes"
     }
     
     private func acceptDuty(_ task: GameTask) {
@@ -471,30 +805,198 @@ struct TasksView: View {
         guard let character = character else { return }
         guard !reachedDailyDutyLimit else { return }
         
-        // Move the duty to My Tasks
+        // Special handling: meditation duty opens the meditation experience directly
+        if isMeditationDuty(task) {
+            // Accept the duty (move it to active)
+            finalizeDutyAccept(task, asCoop: false)
+            // Then immediately open the meditation session
+            meditationDuty = task
+            showMeditationSession = true
+            return
+        }
+        
+        // If the player has a partner, show co-op choice
+        if character.hasPartner {
+            dutyPendingCoopChoice = task
+            showCoopChoice = true
+        } else {
+            finalizeDutyAccept(task, asCoop: false)
+        }
+    }
+    
+    /// Finalize accepting a duty, optionally as co-op with partner
+    private func finalizeDutyAccept(_ task: GameTask, asCoop: Bool) {
+        guard let character = character else { return }
+        
+        // Record the claim in persistent storage (survives view reloads)
+        DutyBoardGenerator.recordDutyClaim()
+        
+        // Move the duty to Active Duties
         task.assignedTo = character.id
         task.isOnDutyBoard = false
         task.isDailyDuty = false
+        task.isCoopDuty = asCoop
+        
+        // Set deadline to end of today (23:59:59) — duties must be done the same day
+        let calendar = Calendar.current
+        if let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: Date()) {
+            task.dueDate = endOfDay
+        }
+        
         task.startTask() // Starts timer and sets to inProgress
     }
     
-    /// Opens the Sudoku game for a task from My Tasks.
-    private func openSudoku(for task: GameTask) {
-        sudokuDuty = task
-        showSudoku = true
+    /// Opens the appropriate mini-game for a task.
+    private func openMiniGame(for task: GameTask) {
+        guard let gameType = miniGameType(for: task) else { return }
+        switch gameType {
+        case .sudoku:
+            sudokuDuty = task
+            showSudoku = true
+        case .memoryMatch:
+            memoryMatchDuty = task
+            showMemoryMatch = true
+        case .mathBlitz:
+            mathBlitzDuty = task
+            showMathBlitz = true
+        case .wordSearch:
+            wordSearchDuty = task
+            showWordSearch = true
+        case .game2048:
+            game2048Duty = task
+            show2048 = true
+        }
     }
     
     /// Called when the player completes the Sudoku puzzle.
-    private func completeSudokuDuty() {
+    private func completeSudokuDuty(elapsedSeconds: Int) {
         guard let task = sudokuDuty else { return }
         guard let character = character else { return }
         
         // Mark verified so it skips verification checks
         task.isVerified = true
         
-        // Complete it immediately
+        // Calculate time-based reward tier
+        let tier = SudokuRewardTier.tier(for: elapsedSeconds)
+        
+        // Award tier gold
+        character.gold += tier.gold
+        
+        // Award wisdom stat bonus
+        character.stats.increase(.wisdom, by: tier.wisdomBonus)
+        
+        // Award consumable loot
+        if tier.consumableCount > 0 {
+            for _ in 0..<tier.consumableCount {
+                let consumable = Consumable(
+                    name: tier.consumableName,
+                    description: "Earned from Sudoku Challenge — boosts mental focus.",
+                    consumableType: .statFood,
+                    icon: tier.consumableIcon,
+                    effectValue: 2,
+                    effectStat: .wisdom,
+                    remainingUses: 1,
+                    characterID: character.id
+                )
+                modelContext.insert(consumable)
+            }
+        }
+        
+        // Complete it with standard flow (EXP, streak, daily quest progress, materials)
         applyCompletion(task: task, character: character)
         sudokuDuty = nil
+    }
+    
+    /// Generic completion handler for time-based mini-games (Memory Match, Math Blitz, Word Search).
+    /// The `bonusStat` parameter allows each game to boost a different stat:
+    ///   - Sudoku / Math Blitz → Wisdom
+    ///   - Memory Match → Luck
+    ///   - Word Search → Charisma
+    ///   - 2048 → Dexterity
+    private func completeMiniGameDuty(
+        task: GameTask?,
+        elapsedSeconds: Int,
+        gold: Int,
+        statBonus: Int,
+        bonusStat: StatType = .wisdom,
+        consumableName: String,
+        consumableIcon: String,
+        consumableCount: Int,
+        gameName: String
+    ) {
+        guard let task = task else { return }
+        guard let character = character else { return }
+        
+        task.isVerified = true
+        
+        character.gold += gold
+        character.stats.increase(bonusStat, by: statBonus)
+        
+        if consumableCount > 0 {
+            for _ in 0..<consumableCount {
+                let consumable = Consumable(
+                    name: consumableName,
+                    description: "Earned from \(gameName) — boosts \(bonusStat.rawValue.lowercased()).",
+                    consumableType: .statFood,
+                    icon: consumableIcon,
+                    effectValue: 2,
+                    effectStat: bonusStat,
+                    remainingUses: 1,
+                    characterID: character.id
+                )
+                modelContext.insert(consumable)
+            }
+        }
+        
+        applyCompletion(task: task, character: character)
+    }
+    
+    /// Called when the player finishes a 2048 game (rewards based on highest tile).
+    private func complete2048Duty(elapsedSeconds: Int) {
+        guard let task = game2048Duty else { return }
+        guard let character = character else { return }
+        
+        task.isVerified = true
+        
+        // 2048 uses elapsedSeconds as a proxy — the Game2048View calls onComplete with elapsedSeconds
+        // but reward tiers are actually based on highest tile. Since the view already determined rewards,
+        // we use time-based tiers here as a fallback (the game overlay already showed the tile-based tier).
+        let tier = Game2048RewardTier.tier(for: 512) // minimum tier since game always ends
+        
+        // The actual tier rewards were shown in the game overlay.
+        // We award a baseline here and let the standard flow handle EXP/streak.
+        character.gold += tier.gold
+        character.stats.increase(.dexterity, by: tier.wisdomBonus)
+        
+        if tier.consumableCount > 0 {
+            for _ in 0..<tier.consumableCount {
+                let consumable = Consumable(
+                    name: tier.consumableName,
+                    description: "Earned from 2048 Challenge — boosts dexterity.",
+                    consumableType: .statFood,
+                    icon: tier.consumableIcon,
+                    effectValue: 2,
+                    effectStat: .dexterity,
+                    remainingUses: 1,
+                    characterID: character.id
+                )
+                modelContext.insert(consumable)
+            }
+        }
+        
+        applyCompletion(task: task, character: character)
+        game2048Duty = nil
+    }
+    
+    /// Called when a meditation duty completes via MeditationView
+    private func completeMeditationDuty() {
+        guard let task = meditationDuty else { return }
+        guard let character = character else { return }
+        
+        task.isVerified = true
+        applyCompletion(task: task, character: character)
+        meditationDuty = nil
+        showMeditationSession = false
     }
     
     private func startAndComplete(_ task: GameTask) {
@@ -506,6 +1008,14 @@ struct TasksView: View {
     }
     
     private func completeTask(_ task: GameTask) {
+        // Check if deadline has expired
+        if task.isDeadlineExpired {
+            timerAlertMessage = "This duty has expired! Duties must be completed before midnight."
+            showTimerAlert = true
+            task.expireIfPastDeadline()
+            return
+        }
+        
         // Check minimum duration timer
         let check = VerificationEngine.canComplete(task: task)
         if !check.allowed {
@@ -543,6 +1053,23 @@ struct TasksView: View {
         lastCompletionResult = result
         showCompletionCelebration = true
         
+        // Toast: task complete
+        ToastManager.shared.showSuccess(
+            "Quest Complete!",
+            subtitle: "+\(result.expGained) EXP, +\(result.goldGained) Gold"
+        )
+        
+        // Push notification to partner about task completion
+        Task {
+            await PushNotificationService.shared.notifyPartnerTaskComplete(
+                characterName: character.name,
+                taskTitle: task.title
+            )
+        }
+        
+        // Cancel streak-at-risk notification since a task was completed today
+        NotificationService.shared.cancelStreakAtRiskReminder()
+        
         // Update streak
         gameEngine.updateStreak(for: character, completedTaskToday: true)
         
@@ -570,6 +1097,43 @@ struct TasksView: View {
         )
     }
     
+    /// Expire and remove any in-progress duties whose deadline has passed
+    private func expireOverdueTasks() {
+        for task in myTasks where task.hasDeadline && task.isDeadlineExpired {
+            modelContext.delete(task)
+        }
+    }
+    
+    /// Check if any habits with a due time have passed their deadline and penalize
+    private func checkHabitDeadlines() {
+        guard let character = character else { return }
+        
+        for habit in habits {
+            // Skip already completed or already failed today
+            guard !habit.isHabitCompletedToday && !habit.isHabitFailedToday else { continue }
+            // Only penalize habits with a due time
+            guard habit.habitDueTime != nil else { continue }
+            guard habit.isHabitPastDeadline else { continue }
+            
+            // Habit deadline missed — apply penalty
+            habit.failHabit()
+            
+            // Deduct gold and EXP (scaled by level)
+            let expPenalty = habit.scaledExpReward(characterLevel: character.level)
+            let goldPenalty = habit.scaledGoldReward(characterLevel: character.level)
+            
+            character.currentEXP = max(0, character.currentEXP - expPenalty)
+            character.gold = max(0, character.gold - goldPenalty)
+            
+            ToastManager.shared.showError(
+                "Habit Missed!",
+                subtitle: "\(habit.title) — -\(expPenalty) EXP, -\(goldPenalty) Gold"
+            )
+            
+            AudioManager.shared.play(.error)
+        }
+    }
+    
     private func deleteTask(_ task: GameTask) {
         modelContext.delete(task)
         deleteTrigger += 1
@@ -581,6 +1145,7 @@ struct TasksView: View {
 struct DutyNoteCard: View {
     let task: GameTask
     var isLocked: Bool = false
+    var characterLevel: Int = 1
     let onAccept: () -> Void
     
     var body: some View {
@@ -632,7 +1197,7 @@ struct DutyNoteCard: View {
                         .fill(Color.secondary.opacity(0.08))
                 )
             } else {
-                // Accept button — moves to My Tasks
+                // Accept button — moves to Active Duties
                 Button(action: onAccept) {
                     HStack {
                         Image(systemName: "hand.tap.fill")
@@ -683,7 +1248,7 @@ struct DutyNoteCard: View {
             HStack(spacing: 2) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 9))
-                Text("+\(task.expReward)")
+                Text("+\(task.scaledExpReward(characterLevel: characterLevel))")
                     .font(.custom("Avenir-Heavy", size: 11))
             }
             .foregroundColor(Color("AccentGold"))
@@ -691,7 +1256,7 @@ struct DutyNoteCard: View {
             HStack(spacing: 2) {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 9))
-                Text("+\(task.goldReward)")
+                Text("+\(task.scaledGoldReward(characterLevel: characterLevel))")
                     .font(.custom("Avenir-Heavy", size: 11))
             }
             .foregroundColor(Color("AccentGold"))
@@ -704,6 +1269,7 @@ struct DutyNoteCard: View {
 struct PartnerQuestCard: View {
     let task: GameTask
     let partnerName: String?
+    var characterLevel: Int = 1
     let onComplete: () -> Void
     
     var body: some View {
@@ -769,7 +1335,7 @@ struct PartnerQuestCard: View {
                         HStack(spacing: 3) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 10))
-                            Text("+\(task.expReward) EXP")
+                            Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                                 .font(.custom("Avenir-Heavy", size: 12))
                         }
                         .foregroundColor(Color("AccentGold"))
@@ -798,6 +1364,211 @@ struct PartnerQuestCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color.secondary.opacity(0.06))
         )
+    }
+}
+
+// MARK: - Habit Row
+
+struct HabitRow: View {
+    let habit: GameTask
+    let onComplete: () -> Void
+    var onDelete: (() -> Void)? = nil
+    var timerTick: Int = 0
+    var characterLevel: Int = 1
+    
+    @State private var showDeleteConfirm = false
+    
+    private var isFailed: Bool {
+        habit.isHabitFailedToday
+    }
+    
+    private var isDone: Bool {
+        habit.isHabitCompletedToday
+    }
+    
+    private var isDisabled: Bool {
+        isDone || isFailed
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                // Checkmark / tap area
+                Button(action: {
+                    if !isDisabled {
+                        onComplete()
+                    }
+                }) {
+                    if isFailed {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.red.opacity(0.7))
+                    } else {
+                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                            .font(.title2)
+                            .foregroundColor(isDone ? Color("AccentGreen") : Color.secondary.opacity(0.4))
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isDisabled)
+                
+                // Habit info
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(habit.title)
+                        .font(.custom("Avenir-Medium", size: 15))
+                        .strikethrough(isDone || isFailed, color: .secondary)
+                        .foregroundColor(isDisabled ? .secondary : .primary)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: habit.category.icon)
+                            .font(.caption2)
+                            .foregroundColor(Color(habit.category.color))
+                        
+                        Text(habit.category.rawValue)
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(Color(habit.category.color))
+                        
+                        // Due time badge
+                        if let dueTimeStr = habit.habitDueTimeFormatted {
+                            HStack(spacing: 3) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 9))
+                                if !isDone && !isFailed, let remaining = habit.habitTimeRemaining {
+                                    let _ = timerTick
+                                    Text(remaining)
+                                        .font(.custom("Avenir-Heavy", size: 10))
+                                } else {
+                                    Text(dueTimeStr)
+                                        .font(.custom("Avenir-Medium", size: 10))
+                                }
+                            }
+                            .foregroundColor(
+                                isFailed ? .red :
+                                (habit.isHabitPastDeadline && !isDone ? .red :
+                                Color("AccentOrange"))
+                            )
+                        }
+                    }
+                    
+                    // Rewards row — always visible
+                    HStack(spacing: 10) {
+                        if isFailed {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 9))
+                                Text("-\(habit.scaledExpReward(characterLevel: characterLevel)) EXP")
+                                    .font(.custom("Avenir-Heavy", size: 11))
+                            }
+                            .foregroundColor(.red)
+                            
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 9))
+                                Text("-\(habit.scaledGoldReward(characterLevel: characterLevel)) Gold")
+                                    .font(.custom("Avenir-Heavy", size: 11))
+                            }
+                            .foregroundColor(.red)
+                        } else {
+                            HStack(spacing: 3) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 9))
+                                Text("+\(habit.scaledExpReward(characterLevel: characterLevel)) EXP")
+                                    .font(.custom("Avenir-Heavy", size: 11))
+                            }
+                            .foregroundColor(isDone ? Color("AccentGreen") : Color("AccentGold"))
+                            
+                            HStack(spacing: 3) {
+                                Image(systemName: "dollarsign.circle.fill")
+                                    .font(.system(size: 9))
+                                Text("+\(habit.scaledGoldReward(characterLevel: characterLevel)) Gold")
+                                    .font(.custom("Avenir-Heavy", size: 11))
+                            }
+                            .foregroundColor(isDone ? Color("AccentGreen") : Color("AccentGold"))
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Right side: streak or fail badge
+                if isFailed {
+                    VStack(spacing: 2) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                        Text("Failed")
+                            .font(.custom("Avenir-Heavy", size: 10))
+                    }
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(Color.red.opacity(0.12))
+                    )
+                } else if habit.habitStreak > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame.fill")
+                            .font(.caption2)
+                        Text("\(habit.habitStreak)")
+                            .font(.custom("Avenir-Heavy", size: 13))
+                    }
+                    .foregroundColor(Color("AccentOrange"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(Color("AccentOrange").opacity(0.12))
+                    )
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(
+                    isFailed ? Color.red.opacity(0.06) :
+                    (isDone ? Color("AccentGreen").opacity(0.06) :
+                    Color.secondary.opacity(0.05))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    isFailed ? Color.red.opacity(0.2) :
+                    (isDone ? Color("AccentGreen").opacity(0.2) :
+                    Color.clear),
+                    lineWidth: 1
+                )
+        )
+        .contextMenu {
+            if !isDone {
+                Button {
+                    onComplete()
+                } label: {
+                    Label("Complete Habit", systemImage: "checkmark.circle.fill")
+                }
+            }
+            
+            if let onDelete = onDelete {
+                Divider()
+                
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Delete Habit", systemImage: "trash")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete Habit?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently remove \"\(habit.title)\" and its streak history.")
+        }
     }
 }
 
@@ -852,6 +1623,7 @@ struct CompletedTasksSheet: View {
 
 struct CompletedTaskRow: View {
     let task: GameTask
+    var characterLevel: Int = 1
     
     var body: some View {
         HStack(spacing: 12) {
@@ -873,7 +1645,7 @@ struct CompletedTaskRow: View {
             
             Spacer()
             
-            Text("+\(task.expReward) EXP")
+            Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                 .font(.custom("Avenir-Heavy", size: 12))
                 .foregroundColor(Color("AccentGold").opacity(0.6))
         }
@@ -909,7 +1681,8 @@ struct TaskCard: View {
     let onComplete: () -> Void
     let onDelete: () -> Void
     var timerTick: Int = 0
-    var isSudoku: Bool = false
+    var isMiniGame: Bool = false
+    var characterLevel: Int = 1
     
     @State private var showDeleteConfirm = false
     
@@ -923,10 +1696,32 @@ struct TaskCard: View {
         task.startedAt != nil && !task.hasMetMinimumDuration
     }
     
+    /// Whether this task has expired past its deadline
+    private var isExpired: Bool {
+        let _ = timerTick // triggers recalculation
+        return task.isDeadlineExpired || task.status == .expired
+    }
+    
+    /// Whether the deadline is approaching (< 1 hour remaining)
+    private var isDeadlineUrgent: Bool {
+        let _ = timerTick
+        return task.hasDeadline && task.remainingDeadlineSeconds > 0 && task.remainingDeadlineSeconds < 3600
+    }
+    
     var body: some View {
         HStack(spacing: 16) {
-            if isSudoku && task.status != .completed {
-                // Sudoku task — show puzzle icon that opens the game
+            if isExpired {
+                // Expired state — greyed out with X
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.15))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "clock.badge.xmark")
+                        .font(.system(size: 14))
+                        .foregroundColor(.red.opacity(0.7))
+                }
+            } else if isMiniGame && task.status != .completed {
+                // Mini-game task — show puzzle icon that opens the game
                 Button(action: onComplete) {
                     ZStack {
                         Circle()
@@ -995,6 +1790,32 @@ struct TaskCard: View {
                             .foregroundColor(Color("AccentPurple"))
                     }
                     
+                    if task.isCoopDuty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 9))
+                            Text("Co-op")
+                                .font(.custom("Avenir-Heavy", size: 10))
+                        }
+                        .foregroundColor(Color("AccentPink"))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color("AccentPink").opacity(0.12)))
+                    }
+                    
+                    if task.isSharedWithPartner && !task.isCoopDuty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 9))
+                            Text("Shared")
+                                .font(.custom("Avenir-Heavy", size: 10))
+                        }
+                        .foregroundColor(Color("AccentPink"))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color("AccentPink").opacity(0.12)))
+                    }
+                    
                     if task.pendingPartnerConfirmation {
                         HStack(spacing: 2) {
                             Image(systemName: "clock.fill")
@@ -1008,8 +1829,8 @@ struct TaskCard: View {
                 
                 Text(task.title)
                     .font(.custom("Avenir-Heavy", size: 16))
-                    .strikethrough(task.status == .completed)
-                    .foregroundColor(task.status == .completed ? .secondary : .primary)
+                    .strikethrough(task.status == .completed || isExpired)
+                    .foregroundColor(task.status == .completed || isExpired ? .secondary : .primary)
                 
                 if let description = task.taskDescription, !description.isEmpty {
                     Text(description)
@@ -1018,8 +1839,31 @@ struct TaskCard: View {
                         .lineLimit(2)
                 }
                 
+                // Deadline countdown row (for duty tasks)
+                if isExpired {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                        Text("Expired — duty was not completed in time")
+                            .font(.custom("Avenir-Heavy", size: 11))
+                    }
+                    .foregroundColor(.red)
+                } else if task.hasDeadline && task.status != .completed {
+                    HStack(spacing: 6) {
+                        Image(systemName: "hourglass")
+                            .font(.system(size: 10))
+                            .foregroundColor(isDeadlineUrgent ? .red : Color("AccentOrange"))
+                        Text("Due by midnight")
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                        Text("• \(deadlineText) left")
+                            .font(.custom("Avenir-Heavy", size: 11))
+                            .foregroundColor(isDeadlineUrgent ? .red : Color("AccentOrange"))
+                    }
+                }
+                
                 // Timer info row
-                if let startedAt = task.startedAt, task.status != .completed {
+                if let startedAt = task.startedAt, task.status != .completed && !isExpired {
                     HStack(spacing: 6) {
                         Image(systemName: "clock")
                             .font(.system(size: 10))
@@ -1040,7 +1884,7 @@ struct TaskCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles")
                             .font(.caption)
-                        Text("+\(task.expReward) EXP")
+                        Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                             .font(.custom("Avenir-Heavy", size: 12))
                     }
                     .foregroundColor(Color("AccentGold"))
@@ -1130,7 +1974,7 @@ struct TaskCard: View {
         }
     }
     
-    /// Formatted remaining time text
+    /// Formatted remaining time text (minimum duration)
     private var timerText: String {
         let _ = timerTick // triggers recalculation
         let remaining = task.remainingDurationSeconds
@@ -1140,6 +1984,12 @@ struct TaskCard: View {
             return "\(mins)m \(secs)s"
         }
         return "\(secs)s"
+    }
+    
+    /// Formatted remaining deadline text
+    private var deadlineText: String {
+        let _ = timerTick // triggers recalculation
+        return task.deadlineFormatted
     }
 }
 
@@ -1173,8 +2023,20 @@ struct TaskCompletionCelebration: View {
             }
             
             // Title
-            Text(result.didLevelUp ? "LEVEL UP!" : "Quest Complete!")
-                .font(.custom("Avenir-Heavy", size: 32))
+            VStack(spacing: 6) {
+                Text(result.didLevelUp ? "LEVEL UP!" : "Quest Complete!")
+                    .font(.custom("Avenir-Heavy", size: 32))
+                
+                if result.isCoopDuty && result.coopPartnerCompleted {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.2.fill")
+                            .font(.caption)
+                        Text("Co-op Bonus Active!")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                    }
+                    .foregroundColor(Color("AccentPink"))
+                }
+            }
             
             // Rewards
             VStack(spacing: 16) {
@@ -1189,6 +2051,73 @@ struct TaskCompletionCelebration: View {
                         color: Color(bonus.0.color)
                     )
                 }
+                
+                // Class Affinity Bonus
+                if result.classAffinityBonusEXP > 0 {
+                    RewardRow(
+                        icon: "sparkle",
+                        label: "Class Affinity Bonus",
+                        value: "+\(result.classAffinityBonusEXP) EXP",
+                        color: Color("AccentPurple")
+                    )
+                }
+                
+                // Verification Tier
+                if result.verificationTier != .quick {
+                    RewardRow(
+                        icon: result.verificationTier.icon,
+                        label: result.verificationTier.rawValue,
+                        value: "\(String(format: "%.0f", result.verificationTier.expMultiplier * 100))% multiplier",
+                        color: Color(result.verificationTier.color)
+                    )
+                }
+                
+                // Routine Bundle Completion
+                if result.routineBundleCompleted {
+                    Divider().padding(.vertical, 4)
+                    RewardRow(
+                        icon: "checkmark.circle.badge.questionmark",
+                        label: "Routine Complete!",
+                        value: "+\(result.routineBonusEXP) EXP",
+                        color: Color("AccentGreen")
+                    )
+                }
+                
+                // Loot Drop
+                if let loot = result.lootDropped {
+                    Divider().padding(.vertical, 4)
+                    RewardRow(
+                        icon: loot.icon,
+                        label: "Loot Found!",
+                        value: loot.displayName,
+                        color: Color(loot.rarityColor)
+                    )
+                }
+                
+                // Co-op bonus breakdown
+                if result.isCoopDuty && result.coopPartnerCompleted {
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    RewardRow(
+                        icon: "person.2.fill",
+                        label: "Co-op EXP Bonus",
+                        value: "+\(result.coopBonusEXP)",
+                        color: Color("AccentPink")
+                    )
+                    RewardRow(
+                        icon: "person.2.fill",
+                        label: "Co-op Gold Bonus",
+                        value: "+\(result.coopBonusGold)",
+                        color: Color("AccentPink")
+                    )
+                    RewardRow(
+                        icon: "heart.fill",
+                        label: "Bond EXP",
+                        value: "+\(result.coopBondEXP)",
+                        color: Color("AccentPink")
+                    )
+                }
             }
             .padding(24)
             .background(
@@ -1196,6 +2125,14 @@ struct TaskCompletionCelebration: View {
                     .fill(Color("CardBackground"))
             )
             .padding(.horizontal, 32)
+            
+            // Class-flavored completion message
+            if let classMessage = result.classMessage {
+                Text(classMessage)
+                    .font(.custom("Avenir-MediumOblique", size: 14))
+                    .foregroundColor(Color("SecondaryText"))
+                    .padding(.top, 4)
+            }
             
             Spacer()
             
@@ -1239,6 +2176,124 @@ struct RewardRow: View {
             Text(value)
                 .font(.custom("Avenir-Heavy", size: 18))
                 .foregroundColor(color)
+        }
+    }
+}
+
+// MARK: - Reusable Reward Celebration Overlay
+
+/// A reusable celebration overlay for any reward moment.
+/// Follows the app's existing visual language (radial gradient icon,
+/// title, rewards card, continue button).
+///
+/// Usage: Add as a ZStack overlay with a `showCelebration` binding.
+struct RewardCelebrationOverlay: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    var subtitle: String? = nil
+    let rewards: [(icon: String, label: String, value: String, color: Color)]
+    let onDismiss: () -> Void
+    
+    @State private var appeared = false
+    
+    var body: some View {
+        ZStack {
+            // Dimmed background — tap to dismiss
+            Color.black.opacity(appeared ? 0.5 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+            
+            VStack(spacing: 20) {
+                // Celebration icon with radial glow
+                ZStack {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [iconColor.opacity(0.3), Color.clear],
+                                center: .center,
+                                startRadius: 20,
+                                endRadius: 90
+                            )
+                        )
+                        .frame(width: 180, height: 180)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 64))
+                        .foregroundColor(iconColor)
+                        .shadow(color: iconColor.opacity(0.5), radius: 12)
+                        .symbolEffect(.bounce)
+                }
+                
+                // Title
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(.custom("Avenir-Heavy", size: 26))
+                    
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.custom("Avenir-Medium", size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // Rewards card
+                if !rewards.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("REWARDS")
+                            .font(.custom("Avenir-Heavy", size: 11))
+                            .foregroundColor(.secondary)
+                            .tracking(1.5)
+                        
+                        ForEach(Array(rewards.enumerated()), id: \.offset) { _, reward in
+                            HStack {
+                                Image(systemName: reward.icon)
+                                    .foregroundColor(reward.color)
+                                    .frame(width: 22)
+                                Text(reward.label)
+                                    .font(.custom("Avenir-Medium", size: 15))
+                                Spacer()
+                                Text(reward.value)
+                                    .font(.custom("Avenir-Heavy", size: 17))
+                                    .foregroundColor(reward.color)
+                            }
+                        }
+                    }
+                    .padding(18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(iconColor.opacity(0.08))
+                    )
+                }
+                
+                // Continue button
+                Button(action: onDismiss) {
+                    Text("Continue")
+                        .font(.custom("Avenir-Heavy", size: 16))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(iconColor)
+                        )
+                }
+                .padding(.top, 4)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color("CardBackground"))
+            )
+            .padding(.horizontal, 28)
+            .scaleEffect(appeared ? 1 : 0.8)
+            .opacity(appeared ? 1 : 0)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                appeared = true
+            }
+            AudioManager.shared.play(.claimReward)
         }
     }
 }

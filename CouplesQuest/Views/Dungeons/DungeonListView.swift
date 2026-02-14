@@ -2,15 +2,22 @@ import SwiftUI
 import SwiftData
 
 struct DungeonListView: View {
+    /// When true, the view is pushed inside an existing NavigationStack and should not create its own.
+    var isEmbedded: Bool = false
+    
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var gameEngine: GameEngine
     @Query private var characters: [PlayerCharacter]
     @Query private var dungeons: [Dungeon]
     @Query(sort: \DungeonRun.startedAt, order: .reverse) private var dungeonRuns: [DungeonRun]
     
+    @Query private var bonds: [Bond]
+    
     @State private var selectedDungeon: Dungeon?
     @State private var showDungeonDetail = false
     @State private var showDungeonRun = false
+    @State private var showLobby = false
+    @State private var lobbyDungeon: Dungeon?
     @State private var activeDungeonRun: DungeonRun?
     @State private var activeDungeon: Dungeon?
     @State private var timerTick = 0
@@ -38,7 +45,17 @@ struct DungeonListView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        if isEmbedded {
+            dungeonListContent
+        } else {
+            NavigationStack {
+                dungeonListContent
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var dungeonListContent: some View {
             ZStack {
                 LinearGradient(
                     colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
@@ -95,12 +112,17 @@ struct DungeonListView: View {
                         dungeon: dungeon,
                         character: character,
                         hasActiveRun: hasActiveRun,
-                        hasActiveTraining: gameEngine.activeMission != nil,
+                        hasActiveTraining: gameEngine.isTrainingInProgress,
                         onStartSolo: { party in
                             startDungeon(dungeon, party: party, isCoop: false)
                         },
-                        onStartCoop: { party in
-                            startDungeon(dungeon, party: party, isCoop: true)
+                        onStartCoop: { _ in
+                            // Present lobby instead of immediately starting
+                            showDungeonDetail = false
+                            lobbyDungeon = dungeon
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                showLobby = true
+                            }
                         }
                     )
                     .presentationDetents([.medium, .large])
@@ -116,10 +138,25 @@ struct DungeonListView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showLobby) {
+                if let dungeon = lobbyDungeon, let character = character, let bond = bonds.first {
+                    DungeonLobbyView(
+                        dungeon: dungeon,
+                        character: character,
+                        bond: bond,
+                        onStart: { party in
+                            startDungeon(dungeon, party: party, isCoop: true)
+                        }
+                    )
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.hidden)
+                }
+            }
             .onAppear {
                 seedDungeonsIfNeeded()
+                // Apply passive HP regen when entering dungeon screen
+                character?.applyPassiveRegen()
             }
-        }
     }
     
     private func startDungeon(_ dungeon: Dungeon, party: [PlayerCharacter], isCoop: Bool) {
@@ -130,6 +167,13 @@ struct DungeonListView: View {
         showDungeonDetail = false
         AudioManager.shared.play(.dungeonStart)
         
+        // Schedule a push notification for when the dungeon run timer completes
+        let completionDate = Date().addingTimeInterval(TimeInterval(dungeon.durationSeconds))
+        PushNotificationService.shared.scheduleDungeonComplete(
+            dungeonName: dungeon.name,
+            completionDate: completionDate
+        )
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             showDungeonRun = true
         }
@@ -137,9 +181,63 @@ struct DungeonListView: View {
     
     private func seedDungeonsIfNeeded() {
         guard dungeons.isEmpty else { return }
-        for sample in SampleDungeons.all {
-            modelContext.insert(sample)
+        
+        // Prefer server-driven dungeon definitions from ContentManager
+        let cm = ContentManager.shared
+        if cm.isLoaded && !cm.dungeons.isEmpty {
+            for cd in cm.activeDungeons() {
+                if let dungeon = buildDungeon(from: cd) {
+                    modelContext.insert(dungeon)
+                }
+            }
+        } else {
+            // Fallback to hardcoded sample dungeons
+            for sample in SampleDungeons.all {
+                modelContext.insert(sample)
+            }
         }
+    }
+    
+    /// Convert a ContentDungeon (server-driven) to a SwiftData Dungeon
+    private func buildDungeon(from cd: ContentDungeon) -> Dungeon? {
+        let theme = DungeonTheme(rawValue: cd.theme.capitalized) ?? .cave
+        let difficulty = DungeonDifficulty(rawValue: cd.difficulty.capitalized) ?? .normal
+        
+        let rooms = cd.rooms.map { cr in
+            let encounterType = EncounterType(rawValue: cr.encounterType.capitalized) ?? .combat
+            let primaryStat = StatType(rawValue: cr.primaryStat.capitalized) ?? .strength
+            return DungeonRoom(
+                name: cr.name,
+                description: cr.description,
+                encounterType: encounterType,
+                primaryStat: primaryStat,
+                difficultyRating: cr.difficultyRating,
+                isBossRoom: cr.isBossRoom,
+                bonusLootChance: cr.bonusLootChance
+            )
+        }
+        
+        // Parse stat requirements from server data
+        let statReqs: [StatRequirement] = (cd.statRequirements ?? []).compactMap { sr in
+            guard let stat = StatType(rawValue: sr.stat.capitalized) else { return nil }
+            return StatRequirement(stat: stat, minimum: sr.value)
+        }
+        
+        return Dungeon(
+            name: cd.name,
+            description: cd.description,
+            theme: theme,
+            difficulty: difficulty,
+            rooms: rooms,
+            levelRequirement: cd.levelRequirement,
+            recommendedStatTotal: cd.recommendedStatTotal,
+            maxPartySize: cd.maxPartySize,
+            baseExpReward: cd.baseExpReward,
+            baseGoldReward: cd.baseGoldReward,
+            lootTier: cd.lootTier,
+            minHPRequired: cd.minHPRequired ?? 50,
+            statRequirements: statReqs
+        )
     }
 }
 
@@ -177,17 +275,24 @@ struct ActiveDungeonRunCard: View {
                     }
                 }
                 
-                VStack(spacing: 14) {
+                    VStack(spacing: 14) {
                     HStack {
+                        // Dungeon thumbnail in active run card
+                        Image(dungeon.theme.thumbnailImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 50, height: 50)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color("AccentGold").opacity(0.4), lineWidth: 1)
+                            )
+                            .scaleEffect(isRunning && iconBounce ? 1.05 : 1.0)
+                        
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Image(systemName: dungeon.theme.icon)
-                                    .foregroundColor(Color("AccentGold"))
-                                    .scaleEffect(isRunning && iconBounce ? 1.1 : 1.0)
-                                Text(run.isTimerComplete && !run.isResolved ? "Results Ready!" : "Dungeon Active")
-                                    .font(.custom("Avenir-Heavy", size: 14))
-                                    .foregroundColor(Color("AccentGold"))
-                            }
+                            Text(run.isTimerComplete && !run.isResolved ? "Results Ready!" : "Dungeon Active")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                                .foregroundColor(Color("AccentGold"))
                             Text(dungeon.name)
                                 .font(.custom("Avenir-Heavy", size: 20))
                         }
@@ -397,6 +502,14 @@ struct DungeonCard: View {
         (character?.level ?? 0) >= dungeon.levelRequirement
     }
     
+    private var meetsHP: Bool {
+        (character?.currentHP ?? 0) >= dungeon.minHPRequired
+    }
+    
+    private var canEnter: Bool {
+        meetsLevel && meetsHP
+    }
+    
     private var overallChance: Double {
         guard let character = character else { return 0 }
         return DungeonEngine.overallSuccessEstimate(party: [character], dungeon: dungeon)
@@ -406,23 +519,32 @@ struct DungeonCard: View {
         DungeonEngine.powerDescription(chance: overallChance)
     }
     
+    private var statReadiness: Double {
+        guard let character = character else { return 0 }
+        return DungeonEngine.calculateStatReadiness(party: [character], dungeon: dungeon)
+    }
+    
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(dungeon.difficulty.color).opacity(0.2))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: dungeon.theme.icon)
-                        .font(.title2)
-                        .foregroundColor(Color(dungeon.difficulty.color))
-                }
+            HStack(spacing: 12) {
+                // Dungeon thumbnail
+                Image(dungeon.theme.thumbnailImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(dungeon.difficulty.color).opacity(0.4), lineWidth: 1.5)
+                    )
                 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
+                    // Metadata row
+                    HStack(spacing: 5) {
                         Text(dungeon.difficulty.rawValue)
                             .font(.custom("Avenir-Heavy", size: 10))
                             .foregroundColor(Color(dungeon.difficulty.color))
+                            .lineLimit(1)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color(dungeon.difficulty.color).opacity(0.2)))
@@ -430,12 +552,13 @@ struct DungeonCard: View {
                         Text("Lv.\(dungeon.levelRequirement)+")
                             .font(.custom("Avenir-Medium", size: 10))
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                         
                         Text("\(dungeon.roomCount) rooms")
                             .font(.custom("Avenir-Medium", size: 10))
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                         
-                        // Duration badge
                         HStack(spacing: 2) {
                             Image(systemName: "clock")
                                 .font(.system(size: 8))
@@ -443,29 +566,40 @@ struct DungeonCard: View {
                         }
                         .font(.custom("Avenir-Medium", size: 10))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                     }
                     
                     Text(dungeon.name)
                         .font(.custom("Avenir-Heavy", size: 16))
                         .foregroundColor(meetsLevel ? .primary : .secondary)
+                        .lineLimit(1)
                     
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
+                    // Rewards + requirements row
+                    HStack(spacing: 8) {
+                        HStack(spacing: 3) {
                             Image(systemName: "sparkles")
                             Text("+\(dungeon.baseExpReward)")
                         }
-                        .font(.custom("Avenir-Heavy", size: 12))
+                        .font(.custom("Avenir-Heavy", size: 11))
                         .foregroundColor(Color("AccentGold"))
                         
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "dollarsign.circle")
                             Text("+\(dungeon.baseGoldReward)")
                         }
-                        .font(.custom("Avenir-Medium", size: 12))
+                        .font(.custom("Avenir-Medium", size: 11))
                         .foregroundColor(.secondary)
                         
+                        // HP threshold
+                        HStack(spacing: 3) {
+                            Image(systemName: "heart.fill")
+                            Text("\(dungeon.minHPRequired)+")
+                        }
+                        .font(.custom("Avenir-Heavy", size: 10))
+                        .foregroundColor(meetsHP ? Color("AccentGreen") : Color("DifficultyHard"))
+                        
                         if dungeon.maxPartySize > 1 {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 3) {
                                 Image(systemName: "person.2.fill")
                                 Text("Co-op")
                             }
@@ -473,23 +607,48 @@ struct DungeonCard: View {
                             .foregroundColor(Color("AccentPurple"))
                         }
                     }
+                    
+                    // Stat requirements (compact)
+                    if !dungeon.statRequirements.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(dungeon.statRequirements, id: \.stat) { req in
+                                let met = (character?.effectiveStats.value(for: req.stat) ?? 0) >= req.minimum
+                                HStack(spacing: 2) {
+                                    Text(req.stat.shortName)
+                                    Text("\(req.minimum)")
+                                }
+                                .font(.custom("Avenir-Medium", size: 9))
+                                .foregroundColor(met ? Color("AccentGreen") : Color("DifficultyHard"))
+                            }
+                        }
+                    }
                 }
                 
-                Spacer()
+                Spacer(minLength: 4)
                 
-                if !meetsLevel {
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.secondary)
+                if !canEnter {
+                    VStack(spacing: 2) {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(.secondary)
+                        if meetsLevel && !meetsHP {
+                            Text("Low HP")
+                                .font(.custom("Avenir-Heavy", size: 8))
+                                .foregroundColor(Color("DifficultyHard"))
+                        }
+                    }
                 } else if character != nil {
                     Text(chanceInfo.text)
-                        .font(.custom("Avenir-Heavy", size: 11))
+                        .font(.custom("Avenir-Heavy", size: 10))
                         .foregroundColor(Color(chanceInfo.color))
-                        .padding(.horizontal, 8)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color(chanceInfo.color).opacity(0.15)))
+                        .fixedSize()
                 }
             }
-            .padding(16)
+            .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color("CardBackground"))
@@ -560,14 +719,16 @@ struct DungeonDetailView: View {
                     VStack(spacing: 24) {
                         // Header
                         VStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(dungeon.difficulty.color).opacity(0.2))
-                                    .frame(width: 100, height: 100)
-                                Image(systemName: dungeon.theme.icon)
-                                    .font(.system(size: 50))
-                                    .foregroundColor(Color(dungeon.difficulty.color))
-                            }
+                            Image(dungeon.theme.thumbnailImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 20))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(Color(dungeon.difficulty.color).opacity(0.5), lineWidth: 2)
+                                )
+                                .shadow(color: Color(dungeon.difficulty.color).opacity(0.3), radius: 12)
                             
                             Text(dungeon.name)
                                 .font(.custom("Avenir-Heavy", size: 28))

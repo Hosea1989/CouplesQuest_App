@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TaskTimerView: View {
     let task: GameTask
+    var characterLevel: Int = 1
     let onComplete: () -> Void
     
     @Environment(\.dismiss) private var dismiss
@@ -63,7 +64,7 @@ struct TaskTimerView: View {
                         .multilineTextAlignment(.center)
                     
                     if !timerFinished {
-                        Text(timerActive ? "Keep going!" : "Tap Start when you're ready")
+                        Text(timerActive ? "Tap \"I'm Done\" when you finish!" : "Tap Start when you're ready")
                             .font(.custom("Avenir-Medium", size: 16))
                             .foregroundColor(.secondary)
                     } else {
@@ -167,7 +168,7 @@ struct TaskTimerView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
                                 .foregroundColor(Color("AccentGold"))
-                            Text("+\(task.expReward) EXP")
+                            Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                                 .font(.custom("Avenir-Heavy", size: 14))
                                 .foregroundColor(Color("AccentGold"))
                         }
@@ -175,29 +176,51 @@ struct TaskTimerView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "dollarsign.circle.fill")
                                 .foregroundColor(Color("AccentGold"))
-                            Text("+\(task.goldReward) Gold")
+                            Text("+\(task.scaledGoldReward(characterLevel: characterLevel)) Gold")
                                 .font(.custom("Avenir-Heavy", size: 14))
                                 .foregroundColor(Color("AccentGold"))
                         }
                     }
                     .padding(.top, 8)
                 } else if timerActive {
-                    // Pause button
-                    Button(action: pauseTimer) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "pause.fill")
-                                .font(.title3)
-                            Text("Pause")
-                                .font(.custom("Avenir-Heavy", size: 18))
+                    VStack(spacing: 12) {
+                        // "I'm Done" button — complete early
+                        Button(action: finishTimer) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title3)
+                                Text("I'm Done")
+                                    .font(.custom("Avenir-Heavy", size: 20))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color("AccentGreen"), Color("AccentGreen").opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
                         }
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(Color("CardBackground"))
-                                .shadow(color: .black.opacity(0.1), radius: 8)
-                        )
+                        
+                        // Pause button
+                        Button(action: pauseTimer) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "pause.fill")
+                                    .font(.callout)
+                                Text("Pause")
+                                    .font(.custom("Avenir-Heavy", size: 16))
+                            }
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color("CardBackground"))
+                            )
+                        }
                     }
                     .padding(.horizontal, 24)
                 } else {
@@ -277,7 +300,6 @@ struct TaskTimerView: View {
             title: "Jumping Rope",
             description: "Do 5 minutes of jumping rope",
             category: .physical,
-            physicalFocus: .dexterity,
             createdBy: UUID()
         ),
         onComplete: {}

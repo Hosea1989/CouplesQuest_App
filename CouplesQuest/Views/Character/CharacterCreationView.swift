@@ -7,6 +7,10 @@ struct CharacterCreationView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gameEngine: GameEngine
     
+    /// When true, the view is presented as mandatory onboarding (no Cancel button,
+    /// syncs character to Supabase profile on completion).
+    var isOnboarding: Bool = false
+    
     // MARK: - State
     
     @State private var currentStep: CreationStep = .chooseClass
@@ -21,6 +25,7 @@ struct CharacterCreationView: View {
     @State private var isLoadingPhoto: Bool = false
     @State private var isCreating: Bool = false
     @State private var showError: Bool = false
+    @State private var showOverwriteWarning: Bool = false
     
     enum CreationStep: Int, CaseIterable {
         case chooseClass = 0
@@ -45,7 +50,9 @@ struct CharacterCreationView: View {
         case .chooseClass: return selectedClass != nil
         case .chooseZodiac: return selectedZodiac != nil
         case .allocateStats: return remainingBonusPoints == 0
-        case .nameAvatar: return characterName.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+        case .nameAvatar:
+            let trimmed = characterName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.count >= 2 && trimmed.count <= 20
         case .review: return true
         }
     }
@@ -82,9 +89,16 @@ struct CharacterCreationView: View {
                     .padding(.top, 8)
                     
                     // Step title
-                    Text(currentStep.title)
-                        .font(.custom("Avenir-Heavy", size: 28))
-                        .padding(.top, 16)
+                    VStack(spacing: 4) {
+                        if isOnboarding && currentStep == .chooseClass {
+                            Text("Welcome, Adventurer!")
+                                .font(.custom("Avenir-Medium", size: 14))
+                                .foregroundColor(Color("AccentGold"))
+                        }
+                        Text(currentStep.title)
+                            .font(.custom("Avenir-Heavy", size: 28))
+                    }
+                    .padding(.top, 16)
                     
                     // Content
                     ScrollView {
@@ -115,15 +129,30 @@ struct CharacterCreationView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(Color("AccentGold"))
+                if !isOnboarding {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") { dismiss() }
+                            .foregroundColor(Color("AccentGold"))
+                    }
                 }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Failed to create character. Please try again.")
+            }
+            .alert("Character Already Exists", isPresented: $showOverwriteWarning) {
+                Button("Overwrite", role: .destructive) {
+                    if let charClass = selectedClass, let zodiac = selectedZodiac {
+                        isCreating = true
+                        finalizeCharacterCreation(charClass: charClass, zodiac: zodiac, overwriteCloud: true)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    isCreating = false
+                }
+            } message: {
+                Text("A character already exists on your account. Creating a new one will overwrite your cloud save. Are you sure?")
             }
         }
     }
@@ -445,24 +474,18 @@ struct CharacterCreationView: View {
                             selectedAvatarIcon = avatar.symbol
                             selectedAvatarImageData = nil
                         }) {
-                            VStack(spacing: 4) {
-                                ZStack {
-                                    Image(avatar.symbol)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(Circle())
-                                    
-                                    if isSelected {
-                                        Circle()
-                                            .stroke(Color("AccentGold"), lineWidth: 3)
-                                            .frame(width: 68, height: 68)
-                                    }
-                                }
+                            ZStack {
+                                Image(avatar.symbol)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(Circle())
                                 
-                                Text(avatar.name)
-                                    .font(.custom("Avenir-Medium", size: 10))
-                                    .foregroundColor(isSelected ? Color("AccentGold") : .secondary)
+                                if isSelected {
+                                    Circle()
+                                        .stroke(Color("AccentGold"), lineWidth: 3)
+                                        .frame(width: 68, height: 68)
+                                }
                             }
                         }
                         .buttonStyle(.plain)
@@ -546,11 +569,23 @@ struct CharacterCreationView: View {
                                 lineWidth: 2
                             )
                     )
+                    .onChange(of: characterName) { _, newValue in
+                        // Enforce max length
+                        if newValue.count > 20 {
+                            characterName = String(newValue.prefix(20))
+                        }
+                    }
                 
-                if !characterName.isEmpty && characterName.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
-                    Text("Name must be at least 2 characters")
+                HStack {
+                    if !characterName.isEmpty && characterName.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
+                        Text("Name must be at least 2 characters")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.red)
+                    }
+                    Spacer()
+                    Text("\(characterName.count)/20")
                         .font(.custom("Avenir-Medium", size: 12))
-                        .foregroundColor(.red)
+                        .foregroundColor(characterName.count >= 20 ? Color("AccentOrange") : .secondary)
                 }
             }
         }
@@ -690,7 +725,7 @@ struct CharacterCreationView: View {
                             .tint(.black)
                     } else if currentStep == .review {
                         Image(systemName: "sparkles")
-                        Text("Begin Your Quest")
+                        Text(isOnboarding ? "Start Your Adventure" : "Begin Your Quest")
                     } else {
                         Text("Next")
                         Image(systemName: "chevron.right")
@@ -748,6 +783,34 @@ struct CharacterCreationView: View {
         
         isCreating = true
         
+        if isOnboarding {
+            // Safety check: verify no cloud character exists before creating a new one.
+            // This prevents the "signed in on second device → accidentally overwrote my save" scenario.
+            Task {
+                do {
+                    if let existingSnapshot = try await SupabaseService.shared.fetchCharacterData() {
+                        // Cloud data exists! Warn the user before overwriting.
+                        print("Cloud character already exists: \(existingSnapshot.name) Lv.\(existingSnapshot.level)")
+                        isCreating = false
+                        showOverwriteWarning = true
+                        return
+                    }
+                } catch {
+                    // Network error — proceed with creation anyway (first-time user or offline)
+                    print("Could not check cloud for existing character: \(error)")
+                }
+                
+                // No cloud data found (or check failed) — safe to create
+                finalizeCharacterCreation(charClass: charClass, zodiac: zodiac)
+            }
+        } else {
+            // Not onboarding (e.g. re-roll) — no cloud check needed
+            finalizeCharacterCreation(charClass: charClass, zodiac: zodiac)
+        }
+    }
+    
+    /// Actually build and save the character after all safety checks pass.
+    private func finalizeCharacterCreation(charClass: CharacterClass, zodiac: ZodiacSign, overwriteCloud: Bool = false) {
         let trimmedName = characterName.trimmingCharacters(in: .whitespacesAndNewlines)
         
         // Build bonus stats object (luck cannot be allocated manually)
@@ -756,7 +819,8 @@ struct CharacterCreationView: View {
             wisdom: bonusPoints[.wisdom] ?? 0,
             charisma: bonusPoints[.charisma] ?? 0,
             dexterity: bonusPoints[.dexterity] ?? 0,
-            luck: 0
+            luck: 0,
+            defense: bonusPoints[.defense] ?? 0
         )
         
         let character = gameEngine.createCharacter(
@@ -768,11 +832,30 @@ struct CharacterCreationView: View {
             avatarImageData: selectedAvatarImageData
         )
         
+        // Stamp the Supabase user ID so this character is tied to this account
+        character.supabaseUserID = SupabaseService.shared.currentUserID?.uuidString
+        
         modelContext.insert(character)
         
         do {
             try modelContext.save()
-            dismiss()
+            
+            if isOnboarding {
+                // Sync full character snapshot to Supabase so
+                // the character can be restored on another device.
+                // Navigation is handled by AuthGateView's @Query detecting
+                // the new local character — no dismiss needed.
+                Task {
+                    do {
+                        try await SupabaseService.shared.syncCharacterData(character)
+                        print("✅ New character synced to cloud: \(character.name)")
+                    } catch {
+                        print("❌ Failed to sync new character to cloud: \(error)")
+                    }
+                }
+            } else {
+                dismiss()
+            }
         } catch {
             showError = true
             isCreating = false

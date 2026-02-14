@@ -28,7 +28,7 @@ struct QRPairingView: View {
                 // Tab Selector
                 HStack(spacing: 0) {
                     tabButton("Show My Code", tab: .showQR, icon: "qrcode")
-                    tabButton("Scan Partner", tab: .scanQR, icon: "camera.fill")
+                    tabButton("Scan Ally", tab: .scanQR, icon: "camera.fill")
                 }
                 .background(Color("CardBackground"))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -41,7 +41,7 @@ struct QRPairingView: View {
                 }
             }
             .background(Color("BackgroundTop").ignoresSafeArea())
-            .navigationTitle("Partner Pairing")
+            .navigationTitle("Party Pairing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -49,10 +49,10 @@ struct QRPairingView: View {
                         .foregroundColor(Color("AccentGold"))
                 }
             }
-            .alert("Paired Successfully!", isPresented: $showPairingSuccess) {
+            .alert("Ally Joined!", isPresented: $showPairingSuccess) {
                 Button("Let's Go!") { dismiss() }
             } message: {
-                Text("You and \(pairedPartnerName) are now connected! Start sharing tasks and questing together.")
+                Text("\(pairedPartnerName) has joined your party! Start sharing tasks and questing together.")
             }
             .alert("Pairing Error", isPresented: $showError) {
                 Button("OK") { }
@@ -117,7 +117,7 @@ struct QRPairingView: View {
                     )
             }
             
-            Text("Have your partner scan this code")
+            Text("Have your ally scan this code to join")
                 .font(.custom("Avenir-Medium", size: 14))
                 .foregroundColor(.secondary)
             
@@ -142,7 +142,7 @@ struct QRPairingView: View {
     
     private var scanQRTab: some View {
         VStack(spacing: 16) {
-            Text("Scan Partner's QR Code")
+            Text("Scan Ally's QR Code")
                 .font(.custom("Avenir-Medium", size: 16))
                 .foregroundColor(.secondary)
                 .padding(.top)
@@ -157,7 +157,7 @@ struct QRPairingView: View {
             )
             .padding(.horizontal)
             
-            Text("Point your camera at your partner's QR code")
+            Text("Point your camera at your ally's QR code")
                 .font(.custom("Avenir-Medium", size: 14))
                 .foregroundColor(.secondary)
                 .padding(.bottom)
@@ -167,7 +167,7 @@ struct QRPairingView: View {
     // MARK: - QR Code Generation
     
     private func generateQRCode(for character: PlayerCharacter) -> UIImage? {
-        let pairingData = PairingData(character: character)
+        let pairingData = PairingData(character: character, partyID: character.partyID)
         guard let jsonString = pairingData.toJSON() else { return nil }
         
         let context = CIContext()
@@ -189,7 +189,7 @@ struct QRPairingView: View {
     
     private func handleScannedCode(_ code: String) {
         guard let pairingData = PairingData.fromJSON(code) else {
-            errorMessage = "Invalid QR code. Make sure you're scanning a CouplesQuest pairing code."
+            errorMessage = "Invalid QR code. Make sure you're scanning a Swords & Chores pairing code."
             showError = true
             return
         }
@@ -207,13 +207,25 @@ struct QRPairingView: View {
             return
         }
         
-        // Link the partner
+        // Check party size limit (max 3 allies = 4 total)
+        if character.partyMembers.count >= 3 {
+            errorMessage = "Your party is full! (Max 4 members)"
+            showError = true
+            return
+        }
+        
+        // Link the new member
         character.linkPartner(data: pairingData)
         
-        // Create a bond if one doesn't exist
-        if bonds.isEmpty {
+        // Create or update bond
+        if let existingBond = bonds.first {
+            // Add new member to existing bond
+            guard let memberUUID = UUID(uuidString: pairingData.characterID) else { return }
+            existingBond.addMember(memberUUID)
+        } else {
+            // Create a new bond with both members
             guard let partnerUUID = UUID(uuidString: pairingData.characterID) else { return }
-            let newBond = Bond(partnerID: partnerUUID)
+            let newBond = Bond(memberIDs: [character.id, partnerUUID])
             modelContext.insert(newBond)
         }
         

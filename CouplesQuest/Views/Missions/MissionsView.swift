@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 
 struct MissionsView: View {
+    /// When true, the view is pushed inside an existing NavigationStack and should not create its own.
+    var isEmbedded: Bool = false
+    
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var gameEngine: GameEngine
     @Query private var characters: [PlayerCharacter]
@@ -23,15 +26,61 @@ struct MissionsView: View {
     }
     
     private var displayedMissions: [AFKMission] {
+        var base: [AFKMission]
         if missions.isEmpty {
-            return SampleMissions.all
+            base = SampleMissions.all
         } else {
-            return missions.filter { $0.isAvailable }
+            base = missions.filter { $0.isAvailable }
+        }
+        
+        // Include rank-up training when eligible (level 20+, still a starter class)
+        if let char = character,
+           let charClass = char.characterClass,
+           charClass.tier == .starter,
+           char.level >= 20 {
+            let rankUps: [AFKMission]
+            if missions.isEmpty {
+                rankUps = SampleMissions.allRankUpTraining
+            } else {
+                rankUps = base.filter { $0.isRankUpTraining }
+            }
+            // Add rank-up missions if not already in base
+            let existingIDs = Set(base.map { $0.id })
+            for ru in rankUps {
+                if !existingIDs.contains(ru.id) {
+                    base.append(ru)
+                }
+            }
+        }
+        
+        // Filter to show only training for the player's class line + universal (nil classRequirement)
+        let classLineRaw = character?.characterClass?.classLine.rawValue
+        let filtered = base.filter { mission in
+            guard let req = mission.classRequirement else { return true } // universal
+            return req == classLineRaw
+        }
+        
+        // Sort: rank-up training at top, then by level requirement
+        return filtered.sorted { lhs, rhs in
+            if lhs.isRankUpTraining != rhs.isRankUpTraining {
+                return lhs.isRankUpTraining // rank-up first
+            }
+            return lhs.levelRequirement < rhs.levelRequirement
         }
     }
     
     var body: some View {
-        NavigationStack {
+        if isEmbedded {
+            missionsContent
+        } else {
+            NavigationStack {
+                missionsContent
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var missionsContent: some View {
             ZStack {
                 // Background
                 LinearGradient(
@@ -124,7 +173,6 @@ struct MissionsView: View {
             .onAppear {
                 seedSampleMissionsIfNeeded()
             }
-        }
     }
     
     private func startMission(_ mission: AFKMission) {
@@ -132,7 +180,15 @@ struct MissionsView: View {
         
         if gameEngine.startMission(mission, character: character, hasActiveDungeonRun: hasActiveDungeonRun) {
             missionStartTrigger += 1
+            ToastManager.shared.showInfo("Mission Started!", subtitle: mission.name, icon: "figure.walk")
             AudioManager.shared.play(.trainingStart)
+            
+            // Schedule a push notification for when the mission completes
+            let completionDate = Date().addingTimeInterval(TimeInterval(mission.durationSeconds))
+            PushNotificationService.shared.scheduleTrainingComplete(
+                missionName: mission.name,
+                completionDate: completionDate
+            )
             
             // Update daily quest progress
             gameEngine.updateDailyQuestProgressForMission(
@@ -151,12 +207,39 @@ struct MissionsView: View {
             claimTrigger += 1
             AudioManager.shared.play(.claimReward)
             
-            // Award crafting materials (Herbs from missions) on success
             if result.success {
+                var subtitle = "+\(result.expGained) EXP, +\(result.goldGained) Gold"
+                if result.researchTokensDropped > 0 {
+                    subtitle += ", +\(result.researchTokensDropped) Research Token\(result.researchTokensDropped > 1 ? "s" : "")"
+                }
+                let title: String
+                if let newClass = result.rankedUpToClass {
+                    title = "Ranked Up to \(newClass.rawValue)!"
+                } else {
+                    title = "Training Complete!"
+                }
+                ToastManager.shared.showSuccess(
+                    title,
+                    subtitle: subtitle
+                )
+                // Award crafting materials (Herbs from missions) on success
                 gameEngine.awardMaterialsForMission(
                     missionRarity: mission.rarity,
                     character: character,
                     context: modelContext
+                )
+                // Award Research Tokens (mission-exclusive drop)
+                if result.researchTokensDropped > 0 {
+                    gameEngine.awardResearchTokens(
+                        amount: result.researchTokensDropped,
+                        character: character,
+                        context: modelContext
+                    )
+                }
+            } else {
+                ToastManager.shared.showError(
+                    "Mission Failed",
+                    subtitle: "Consolation: +\(result.expGained) EXP"
                 )
             }
         }
@@ -165,9 +248,51 @@ struct MissionsView: View {
     private func seedSampleMissionsIfNeeded() {
         guard missions.isEmpty else { return }
         
-        for sample in SampleMissions.all {
-            modelContext.insert(sample)
+        // Prefer server-driven mission definitions from ContentManager
+        let cm = ContentManager.shared
+        if cm.isLoaded && !cm.missions.isEmpty {
+            for cm_mission in cm.missions.filter({ $0.active }) {
+                if let mission = buildMission(from: cm_mission) {
+                    modelContext.insert(mission)
+                }
+            }
+        } else {
+            for sample in SampleMissions.all {
+                modelContext.insert(sample)
+            }
+            // Also seed rank-up training courses
+            for rankUp in SampleMissions.allRankUpTraining {
+                modelContext.insert(rankUp)
+            }
         }
+    }
+    
+    /// Convert a ContentMission (server-driven) to a SwiftData AFKMission
+    private func buildMission(from cm: ContentMission) -> AFKMission? {
+        let missionType = MissionType(rawValue: cm.missionType.capitalized) ?? .exploration
+        let rarity = MissionRarity(rawValue: cm.rarity.capitalized) ?? .common
+        let statReqs = cm.statRequirements.compactMap { req -> StatRequirement? in
+            guard let stat = StatType(rawValue: req.stat.capitalized) else { return nil }
+            return StatRequirement(stat: stat, minimum: req.value)
+        }
+        
+        return AFKMission(
+            name: cm.name,
+            description: cm.description,
+            missionType: missionType,
+            rarity: rarity,
+            durationSeconds: cm.durationSeconds,
+            statRequirements: statReqs,
+            levelRequirement: cm.levelRequirement,
+            baseSuccessRate: cm.baseSuccessRate,
+            expReward: cm.expReward,
+            goldReward: cm.goldReward,
+            canDropEquipment: cm.canDropEquipment,
+            classRequirement: cm.classRequirement,
+            trainingStat: cm.trainingStat,
+            isRankUpTraining: cm.isRankUpTraining ?? false,
+            rankUpTargetClass: cm.rankUpTargetClass
+        )
     }
 }
 
@@ -201,11 +326,18 @@ struct ActiveMissionDetailCard: View {
             
             VStack(spacing: 16) {
                 HStack {
+                    Image(mission.missionType.thumbnailImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color("AccentGold").opacity(0.4), lineWidth: 1)
+                        )
+                    
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Image(systemName: mission.missionType.icon)
-                                .foregroundColor(Color("AccentGold"))
-                                .symbolEffect(.pulse, options: .repeating)
                             Text("Active Training")
                                 .font(.custom("Avenir-Heavy", size: 14))
                                 .foregroundColor(Color("AccentGold"))
@@ -394,20 +526,32 @@ struct MissionCardContent: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            // Mission Type Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(mission.rarity.color).opacity(0.2))
-                    .frame(width: 56, height: 56)
-                
-                Image(systemName: mission.missionType.icon)
-                    .font(.title2)
-                    .foregroundColor(Color(mission.rarity.color))
-            }
+            // Mission Thumbnail
+            Image(mission.missionType.thumbnailImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color(mission.rarity.color).opacity(0.4), lineWidth: 1.5)
+                )
             
             // Mission Info
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
+                    if mission.isRankUpTraining {
+                        Text("RANK UP")
+                            .font(.custom("Avenir-Heavy", size: 10))
+                            .foregroundColor(Color("AccentPurple"))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color("AccentPurple").opacity(0.2))
+                            )
+                    }
+                    
                     Text(mission.rarity.rawValue)
                         .font(.custom("Avenir-Heavy", size: 10))
                         .foregroundColor(Color(mission.rarity.color))
@@ -417,6 +561,7 @@ struct MissionCardContent: View {
                             Capsule()
                                 .fill(Color(mission.rarity.color).opacity(0.2))
                         )
+                        .rarityShimmer(mission.rarity)
                     
                     Text("Lv.\(mission.levelRequirement)+")
                         .font(.custom("Avenir-Medium", size: 10))
@@ -425,7 +570,7 @@ struct MissionCardContent: View {
                 
                 Text(mission.name)
                     .font(.custom("Avenir-Heavy", size: 16))
-                    .foregroundColor(meetsRequirements ? .primary : .secondary)
+                    .foregroundColor(meetsRequirements ? (mission.isRankUpTraining ? Color("AccentPurple") : .primary) : .secondary)
                 
                 HStack(spacing: 12) {
                     HStack(spacing: 4) {
@@ -464,6 +609,12 @@ struct MissionCardContent: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color("CardBackground"))
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        )
+        .overlay(
+            mission.isRankUpTraining
+            ? RoundedRectangle(cornerRadius: 16)
+                .stroke(Color("AccentPurple").opacity(0.4), lineWidth: 1.5)
+            : nil
         )
         .opacity(meetsRequirements || isActive ? 1.0 : 0.6)
     }
@@ -557,15 +708,16 @@ struct TrainingDetailView: View {
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Color(mission.rarity.color).opacity(0.2))
-                    .frame(width: 100, height: 100)
-                
-                Image(systemName: mission.missionType.icon)
-                    .font(.system(size: 50))
-                    .foregroundColor(Color(mission.rarity.color))
-            }
+            Image(mission.missionType.thumbnailImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 100, height: 100)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color(mission.rarity.color).opacity(0.5), lineWidth: 2)
+                )
+                .shadow(color: Color(mission.rarity.color).opacity(0.3), radius: 8, x: 0, y: 4)
             
             Text(mission.name)
                 .font(.custom("Avenir-Heavy", size: 28))
@@ -580,6 +732,7 @@ struct TrainingDetailView: View {
                         Capsule()
                             .fill(Color(mission.rarity.color).opacity(0.2))
                     )
+                    .rarityShimmer(mission.rarity)
                 
                 Text(mission.missionType.rawValue)
                     .font(.custom("Avenir-Heavy", size: 12))
@@ -638,8 +791,8 @@ struct TrainingDetailView: View {
             
             Divider().opacity(0.3)
             
-            // Stat Reward (NEW)
-            let primaryStat = mission.missionType.primaryStat
+            // Stat Reward — prefer explicit trainingStat, fall back to missionType primaryStat
+            let primaryStat = mission.trainingStatType ?? mission.missionType.primaryStat
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -984,6 +1137,15 @@ struct MissionCompletionView: View {
                                     ))
                             }
                             
+                            // Rank-Up Banner
+                            if let newClass = result.rankedUpToClass {
+                                rankUpBannerView(newClass: newClass)
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.5).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
+                            
                             // Rewards Card
                             rewardsCardView
                             
@@ -1046,9 +1208,15 @@ struct MissionCompletionView: View {
     
     private var titleView: some View {
         VStack(spacing: 6) {
-            Text(result.success ? "Training Complete!" : "Training Failed")
-                .font(.custom("Avenir-Heavy", size: 28))
-                .foregroundColor(.white)
+            if result.rankedUpToClass != nil && result.success {
+                Text("Rank-Up Complete!")
+                    .font(.custom("Avenir-Heavy", size: 28))
+                    .foregroundColor(.white)
+            } else {
+                Text(result.success ? "Training Complete!" : "Training Failed")
+                    .font(.custom("Avenir-Heavy", size: 28))
+                    .foregroundColor(.white)
+            }
             
             if result.success {
                 Text("+\(result.expGained) EXP  •  +\(result.goldGained) Gold")
@@ -1166,6 +1334,47 @@ struct MissionCompletionView: View {
         )
     }
     
+    // MARK: - Rank-Up Banner
+    
+    private func rankUpBannerView(newClass: CharacterClass) -> some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 24))
+                    .foregroundColor(Color("AccentPurple"))
+                
+                Text("CLASS RANK UP!")
+                    .font(.custom("Avenir-Heavy", size: 24))
+                    .foregroundColor(Color("AccentPurple"))
+            }
+            
+            HStack(spacing: 8) {
+                Image(systemName: newClass.icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(Color("AccentGold"))
+                Text("You are now a \(newClass.rawValue)!")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                    .foregroundColor(.white)
+            }
+            
+            Text(newClass.description)
+                .font(.custom("Avenir-Medium", size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("AccentPurple").opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("AccentPurple").opacity(0.4), lineWidth: 1.5)
+                )
+        )
+    }
+    
     // MARK: - Rewards Card
     
     private var rewardsCardView: some View {
@@ -1213,6 +1422,18 @@ struct MissionCompletionView: View {
                     iconColor: Color("AccentPurple"),
                     label: "Item Found!",
                     value: itemName,
+                    valueColor: Color("AccentPurple")
+                )
+                .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
+            }
+            
+            // Research Token drop row
+            if result.researchTokensDropped > 0 {
+                rewardItemRow(
+                    icon: "book.closed.fill",
+                    iconColor: Color("AccentPurple"),
+                    label: "Research Token\(result.researchTokensDropped > 1 ? "s" : "")",
+                    value: "+\(result.researchTokensDropped)",
                     valueColor: Color("AccentPurple")
                 )
                 .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
@@ -1626,72 +1847,420 @@ struct TipRow: View {
 
 struct SampleMissions {
     static var all: [AFKMission] {
+        warriorTraining + mageTraining + archerTraining + universalTraining
+    }
+    
+    /// Filter training for a specific class line
+    static func forClassLine(_ classLine: String) -> [AFKMission] {
+        let classSpecific: [AFKMission]
+        switch classLine {
+        case "warrior": classSpecific = warriorTraining
+        case "mage": classSpecific = mageTraining
+        case "archer": classSpecific = archerTraining
+        default: classSpecific = []
+        }
+        return classSpecific + universalTraining
+    }
+    
+    // MARK: - Warrior Line (Warrior / Berserker / Paladin)
+    
+    static var warriorTraining: [AFKMission] {
         [
             AFKMission(
-                name: "Forest Patrol",
-                description: "Scout the nearby forest for any signs of trouble. A simple task for beginners.",
-                missionType: .exploration,
-                rarity: .common,
-                durationSeconds: 3600, // 1 hour
-                statRequirements: [],
-                levelRequirement: 1,
-                baseSuccessRate: 0.9,
-                expReward: 50,
-                goldReward: 25
-            ),
-            AFKMission(
-                name: "Goblin Skirmish",
-                description: "A small group of goblins has been spotted. Clear them out!",
+                name: "Strength Training",
+                description: "Lift heavy stones and swing weighted weapons to build raw power.",
                 missionType: .combat,
                 rarity: .common,
-                durationSeconds: 7200, // 2 hours
-                statRequirements: [StatRequirement(stat: .strength, minimum: 8)],
-                levelRequirement: 3,
-                baseSuccessRate: 0.8,
-                expReward: 100,
-                goldReward: 60
+                durationSeconds: 1800, // 30 min
+                levelRequirement: 1,
+                baseSuccessRate: 0.95,
+                expReward: 20,
+                goldReward: 5,
+                classRequirement: "warrior",
+                trainingStat: "Strength"
             ),
             AFKMission(
-                name: "Ancient Library Research",
-                description: "Study the ancient tomes in the library to uncover forgotten knowledge.",
+                name: "Sparring Practice",
+                description: "Trade blows with a training dummy to sharpen your combat instincts.",
+                missionType: .combat,
+                rarity: .common,
+                durationSeconds: 3600, // 1 hour
+                statRequirements: [StatRequirement(stat: .strength, minimum: 6)],
+                levelRequirement: 3,
+                baseSuccessRate: 0.90,
+                expReward: 40,
+                goldReward: 10,
+                classRequirement: "warrior",
+                trainingStat: "Strength"
+            ),
+            AFKMission(
+                name: "Shield Wall Drills",
+                description: "Practice holding the line against repeated impacts. Your defense will grow.",
+                missionType: .combat,
+                rarity: .uncommon,
+                durationSeconds: 7200, // 2 hours
+                statRequirements: [StatRequirement(stat: .defense, minimum: 8)],
+                levelRequirement: 8,
+                baseSuccessRate: 0.85,
+                expReward: 80,
+                goldReward: 20,
+                classRequirement: "warrior",
+                trainingStat: "Defense"
+            ),
+            AFKMission(
+                name: "Endurance March",
+                description: "A grueling long-distance march in full armor. Builds both strength and willpower.",
+                missionType: .combat,
+                rarity: .uncommon,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [StatRequirement(stat: .strength, minimum: 12)],
+                levelRequirement: 15,
+                baseSuccessRate: 0.80,
+                expReward: 150,
+                goldReward: 40,
+                classRequirement: "warrior",
+                trainingStat: "Strength"
+            ),
+            AFKMission(
+                name: "Battle Conditioning",
+                description: "An intense combat regimen that pushes your body to its absolute limit.",
+                missionType: .combat,
+                rarity: .rare,
+                durationSeconds: 28800, // 8 hours
+                statRequirements: [
+                    StatRequirement(stat: .strength, minimum: 18),
+                    StatRequirement(stat: .defense, minimum: 14)
+                ],
+                levelRequirement: 25,
+                baseSuccessRate: 0.70,
+                expReward: 300,
+                goldReward: 80,
+                classRequirement: "warrior",
+                trainingStat: "Strength"
+            )
+        ]
+    }
+    
+    // MARK: - Mage Line (Mage / Sorcerer / Enchanter)
+    
+    static var mageTraining: [AFKMission] {
+        [
+            AFKMission(
+                name: "Study Magic",
+                description: "Pore over basic spell tomes to deepen your arcane understanding.",
+                missionType: .research,
+                rarity: .common,
+                durationSeconds: 1800, // 30 min
+                levelRequirement: 1,
+                baseSuccessRate: 0.95,
+                expReward: 20,
+                goldReward: 5,
+                classRequirement: "mage",
+                trainingStat: "Wisdom"
+            ),
+            AFKMission(
+                name: "Arcane Research",
+                description: "Study ancient scrolls and practice rune-drawing to refine your magical knowledge.",
+                missionType: .research,
+                rarity: .common,
+                durationSeconds: 3600, // 1 hour
+                statRequirements: [StatRequirement(stat: .wisdom, minimum: 6)],
+                levelRequirement: 3,
+                baseSuccessRate: 0.90,
+                expReward: 40,
+                goldReward: 10,
+                classRequirement: "mage",
+                trainingStat: "Wisdom"
+            ),
+            AFKMission(
+                name: "Enchantment Practice",
+                description: "Practice weaving enchantments into objects. Strengthens your force of personality.",
+                missionType: .research,
+                rarity: .uncommon,
+                durationSeconds: 7200, // 2 hours
+                statRequirements: [StatRequirement(stat: .charisma, minimum: 8)],
+                levelRequirement: 8,
+                baseSuccessRate: 0.85,
+                expReward: 80,
+                goldReward: 20,
+                classRequirement: "mage",
+                trainingStat: "Charisma"
+            ),
+            AFKMission(
+                name: "Elemental Attunement",
+                description: "Meditate on the primal forces of nature to attune your mind to deeper magic.",
                 missionType: .research,
                 rarity: .uncommon,
                 durationSeconds: 14400, // 4 hours
                 statRequirements: [StatRequirement(stat: .wisdom, minimum: 12)],
-                levelRequirement: 5,
-                baseSuccessRate: 0.75,
-                expReward: 200,
-                goldReward: 100,
-                canDropEquipment: true
-            ),
-            AFKMission(
-                name: "Merchant Negotiations",
-                description: "Negotiate a trade deal with traveling merchants for the village.",
-                missionType: .negotiation,
-                rarity: .uncommon,
-                durationSeconds: 10800, // 3 hours
-                statRequirements: [StatRequirement(stat: .charisma, minimum: 10)],
-                levelRequirement: 5,
-                baseSuccessRate: 0.7,
+                levelRequirement: 15,
+                baseSuccessRate: 0.80,
                 expReward: 150,
-                goldReward: 150,
-                canDropEquipment: true
+                goldReward: 40,
+                classRequirement: "mage",
+                trainingStat: "Wisdom"
             ),
             AFKMission(
-                name: "Dragon's Lair Expedition",
-                description: "Venture into the dragon's lair to recover ancient treasures. Extremely dangerous!",
-                missionType: .exploration,
-                rarity: .epic,
+                name: "Deep Meditation",
+                description: "Enter a trance-like state of intense focus, pushing the boundaries of your intellect.",
+                missionType: .research,
+                rarity: .rare,
                 durationSeconds: 28800, // 8 hours
                 statRequirements: [
-                    StatRequirement(stat: .strength, minimum: 20),
-                    StatRequirement(stat: .dexterity, minimum: 18)
+                    StatRequirement(stat: .wisdom, minimum: 18),
+                    StatRequirement(stat: .charisma, minimum: 14)
                 ],
+                levelRequirement: 25,
+                baseSuccessRate: 0.70,
+                expReward: 300,
+                goldReward: 80,
+                classRequirement: "mage",
+                trainingStat: "Wisdom"
+            )
+        ]
+    }
+    
+    // MARK: - Archer Line (Archer / Ranger / Trickster)
+    
+    static var archerTraining: [AFKMission] {
+        [
+            AFKMission(
+                name: "Target Practice",
+                description: "Fire arrows at targets from increasing distances to sharpen your aim.",
+                missionType: .stealth,
+                rarity: .common,
+                durationSeconds: 1800, // 30 min
+                levelRequirement: 1,
+                baseSuccessRate: 0.95,
+                expReward: 20,
+                goldReward: 5,
+                classRequirement: "archer",
+                trainingStat: "Dexterity"
+            ),
+            AFKMission(
+                name: "Agility Drills",
+                description: "Sprint, dodge, and roll through an obstacle course to build speed and reflexes.",
+                missionType: .stealth,
+                rarity: .common,
+                durationSeconds: 3600, // 1 hour
+                statRequirements: [StatRequirement(stat: .dexterity, minimum: 6)],
+                levelRequirement: 3,
+                baseSuccessRate: 0.90,
+                expReward: 40,
+                goldReward: 10,
+                classRequirement: "archer",
+                trainingStat: "Dexterity"
+            ),
+            AFKMission(
+                name: "Stealth Training",
+                description: "Move unseen through dense terrain. Sharpens both agility and awareness.",
+                missionType: .stealth,
+                rarity: .uncommon,
+                durationSeconds: 7200, // 2 hours
+                statRequirements: [StatRequirement(stat: .dexterity, minimum: 8)],
+                levelRequirement: 8,
+                baseSuccessRate: 0.85,
+                expReward: 80,
+                goldReward: 20,
+                classRequirement: "archer",
+                trainingStat: "Dexterity"
+            ),
+            AFKMission(
+                name: "Wilderness Survival",
+                description: "Spend time in the wild relying on instinct and resourcefulness.",
+                missionType: .exploration,
+                rarity: .uncommon,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [StatRequirement(stat: .luck, minimum: 10)],
                 levelRequirement: 15,
-                baseSuccessRate: 0.5,
-                expReward: 1000,
-                goldReward: 500,
-                canDropEquipment: true
+                baseSuccessRate: 0.80,
+                expReward: 150,
+                goldReward: 40,
+                classRequirement: "archer",
+                trainingStat: "Luck"
+            ),
+            AFKMission(
+                name: "Precision Focus",
+                description: "An exhaustive regimen of trick shots and reaction drills. Only the sharpest survive.",
+                missionType: .stealth,
+                rarity: .rare,
+                durationSeconds: 28800, // 8 hours
+                statRequirements: [
+                    StatRequirement(stat: .dexterity, minimum: 18),
+                    StatRequirement(stat: .luck, minimum: 14)
+                ],
+                levelRequirement: 25,
+                baseSuccessRate: 0.70,
+                expReward: 300,
+                goldReward: 80,
+                classRequirement: "archer",
+                trainingStat: "Dexterity"
+            )
+        ]
+    }
+    
+    // MARK: - Universal Training (any class)
+    
+    static var universalTraining: [AFKMission] {
+        [
+            AFKMission(
+                name: "Basic Conditioning",
+                description: "A general fitness routine. Good for any aspiring adventurer.",
+                missionType: .exploration,
+                rarity: .common,
+                durationSeconds: 1800, // 30 min
+                levelRequirement: 1,
+                baseSuccessRate: 0.95,
+                expReward: 15,
+                goldReward: 5,
+                trainingStat: "Dexterity"
+            ),
+            AFKMission(
+                name: "Luck Meditation",
+                description: "Clear your mind and open yourself to fortune's favor.",
+                missionType: .gathering,
+                rarity: .uncommon,
+                durationSeconds: 3600, // 1 hour
+                levelRequirement: 5,
+                baseSuccessRate: 0.85,
+                expReward: 30,
+                goldReward: 10,
+                trainingStat: "Luck"
+            )
+        ]
+    }
+    
+    // MARK: - Rank-Up Training Courses (Class Evolution Trials)
+    
+    static var allRankUpTraining: [AFKMission] {
+        warriorRankUp + mageRankUp + archerRankUp
+    }
+    
+    static var warriorRankUp: [AFKMission] {
+        [
+            AFKMission(
+                name: "Trial of Fury",
+                description: "Channel your rage through a brutal gauntlet of combat. Only those with overwhelming strength and speed may walk the path of the Berserker.",
+                missionType: .combat,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .strength, minimum: 15),
+                    StatRequirement(stat: .dexterity, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "warrior",
+                trainingStat: "Strength",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Berserker"
+            ),
+            AFKMission(
+                name: "Trial of the Shield",
+                description: "Endure an endless onslaught without breaking. Only those with iron defense and raw power earn the title of Paladin.",
+                missionType: .combat,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .defense, minimum: 15),
+                    StatRequirement(stat: .strength, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "warrior",
+                trainingStat: "Defense",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Paladin"
+            )
+        ]
+    }
+    
+    static var mageRankUp: [AFKMission] {
+        [
+            AFKMission(
+                name: "Arcane Ascension Trial",
+                description: "Unravel the deepest mysteries of arcane power. Only a mind of extraordinary wisdom and fortune's favor may ascend to Sorcerer.",
+                missionType: .research,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .wisdom, minimum: 15),
+                    StatRequirement(stat: .luck, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "mage",
+                trainingStat: "Wisdom",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Sorcerer"
+            ),
+            AFKMission(
+                name: "Enchanter's Exam",
+                description: "Weave intricate enchantments under immense pressure. Only those with magnetic charisma and deep knowledge become Enchanters.",
+                missionType: .research,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .charisma, minimum: 15),
+                    StatRequirement(stat: .wisdom, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "mage",
+                trainingStat: "Charisma",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Enchanter"
+            )
+        ]
+    }
+    
+    static var archerRankUp: [AFKMission] {
+        [
+            AFKMission(
+                name: "Ranger's Rite",
+                description: "Survive alone in the deepest wilderness using only your reflexes and instinct. The ultimate test for a Ranger.",
+                missionType: .stealth,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .dexterity, minimum: 15),
+                    StatRequirement(stat: .luck, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "archer",
+                trainingStat: "Dexterity",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Ranger"
+            ),
+            AFKMission(
+                name: "Trickster's Trial",
+                description: "Outsmart a gauntlet of traps and riddles. Only the luckiest and most nimble earn the title of Trickster.",
+                missionType: .stealth,
+                rarity: .epic,
+                durationSeconds: 14400, // 4 hours
+                statRequirements: [
+                    StatRequirement(stat: .luck, minimum: 15),
+                    StatRequirement(stat: .dexterity, minimum: 12)
+                ],
+                levelRequirement: 20,
+                baseSuccessRate: 0.65,
+                expReward: 500,
+                goldReward: 100,
+                classRequirement: "archer",
+                trainingStat: "Luck",
+                isRankUpTraining: true,
+                rankUpTargetClass: "Trickster"
             )
         ]
     }

@@ -5,6 +5,7 @@ import CoreMotion
 /// A sheet that handles task verification (photo proof and/or location check-in)
 struct TaskVerificationView: View {
     @Bindable var task: GameTask
+    var characterLevel: Int = 1
     @Environment(\.dismiss) private var dismiss
     
     /// Called when verification is complete and task should be finished
@@ -376,7 +377,7 @@ struct TaskVerificationView: View {
     private var rewardPreview: some View {
         HStack(spacing: 0) {
             VStack(spacing: 4) {
-                Text("+\(Int(Double(task.expReward) * task.verificationMultiplier))")
+                Text("+\(Int(Double(task.scaledExpReward(characterLevel: characterLevel)) * task.verificationMultiplier))")
                     .font(.custom("Avenir-Heavy", size: 22))
                     .foregroundColor(Color("AccentGold"))
                 Text("EXP")
@@ -390,7 +391,7 @@ struct TaskVerificationView: View {
                 .frame(width: 1, height: 40)
             
             VStack(spacing: 4) {
-                Text("+\(Int(Double(task.goldReward) * task.verificationMultiplier))")
+                Text("+\(Int(Double(task.scaledGoldReward(characterLevel: characterLevel)) * task.verificationMultiplier))")
                     .font(.custom("Avenir-Heavy", size: 22))
                     .foregroundColor(Color("AccentGold"))
                 Text("Gold")

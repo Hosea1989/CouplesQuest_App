@@ -127,6 +127,7 @@ struct LevelUpCelebrationView: View {
     private var consolidatedRewards: [RewardDisplay] {
         var displays: [RewardDisplay] = []
         
+        // Stat points
         let statPoints = rewards.filter { $0 == .statPoint }.count
         if statPoints > 0 {
             displays.append(RewardDisplay(
@@ -136,6 +137,7 @@ struct LevelUpCelebrationView: View {
             ))
         }
         
+        // Gold
         let totalGold = rewards.compactMap { reward -> Int? in
             if case .gold(let amount) = reward { return amount }
             return nil
@@ -148,10 +150,57 @@ struct LevelUpCelebrationView: View {
             ))
         }
         
+        // Gems
+        let totalGems = rewards.compactMap { reward -> Int? in
+            if case .gems(let amount) = reward { return amount }
+            return nil
+        }.reduce(0, +)
+        if totalGems > 0 {
+            displays.append(RewardDisplay(
+                icon: "diamond.fill",
+                text: "+\(totalGems) Gem\(totalGems == 1 ? "" : "s")",
+                color: "AccentPurple"
+            ))
+        }
+        
+        // Equipment drops
+        for reward in rewards {
+            if case .equipment(let name, let rarity) = reward {
+                displays.append(RewardDisplay(
+                    icon: "shield.fill",
+                    text: name,
+                    color: rarity.color
+                ))
+            }
+        }
+        
+        // Consumables
+        for reward in rewards {
+            if case .consumable(let name) = reward {
+                displays.append(RewardDisplay(
+                    icon: "cross.vial.fill",
+                    text: name,
+                    color: "AccentGreen"
+                ))
+            }
+        }
+        
+        // Crafting materials
+        for reward in rewards {
+            if case .craftingMaterial(let name, let qty) = reward {
+                displays.append(RewardDisplay(
+                    icon: "cube.fill",
+                    text: "+\(qty) \(name)",
+                    color: "AccentOrange"
+                ))
+            }
+        }
+        
+        // Class evolution — rank-up courses unlocked in Training
         if rewards.contains(.classEvolution) {
             displays.append(RewardDisplay(
                 icon: "arrow.up.forward.circle.fill",
-                text: "Class Evolution Available!",
+                text: "Rank-Up Courses Unlocked!",
                 color: "AccentGold"
             ))
         }

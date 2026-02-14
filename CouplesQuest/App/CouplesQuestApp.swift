@@ -1,8 +1,39 @@
 import SwiftUI
 import SwiftData
+import OneSignalFramework
+import Supabase
+
+// MARK: - AppDelegate for OneSignal Initialization
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Read the OneSignal App ID from Info.plist (set via Secrets.xcconfig)
+        let appId = Bundle.main.object(forInfoDictionaryKey: "OneSignalAppId") as? String ?? ""
+        
+        // Initialize OneSignal with verbose logging for debug builds
+        #if DEBUG
+        OneSignal.Debug.setLogLevel(.LL_VERBOSE)
+        #endif
+        
+        OneSignal.initialize(appId, withLaunchOptions: launchOptions)
+        
+        // Request push permission (will show the system prompt once)
+        OneSignal.Notifications.requestPermission({ accepted in
+            print("📬 Push permission accepted: \(accepted)")
+        }, fallbackToSettings: true)
+        
+        return true
+    }
+    
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        // OneSignal handles this automatically, but we keep the callback for completeness
+    }
+}
 
 @main
-struct CouplesQuestApp: App {
+struct SwordsAndChoresApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     let modelContainer: ModelContainer
     
     init() {
@@ -23,7 +54,10 @@ struct CouplesQuestApp: App {
             WeeklyRaidBoss.self,
             ArenaRun.self,
             CraftingMaterial.self,
-            Consumable.self
+            Consumable.self,
+            MoodEntry.self,
+            Goal.self,
+            MonsterCard.self
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -42,6 +76,10 @@ struct CouplesQuestApp: App {
             let url = modelConfiguration.url
             let fileManager = FileManager.default
             let storePath = url.path(percentEncoded: false)
+            
+            // Clear any UserDefaults-persisted state that references old models
+            // (e.g. ActiveMission timer from a now-deleted character)
+            ActiveMission.clearPersisted()
             
             // Remove the main store file and all related side-car files
             for suffix in ["", "-shm", "-wal"] {
@@ -73,13 +111,195 @@ struct CouplesQuestApp: App {
         }
     }
     
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var gameEngine = GameEngine()
+    
+    /// Realtime channels for partner sync (kept alive while app is open)
+    @State private var partnerTaskChannel: RealtimeChannelV2?
+    @State private var partnerProfileChannel: RealtimeChannelV2?
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(GameEngine())
+            AuthGateView()
+                .environmentObject(gameEngine)
                 .preferredColorScheme(.dark)
+                .onAppear {
+                    // Daily reset notification removed — it's noise, not useful (§21)
+                    PushNotificationService.shared.cancelDailyReset()
+                    
+                    // Load server-driven content (public read — no auth required)
+                    Task {
+                        await ContentManager.shared.loadContent()
+                    }
+                }
         }
         .modelContainer(modelContainer)
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                onAppBecameActive()
+            case .background, .inactive:
+                syncCharacterToCloud()
+            @unknown default:
+                break
+            }
+        }
+    }
+    
+    /// Called when the app returns to the foreground.
+    /// Cancels re-engagement notifications, fetches incoming partner tasks,
+    /// refreshes partner data, and triggers cloud sync.
+    private func onAppBecameActive() {
+        // Cancel any pending re-engagement notifications — user is back!
+        PushNotificationService.shared.cancelReengagementNotifications()
+        
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PlayerCharacter>()
+        guard let character = try? context.fetch(descriptor).first else { return }
+        guard SupabaseService.shared.isAuthenticated else { return }
+        
+        // NOTE: Do NOT update lastActiveAt here — it must stay as the last
+        // streak-checked date so updateStreak() can detect day boundaries.
+        // updateStreak() sets lastActiveAt after the streak logic runs.
+        
+        Task {
+            // 0. Pull from cloud and merge with local on launch
+            await SyncManager.shared.pullAndMerge(context: context)
+            
+            // 0.5. One-time bulk upload for existing users who haven't synced yet
+            if !SyncManager.shared.hasCompletedInitialSync {
+                let taskDescriptor = FetchDescriptor<GameTask>()
+                let goalDescriptor = FetchDescriptor<Goal>()
+                let moodDescriptor = FetchDescriptor<MoodEntry>()
+                let bondDescriptor = FetchDescriptor<Bond>()
+                
+                let tasks = (try? context.fetch(taskDescriptor)) ?? []
+                let goals = (try? context.fetch(goalDescriptor)) ?? []
+                let moods = (try? context.fetch(moodDescriptor)) ?? []
+                let bonds = (try? context.fetch(bondDescriptor)) ?? []
+                
+                await SyncManager.shared.performInitialSync(
+                    character: character,
+                    tasks: tasks,
+                    goals: goals,
+                    moodEntries: moods,
+                    bonds: bonds
+                )
+            }
+            
+            // 1. Re-fetch own profile to detect partner_id changes (e.g. accepted request)
+            await SupabaseService.shared.fetchProfile()
+            if !character.hasPartner, let partnerID = SupabaseService.shared.currentProfile?.partnerID {
+                // Our request was accepted while app was in background — link locally
+                if let partnerProfile = try? await SupabaseService.shared.fetchProfile(byID: partnerID) {
+                    let pairingData = PairingData(
+                        characterID: partnerID.uuidString,
+                        name: partnerProfile.characterName ?? "Adventurer",
+                        level: partnerProfile.level ?? 1,
+                        characterClass: partnerProfile.characterClass,
+                        partyID: nil,
+                        avatarName: partnerProfile.avatarName
+                    )
+                    character.linkPartner(data: pairingData)
+                    
+                    let bondDescriptor = FetchDescriptor<Bond>()
+                    let bonds = (try? context.fetch(bondDescriptor)) ?? []
+                    if bonds.isEmpty {
+                        let newBond = Bond(memberIDs: [character.id, partnerID])
+                        context.insert(newBond)
+                    } else if let existingBond = bonds.first {
+                        existingBond.addMember(partnerID)
+                    }
+                    try? context.save()
+                    print("✅ Partner linked on app foreground (partner: \(partnerProfile.characterName ?? "unknown"))")
+                }
+            }
+            
+            // 2. Fetch incoming partner tasks from cloud → create local GameTasks
+            await gameEngine.fetchIncomingPartnerTasks(context: context)
+            
+            // 3. Refresh cached partner profile data (level, stats, class)
+            await gameEngine.refreshPartnerData(character: character)
+            
+            // 4. Set up Realtime subscriptions if not already active
+            await setupRealtimeSubscriptions(context: context)
+        }
+    }
+    
+    /// Set up Realtime subscriptions for instant partner task delivery and profile updates.
+    private func setupRealtimeSubscriptions(context: ModelContext) async {
+        // Only set up if not already subscribed
+        if partnerTaskChannel == nil {
+            partnerTaskChannel = await SupabaseService.shared.subscribeToPartnerTasks { cloudTask in
+                // Check for duplicates before inserting
+                let descriptor = FetchDescriptor<GameTask>()
+                let localTasks = (try? context.fetch(descriptor)) ?? []
+                let existingCloudIDs = Set(localTasks.compactMap { $0.cloudID })
+                
+                let cloudIDString = cloudTask.id.uuidString
+                guard !existingCloudIDs.contains(cloudIDString) else { return }
+                
+                let localTask = GameEngine.createLocalTask(from: cloudTask)
+                context.insert(localTask)
+                try? context.save()
+                print("📡 Realtime: Received partner task '\(cloudTask.title)'")
+            }
+        }
+        
+        if partnerProfileChannel == nil {
+            let descriptor = FetchDescriptor<PlayerCharacter>()
+            guard let character = try? context.fetch(descriptor).first else { return }
+            
+            partnerProfileChannel = await SupabaseService.shared.subscribeToPartnerProfile { profile in
+                character.partnerName = profile.characterName
+                character.partnerLevel = profile.level
+                character.partnerClassName = profile.characterClass
+                
+                if let snapshot = profile.characterData {
+                    let total = snapshot.strength + snapshot.wisdom + snapshot.charisma +
+                                snapshot.dexterity + snapshot.luck + snapshot.defense
+                    character.partnerStatTotal = total
+                }
+                print("📡 Realtime: Partner profile updated — \(profile.characterName ?? "?") Lv.\(profile.level ?? 0)")
+            }
+        }
+    }
+    
+    /// Sync the local character to the cloud when the app goes to background.
+    /// Flushes the SyncManager queue, does a comprehensive character sync,
+    /// and schedules re-engagement push notifications.
+    private func syncCharacterToCloud() {
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PlayerCharacter>()
+        guard let character = try? context.fetch(descriptor).first else {
+            print("⚠️ syncCharacterToCloud: No local character found")
+            return
+        }
+        guard SupabaseService.shared.isAuthenticated else {
+            print("⚠️ syncCharacterToCloud: Not authenticated, skipping sync")
+            return
+        }
+        
+        // Schedule re-engagement notifications (will fire if user doesn't come back)
+        PushNotificationService.shared.scheduleReengagementNotifications(
+            characterName: character.name,
+            notificationsSentThisLapse: character.reengagementNotificationsSent
+        )
+        
+        Task {
+            // 1. Flush the SyncManager queue (achievements, tasks, goals, mood, etc.)
+            await SyncManager.shared.flush()
+            
+            // 2. Comprehensive character data sync
+            do {
+                try await SupabaseService.shared.syncCharacterData(character)
+                try await SupabaseService.shared.syncDailyState(character)
+                character.lastSyncTimestamp = Date()
+                print("✅ Character synced to cloud: \(character.name) Lv.\(character.level)")
+            } catch {
+                print("❌ Failed to sync character to cloud: \(error)")
+            }
+        }
     }
 }
 

@@ -32,12 +32,22 @@ struct RaidBossView: View {
                 if let boss = currentBoss {
                     bossCard(boss: boss)
                     
+                    // Boss modifier info
+                    if let modName = boss.modifierName, !modName.isEmpty {
+                        modifierCard(name: modName, description: boss.modifierDescription ?? "")
+                    }
+                    
                     if boss.isDefeated {
                         victorySection(boss: boss)
                     } else if boss.isExpired {
                         expiredSection(boss: boss)
                     } else {
                         attackSection(boss: boss)
+                    }
+                    
+                    // Boss loot preview
+                    if !boss.isDefeated {
+                        lootPreviewCard(boss: boss)
                     }
                     
                     attackLogSection(boss: boss)
@@ -93,6 +103,15 @@ struct RaidBossView: View {
                     Text("Weekly Raid Boss")
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(.secondary)
+                    
+                    if boss.partyScaleFactor > 1.0 {
+                        Text("×\(String(format: "%.1f", boss.partyScaleFactor)) Party")
+                            .font(.custom("Avenir-Heavy", size: 10))
+                            .foregroundColor(Color("AccentPink"))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color("AccentPink").opacity(0.15)))
+                    }
                 }
             }
             
@@ -165,6 +184,88 @@ struct RaidBossView: View {
         .padding(.horizontal)
     }
     
+    // MARK: - Modifier Card
+    
+    @ViewBuilder
+    private func modifierCard(name: String, description: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(Color("AccentOrange"))
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Boss Modifier: \(name)")
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(Color("AccentOrange"))
+                Text(description)
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color("AccentOrange").opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color("AccentOrange").opacity(0.2), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Loot Preview Card
+    
+    @ViewBuilder
+    private func lootPreviewCard(boss: WeeklyRaidBoss) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "gift.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("Defeat Rewards")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+            }
+            
+            HStack(spacing: 16) {
+                lootItem(icon: "sparkles", label: "+\(WeeklyRaidBoss.expReward(tier: boss.tier)) EXP", color: "AccentGold")
+                lootItem(icon: "dollarsign.circle", label: "+\(WeeklyRaidBoss.goldReward(tier: boss.tier)) Gold", color: "AccentGold")
+            }
+            
+            HStack(spacing: 16) {
+                lootItem(icon: "cross.vial.fill", label: "Guaranteed consumable", color: "AccentGreen")
+                lootItem(icon: "shield.fill", label: "15-25% rare+ equip", color: "RarityRare")
+            }
+            
+            HStack(spacing: 16) {
+                lootItem(icon: "rectangle.portrait.fill", label: "Boss-exclusive card", color: "AccentPurple")
+                if character?.hasPartner == true {
+                    lootItem(icon: "heart.fill", label: "+\(WeeklyRaidBoss.bondExpReward(tier: boss.tier)) Bond EXP", color: "AccentPink")
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
+        .padding(.horizontal)
+    }
+    
+    @ViewBuilder
+    private func lootItem(icon: String, label: String, color: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(Color(color))
+            Text(label)
+                .font(.custom("Avenir-Medium", size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+    
     // MARK: - Attack Section
     
     @ViewBuilder
@@ -188,7 +289,7 @@ struct RaidBossView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "person.2.fill")
                             .foregroundColor(Color("AccentPink"))
-                        Text("Link a partner to team up against the raid boss!")
+                        Text("Form a party to team up against the raid boss!")
                             .font(.custom("Avenir-Medium", size: 13))
                             .foregroundColor(.secondary)
                     }
@@ -274,6 +375,20 @@ struct RaidBossView: View {
                 .font(.custom("Avenir-Medium", size: 14))
                 .foregroundColor(.secondary)
                 
+                HStack {
+                    Image(systemName: "cross.vial.fill")
+                    Text("Guaranteed consumable")
+                }
+                .font(.custom("Avenir-Medium", size: 14))
+                .foregroundColor(Color("AccentGreen"))
+                
+                HStack {
+                    Image(systemName: "rectangle.portrait.fill")
+                    Text("Boss-exclusive card")
+                }
+                .font(.custom("Avenir-Medium", size: 14))
+                .foregroundColor(Color("AccentPurple"))
+                
                 if character?.hasPartner == true {
                     HStack {
                         Image(systemName: "heart.fill")
@@ -292,6 +407,9 @@ struct RaidBossView: View {
                         bond: bond,
                         context: modelContext
                     )
+                    AudioManager.shared.play(.claimReward)
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
                 } label: {
                     HStack {
                         Image(systemName: "gift.fill")
@@ -424,7 +542,12 @@ struct RaidBossView: View {
             let avgLevel = character.level
             let tier = WeeklyRaidBoss.tierForLevel(avgLevel)
             let weekEnd = WeeklyRaidBoss.currentWeekEnd()
-            let newBoss = WeeklyRaidBoss.generate(tier: tier, weekStart: weekStart, weekEnd: weekEnd)
+            
+            // Determine party size for HP scaling
+            let partyCount = max(1, (character.partyMembers.count > 0 ? character.partyMembers.count + 1 : (character.hasPartner ? 2 : 1)))
+            
+            // TODO: Load template from ContentManager when available
+            let newBoss = WeeklyRaidBoss.generate(tier: tier, weekStart: weekStart, weekEnd: weekEnd, partyMemberCount: partyCount)
             modelContext.insert(newBoss)
         }
     }
@@ -437,6 +560,11 @@ struct RaidBossView: View {
         )
         
         if let result = result {
+            // Heavy impact haptic for boss attack
+            let generator = UIImpactFeedbackGenerator(style: .heavy)
+            generator.impactOccurred()
+            AudioManager.shared.play(.dungeonComplete)
+            
             withAnimation(.easeInOut(duration: 0.15)) {
                 showAttackAnimation = true
                 lastAttackDamage = result.damage
@@ -445,6 +573,15 @@ struct RaidBossView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation {
                     showAttackAnimation = false
+                }
+            }
+            
+            // If boss was just defeated, play victory sound
+            if result.bossDefeated {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    AudioManager.shared.play(.levelUp)
+                    let victoryGenerator = UINotificationFeedbackGenerator()
+                    victoryGenerator.notificationOccurred(.success)
                 }
             }
             

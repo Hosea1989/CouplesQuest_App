@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// View showing partner's completed tasks awaiting confirmation
+/// View showing party members' completed tasks awaiting confirmation (any member can verify)
 struct PendingConfirmationsView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var gameEngine: GameEngine
@@ -17,13 +17,14 @@ struct PendingConfirmationsView: View {
     private var character: PlayerCharacter? { characters.first }
     private var bond: Bond? { bonds.first }
     
-    /// Fetch all tasks pending partner confirmation that were created by the current user's partner
+    /// Fetch all tasks pending confirmation that were completed by ANY party member (not self).
+    /// Any party member can now verify — not just the assigner.
     private var pendingTasks: [GameTask] {
         guard let character = character else { return [] }
         let characterID = character.id
+        let partyMemberIDs = Set(character.allPartyMemberIDs)
         
         // Fetch tasks where pendingPartnerConfirmation is true
-        // and the task was NOT completed by this character (it's the partner's task)
         let descriptor = FetchDescriptor<GameTask>(
             predicate: #Predicate<GameTask> { task in
                 task.pendingPartnerConfirmation == true
@@ -32,8 +33,11 @@ struct PendingConfirmationsView: View {
         )
         
         let tasks = (try? modelContext.fetch(descriptor)) ?? []
-        // Filter: only show tasks where the completer is NOT us (i.e., we're the confirmer)
-        return tasks.filter { $0.completedBy != nil && $0.completedBy != characterID }
+        // Filter: show tasks completed by any party member that's NOT us
+        return tasks.filter { task in
+            guard let completedBy = task.completedBy else { return false }
+            return completedBy != characterID && partyMemberIDs.contains(completedBy)
+        }
     }
     
     var body: some View {
@@ -66,7 +70,7 @@ struct PendingConfirmationsView: View {
             TextField("Reason (optional)", text: $disputeReason)
             Button("Dispute", role: .destructive) {
                 if let task = selectedTask {
-                    gameEngine.disputePartnerTask(task, reason: disputeReason.isEmpty ? nil : disputeReason)
+                    gameEngine.disputePartnerTask(task, character: character!, reason: disputeReason.isEmpty ? nil : disputeReason)
                     disputeReason = ""
                 }
             }
@@ -111,14 +115,14 @@ struct PendingConfirmationsView: View {
     private var headerSection: some View {
         VStack(spacing: 8) {
             HStack {
-                Image(systemName: "person.2.circle.fill")
+                Image(systemName: "person.3.fill")
                     .font(.title2)
                     .foregroundColor(Color("AccentGold"))
-                Text("Partner's Completed Tasks")
+                Text("Party Completions")
                     .font(.custom("Avenir-Heavy", size: 18))
             }
             
-            Text("Review and confirm your partner's task completions")
+            Text("Review and confirm your allies' task completions")
                 .font(.custom("Avenir-Medium", size: 13))
                 .foregroundColor(.secondary)
         }

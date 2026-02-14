@@ -37,8 +37,8 @@ final class AFKMission {
     /// Gold reward on success
     var goldReward: Int
     
-    /// Possible item drops
-    var possibleDrops: [String] // Equipment IDs
+    /// Possible item drops (stored as JSON string for SwiftData compatibility)
+    var possibleDropsJSON: String
     
     /// Whether this training can drop equipment on success
     var canDropEquipment: Bool
@@ -48,6 +48,19 @@ final class AFKMission {
     
     /// When does this mission expire (rotating missions)
     var expiresAt: Date?
+    
+    /// Which class line this training is for: "warrior", "mage", "archer", or nil for universal.
+    /// Warrior line = Warrior, Berserker, Paladin. Mage line = Mage, Sorcerer, Enchanter. Archer line = Archer, Ranger, Trickster.
+    var classRequirement: String?
+    
+    /// The stat that this training primarily boosts on success
+    var trainingStat: String?
+    
+    /// Whether this is a rank-up training course (class evolution trial)
+    var isRankUpTraining: Bool
+    
+    /// The advanced class this rank-up course unlocks on success (e.g. "Berserker", "Sorcerer")
+    var rankUpTargetClass: String?
     
     init(
         name: String,
@@ -63,7 +76,11 @@ final class AFKMission {
         possibleDrops: [String] = [],
         canDropEquipment: Bool = false,
         isAvailable: Bool = true,
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil,
+        classRequirement: String? = nil,
+        trainingStat: String? = nil,
+        isRankUpTraining: Bool = false,
+        rankUpTargetClass: String? = nil
     ) {
         self.id = UUID()
         self.name = name
@@ -76,10 +93,24 @@ final class AFKMission {
         self.baseSuccessRate = baseSuccessRate
         self.expReward = expReward
         self.goldReward = goldReward
-        self.possibleDrops = possibleDrops
+        self.possibleDropsJSON = (try? String(data: JSONEncoder().encode(possibleDrops), encoding: .utf8)) ?? "[]"
         self.canDropEquipment = canDropEquipment
         self.isAvailable = isAvailable
         self.expiresAt = expiresAt
+        self.classRequirement = classRequirement
+        self.trainingStat = trainingStat
+        self.isRankUpTraining = isRankUpTraining
+        self.rankUpTargetClass = rankUpTargetClass
+    }
+    
+    /// Decoded possible drops array
+    var possibleDrops: [String] {
+        get {
+            (try? JSONDecoder().decode([String].self, from: Data(possibleDropsJSON.utf8))) ?? []
+        }
+        set {
+            possibleDropsJSON = (try? String(data: JSONEncoder().encode(newValue), encoding: .utf8)) ?? "[]"
+        }
     }
     
     /// Equipment loot tier based on rarity (used with LootGenerator)
@@ -141,11 +172,30 @@ final class AFKMission {
         return min(rate, 0.99) // Cap at 99%
     }
     
-    /// Check if character meets requirements
+    /// The StatType this training boosts (derived from trainingStat string)
+    var trainingStatType: StatType? {
+        guard let raw = trainingStat else { return nil }
+        return StatType(rawValue: raw.capitalized) ?? StatType(rawValue: raw)
+    }
+    
+    /// The CharacterClass this rank-up course unlocks (derived from rankUpTargetClass string)
+    var targetClass: CharacterClass? {
+        guard let raw = rankUpTargetClass else { return nil }
+        return CharacterClass(rawValue: raw)
+    }
+    
+    /// Check if character meets requirements (level, stats, and class)
     func meetsRequirements(character: PlayerCharacter) -> Bool {
         // Check level
         if character.level < levelRequirement {
             return false
+        }
+        
+        // Check class requirement
+        if let required = classRequirement, let charClass = character.characterClass {
+            if charClass.classLine.rawValue != required {
+                return false
+            }
         }
         
         // Check stats
@@ -180,6 +230,9 @@ final class ActiveMission: Codable {
     /// When the mission will complete
     var completesAt: Date
     
+    /// Type of mission (for thumbnail display)
+    var missionType: MissionType?
+    
     /// Has the reward been claimed?
     var rewardClaimed: Bool
     
@@ -196,6 +249,7 @@ final class ActiveMission: Codable {
     enum CodingKeys: String, CodingKey {
         case id, missionID, characterID, startedAt, completesAt
         case rewardClaimed, wasSuccessful, earnedEXP, earnedGold, earnedItemID
+        case missionType
     }
     
     init(from decoder: Decoder) throws {
@@ -203,6 +257,7 @@ final class ActiveMission: Codable {
         id = try container.decode(UUID.self, forKey: .id)
         missionID = try container.decode(UUID.self, forKey: .missionID)
         characterID = try container.decode(UUID.self, forKey: .characterID)
+        missionType = try container.decodeIfPresent(MissionType.self, forKey: .missionType)
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         completesAt = try container.decode(Date.self, forKey: .completesAt)
         rewardClaimed = try container.decode(Bool.self, forKey: .rewardClaimed)
@@ -217,6 +272,7 @@ final class ActiveMission: Codable {
         try container.encode(id, forKey: .id)
         try container.encode(missionID, forKey: .missionID)
         try container.encode(characterID, forKey: .characterID)
+        try container.encodeIfPresent(missionType, forKey: .missionType)
         try container.encode(startedAt, forKey: .startedAt)
         try container.encode(completesAt, forKey: .completesAt)
         try container.encode(rewardClaimed, forKey: .rewardClaimed)
@@ -232,6 +288,7 @@ final class ActiveMission: Codable {
         self.id = UUID()
         self.missionID = mission.id
         self.characterID = characterID
+        self.missionType = mission.missionType
         self.startedAt = Date()
         self.completesAt = Date().addingTimeInterval(TimeInterval(mission.durationSeconds))
         self.rewardClaimed = false
@@ -317,6 +374,18 @@ enum MissionType: String, Codable, CaseIterable {
         }
     }
     
+    /// AI-generated thumbnail image asset name
+    var thumbnailImage: String {
+        switch self {
+        case .combat: return "mission_combat"
+        case .exploration: return "mission_exploration"
+        case .research: return "mission_research"
+        case .negotiation: return "mission_negotiation"
+        case .stealth: return "mission_stealth"
+        case .gathering: return "mission_gathering"
+        }
+    }
+    
     /// Primary stat for this mission type
     var primaryStat: StatType {
         switch self {
@@ -361,7 +430,7 @@ enum MissionRarity: String, Codable, CaseIterable {
 }
 
 /// Stat requirement for missions
-struct StatRequirement: Codable {
+struct StatRequirement: Codable, Hashable {
     var stat: StatType
     var minimum: Int
 }

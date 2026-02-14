@@ -1,9 +1,57 @@
 import Foundation
 import SwiftData
 
+// MARK: - Raid Boss Template
+
+/// Server-driven raid boss template (loaded from content_raids via ContentManager)
+struct RaidBossTemplate: Codable, Identifiable {
+    var id: String
+    var name: String
+    var description: String
+    var icon: String
+    var theme: String
+    var modifierName: String
+    var modifierDescription: String
+    var modifierStatPenalty: String?
+    var modifierPenaltyValue: Double
+    var modifierStatBonus: String?
+    var modifierBonusValue: Double
+    var baseHPPerTier: Int
+    var goldRewardPerTier: Int
+    var expRewardPerTier: Int
+    var guaranteedConsumable: String?
+    var equipDropChance: Double
+    var uniqueCardID: String?
+    
+    /// Apply boss modifier to a damage value based on stat type
+    func modifiedDamage(_ baseDamage: Int, statType: String?) -> Int {
+        guard let stat = statType else { return baseDamage }
+        var multiplier = 1.0
+        if let penalty = modifierStatPenalty, penalty == stat {
+            multiplier -= modifierPenaltyValue
+        }
+        if let bonus = modifierStatBonus, bonus == stat {
+            multiplier += modifierBonusValue
+        }
+        return max(1, Int(Double(baseDamage) * multiplier))
+    }
+}
+
+// MARK: - Raid Boss Loot Result
+
+/// What a player receives on raid boss defeat
+struct RaidBossLootResult {
+    let gold: Int
+    let exp: Int
+    let bondExp: Int
+    let guaranteedConsumable: String?
+    let equipmentDropped: Bool
+    let uniqueCardID: String?
+}
+
 // MARK: - Weekly Raid Boss
 
-/// A weekly raid boss that partners chip away at by completing tasks
+/// A weekly raid boss that party members chip away at by completing tasks
 @Model
 final class WeeklyRaidBoss {
     /// Unique identifier
@@ -18,7 +66,7 @@ final class WeeklyRaidBoss {
     /// SF Symbol icon
     var icon: String
     
-    /// Boss tier (1-5), scales with average partner level
+    /// Boss tier (infinite: tier = ceil(avg party level / 10))
     var tier: Int
     
     /// Maximum hit points
@@ -42,27 +90,49 @@ final class WeeklyRaidBoss {
     /// Whether rewards have been claimed
     var rewardsClaimed: Bool
     
+    /// Boss template ID (from content_raids)
+    var templateID: String?
+    
+    /// Boss modifier name
+    var modifierName: String?
+    
+    /// Boss modifier description
+    var modifierDescription: String?
+    
+    /// Party size factor used for HP scaling (stored at generation time)
+    var partyScaleFactor: Double
+    
     init(
         name: String,
         description: String,
         icon: String,
         tier: Int,
         weekStartDate: Date,
-        weekEndDate: Date
+        weekEndDate: Date,
+        partyScaleFactor: Double = 1.0,
+        templateID: String? = nil,
+        modifierName: String? = nil,
+        modifierDescription: String? = nil,
+        baseHPPerTier: Int = 3000
     ) {
         self.id = UUID()
         self.name = name
         self.bossDescription = description
         self.icon = icon
-        let clampedTier = max(1, min(5, tier))
-        self.tier = clampedTier
-        self.maxHP = 3000 * clampedTier
-        self.currentHP = 3000 * clampedTier
+        self.tier = max(1, tier)
+        // HP = base_hp × tier × party_factor
+        let scaledHP = Int(Double(baseHPPerTier * max(1, tier)) * partyScaleFactor)
+        self.maxHP = scaledHP
+        self.currentHP = scaledHP
         self.weekStartDate = weekStartDate
         self.weekEndDate = weekEndDate
         self.isDefeated = false
         self.attackLog = []
         self.rewardsClaimed = false
+        self.templateID = templateID
+        self.modifierName = modifierName
+        self.modifierDescription = modifierDescription
+        self.partyScaleFactor = partyScaleFactor
     }
     
     /// HP percentage remaining (0.0 - 1.0)
@@ -114,14 +184,55 @@ final class WeeklyRaidBoss {
     /// Maximum attacks per player per day
     static let dailyAttackCap: Int = 5
     
+    /// Party HP scaling factors (sublinear: solo=1x, 2=1.8x, 3=2.4x, 4=3.0x)
+    static func partyScaleFactor(memberCount: Int) -> Double {
+        switch max(1, memberCount) {
+        case 1: return 1.0
+        case 2: return 1.8
+        case 3: return 2.4
+        case 4: return 3.0
+        default: return 3.0
+        }
+    }
+    
+    // MARK: - Rewards
+    
     /// EXP reward per tier on defeat
     static func expReward(tier: Int) -> Int { tier * 200 }
     
-    /// Gold reward per tier on defeat
-    static func goldReward(tier: Int) -> Int { tier * 150 }
+    /// Gold reward per tier on defeat (scales: 200-500 by tier per design doc)
+    static func goldReward(tier: Int) -> Int {
+        let base = 150
+        return base + tier * 50
+    }
     
     /// Bond EXP reward per tier on defeat
     static func bondExpReward(tier: Int) -> Int { tier * 15 }
+    
+    /// Calculate loot for boss defeat using template
+    static func lootResult(tier: Int, template: RaidBossTemplate?) -> RaidBossLootResult {
+        let t = template ?? RaidBossTemplate(
+            id: "default", name: "", description: "", icon: "",
+            theme: "general", modifierName: "", modifierDescription: "",
+            modifierPenaltyValue: 0, modifierBonusValue: 0,
+            baseHPPerTier: 3000, goldRewardPerTier: 150,
+            expRewardPerTier: 200, equipDropChance: 0.20
+        )
+        
+        let gold = t.goldRewardPerTier * tier
+        let exp = t.expRewardPerTier * tier
+        let bondExp = tier * 15
+        let equipDropped = Double.random(in: 0...1) <= t.equipDropChance
+        
+        return RaidBossLootResult(
+            gold: gold,
+            exp: exp,
+            bondExp: bondExp,
+            guaranteedConsumable: t.guaranteedConsumable,
+            equipmentDropped: equipDropped,
+            uniqueCardID: t.uniqueCardID
+        )
+    }
     
     // MARK: - Damage Formula
     
@@ -135,8 +246,33 @@ final class WeeklyRaidBoss {
     
     // MARK: - Boss Generation
     
-    /// Generate a new weekly raid boss for the given tier
-    static func generate(tier: Int, weekStart: Date, weekEnd: Date) -> WeeklyRaidBoss {
+    /// Generate a new weekly raid boss from a server template
+    static func generateFromTemplate(
+        _ template: RaidBossTemplate,
+        tier: Int,
+        weekStart: Date,
+        weekEnd: Date,
+        partyMemberCount: Int = 1
+    ) -> WeeklyRaidBoss {
+        let scaleFactor = partyScaleFactor(memberCount: partyMemberCount)
+        
+        return WeeklyRaidBoss(
+            name: template.name,
+            description: template.description,
+            icon: template.icon,
+            tier: tier,
+            weekStartDate: weekStart,
+            weekEndDate: weekEnd,
+            partyScaleFactor: scaleFactor,
+            templateID: template.id,
+            modifierName: template.modifierName,
+            modifierDescription: template.modifierDescription,
+            baseHPPerTier: template.baseHPPerTier
+        )
+    }
+    
+    /// Generate a new weekly raid boss from the hardcoded fallback pool
+    static func generate(tier: Int, weekStart: Date, weekEnd: Date, partyMemberCount: Int = 1) -> WeeklyRaidBoss {
         let bosses: [(name: String, description: String, icon: String)] = [
             ("Gorrath the Undying", "An ancient lich whose dark magic drains the life from all who oppose him.", "flame.circle.fill"),
             ("Vexara, Queen of Thorns", "A corrupted nature spirit whose venomous thorns spread across the land.", "leaf.circle.fill"),
@@ -149,6 +285,7 @@ final class WeeklyRaidBoss {
         ]
         
         let boss = bosses[Int.random(in: 0..<bosses.count)]
+        let scaleFactor = partyScaleFactor(memberCount: partyMemberCount)
         
         return WeeklyRaidBoss(
             name: boss.name,
@@ -156,7 +293,8 @@ final class WeeklyRaidBoss {
             icon: boss.icon,
             tier: tier,
             weekStartDate: weekStart,
-            weekEndDate: weekEnd
+            weekEndDate: weekEnd,
+            partyScaleFactor: scaleFactor
         )
     }
     
@@ -176,9 +314,9 @@ final class WeeklyRaidBoss {
         return calendar.date(byAdding: .day, value: 7, to: weekStart)?.addingTimeInterval(-1) ?? weekStart
     }
     
-    /// Calculate boss tier from partner levels
+    /// Calculate boss tier from average party level (infinite: tier = ceil(avgLevel / 10))
     static func tierForLevel(_ averageLevel: Int) -> Int {
-        max(1, min(5, averageLevel / 10))
+        max(1, Int(ceil(Double(averageLevel) / 10.0)))
     }
 }
 

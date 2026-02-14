@@ -9,15 +9,35 @@ struct AchievementTracker {
         character.achievements = AchievementDefinitions.allAchievements()
     }
     
-    /// Check all achievements and update progress based on current character state
-    static func checkAll(character: PlayerCharacter) {
+    /// Check all achievements and update progress based on current character state.
+    /// Returns any achievements that were newly unlocked during this check.
+    /// Syncs newly unlocked achievements to the cloud via SyncManager.
+    @discardableResult
+    static func checkAll(character: PlayerCharacter) -> [Achievement] {
+        var newlyUnlocked: [Achievement] = []
         for achievement in character.achievements where !achievement.isUnlocked {
             let currentValue = getCurrentValue(
                 for: achievement.trackingKey,
                 character: character
             )
+            let wasPreviouslyUnlocked = achievement.isUnlocked
             achievement.updateProgress(currentValue: currentValue)
+            if achievement.isUnlocked && !wasPreviouslyUnlocked {
+                newlyUnlocked.append(achievement)
+            }
         }
+        
+        // Sync all updated achievements to cloud via SyncManager (on main actor)
+        let achievementsToSync = character.achievements
+        Task { @MainActor in
+            if let userID = SupabaseService.shared.currentUserID {
+                for achievement in achievementsToSync {
+                    SyncManager.shared.queueAchievementSync(achievement, playerID: userID)
+                }
+            }
+        }
+        
+        return newlyUnlocked
     }
     
     /// Get the current value for a tracking key based on character state
@@ -64,6 +84,20 @@ struct AchievementTracker {
         case .skillMaster:
             // Skills have been migrated to Bond perks — this achievement is retired
             return 0
+            
+        // Wellness Milestones
+        case .innerPeace:
+            return character.meditationStreak
+            
+        case .selfAware:
+            return character.moodStreak
+            
+        case .zenMaster:
+            return character.meditationStreak
+            
+        // Rebirth Milestones
+        case .reborn, .eternal:
+            return character.rebirthCount
         }
     }
     

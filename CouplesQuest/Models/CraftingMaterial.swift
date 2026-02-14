@@ -68,6 +68,9 @@ enum MaterialType: String, Codable, CaseIterable {
     /// Obtained by dismantling equipment
     case fragment = "Fragment"
     
+    /// Earned exclusively from AFK missions — used for the Research Tree
+    case researchToken = "Research Token"
+    
     var displayName: String { rawValue }
     
     var icon: String {
@@ -78,6 +81,7 @@ enum MaterialType: String, Codable, CaseIterable {
         case .hide: return "leaf.fill"
         case .herb: return "laurel.leading"
         case .fragment: return "square.stack.3d.up.fill"
+        case .researchToken: return "book.closed.fill"
         }
     }
     
@@ -89,6 +93,7 @@ enum MaterialType: String, Codable, CaseIterable {
         case .hide: return "StatDexterity"
         case .herb: return "AccentGreen"
         case .fragment: return "StatDexterity"
+        case .researchToken: return "AccentPurple"
         }
     }
     
@@ -101,6 +106,7 @@ enum MaterialType: String, Codable, CaseIterable {
         case .hide: return "Found in dungeon trap and boss rooms"
         case .herb: return "Gathered from AFK missions"
         case .fragment: return "Obtained by dismantling equipment"
+        case .researchToken: return "Earned exclusively from AFK missions"
         }
     }
 }
@@ -158,6 +164,30 @@ struct ForgeRecipe {
     ]
     
     static func recipe(forTier tier: Int) -> ForgeRecipe? {
-        recipes.first { $0.tier == tier }
+        // Use server-driven recipes when on main thread
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { activeRecipes() }.first { $0.tier == tier }
+        }
+        return recipes.first { $0.tier == tier }
+    }
+    
+    /// Active recipes — server-driven from ContentManager with static fallback.
+    @MainActor
+    static func activeRecipes() -> [ForgeRecipe] {
+        let cm = ContentManager.shared
+        if cm.isLoaded && !cm.forgeRecipes.isEmpty {
+            return cm.activeForgeRecipes(type: "craft").map { cr in
+                ForgeRecipe(
+                    tier: cr.tier,
+                    resultRarityRange: "\(cr.outputRarityMin.capitalized) — \(cr.outputRarityMax.capitalized)",
+                    essenceCost: cr.essenceCost,
+                    materialCost: cr.materialCost,
+                    materialMinRarity: ItemRarity(rawValue: cr.materialMinRarity.lowercased()) ?? .common,
+                    fragmentCost: cr.fragmentCost,
+                    goldCost: cr.goldCost
+                )
+            }
+        }
+        return recipes
     }
 }

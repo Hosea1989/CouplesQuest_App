@@ -37,6 +37,15 @@ struct AchievementDefinitions {
         // Class Milestones
         case specialized = "specialized"
         case skillMaster = "skill_master"
+        
+        // Wellness Milestones
+        case innerPeace = "inner_peace"
+        case selfAware = "self_aware"
+        case zenMaster = "zen_master"
+        
+        // Rebirth Milestones
+        case reborn = "reborn"
+        case eternal = "eternal"
     }
     
     /// All achievement definitions
@@ -217,6 +226,59 @@ struct AchievementDefinitions {
                 rewardAmount: 10,
                 trackingKey: AchievementKey.legendaryCollector.rawValue,
                 targetValue: 1
+            )
+        ])
+        
+        // MARK: - Wellness Milestones
+        achievements.append(contentsOf: [
+            Achievement(
+                name: "Inner Peace",
+                description: "Meditate for 7 consecutive days",
+                icon: "leaf.fill",
+                rewardType: .exp,
+                rewardAmount: 300,
+                trackingKey: AchievementKey.innerPeace.rawValue,
+                targetValue: 7
+            ),
+            Achievement(
+                name: "Self-Aware",
+                description: "Log your mood for 30 consecutive days",
+                icon: "heart.text.square.fill",
+                rewardType: .gold,
+                rewardAmount: 1000,
+                trackingKey: AchievementKey.selfAware.rawValue,
+                targetValue: 30
+            ),
+            Achievement(
+                name: "Zen Master",
+                description: "Meditate for 30 consecutive days",
+                icon: "sparkles",
+                rewardType: .gems,
+                rewardAmount: 10,
+                trackingKey: AchievementKey.zenMaster.rawValue,
+                targetValue: 30
+            )
+        ])
+        
+        // MARK: - Rebirth Milestones
+        achievements.append(contentsOf: [
+            Achievement(
+                name: "Reborn",
+                description: "Complete your first Rebirth",
+                icon: "arrow.trianglehead.2.counterclockwise.rotate.90",
+                rewardType: .gold,
+                rewardAmount: 500,
+                trackingKey: AchievementKey.reborn.rawValue,
+                targetValue: 1
+            ),
+            Achievement(
+                name: "Eternal",
+                description: "Complete 5 Rebirths",
+                icon: "star.circle.fill",
+                rewardType: .gems,
+                rewardAmount: 50,
+                trackingKey: AchievementKey.eternal.rawValue,
+                targetValue: 5
             )
         ])
         

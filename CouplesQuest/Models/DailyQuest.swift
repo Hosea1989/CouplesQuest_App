@@ -111,14 +111,53 @@ enum DailyQuestType: String, Codable {
     case earnGold = "Earn Gold"
     /// Have an active streak of N days
     case maintainStreak = "Maintain Streak"
+    // --- 7 New Quest Types (§27) ---
+    /// Forge or enhance an item
+    case forgeItem = "Forge Item"
+    /// Use a consumable item
+    case useConsumable = "Use Consumable"
+    /// Reach wave N in the Arena
+    case completeArenaWave = "Arena Wave"
+    /// Log your mood today
+    case checkMood = "Check Mood"
+    /// Complete a duty board task
+    case completeDuty = "Complete Duty"
+    /// Complete a task within 1 hour of a party member
+    case partyTaskSync = "Party Sync"
+    /// Attempt content that can drop a card (dungeon/arena/raid)
+    case attemptCardContent = "Card Content"
+    
+    /// Map from server quest_type string to local enum
+    static func from(serverType: String) -> DailyQuestType? {
+        switch serverType {
+        case "completeTasks": return .completeTasks
+        case "completeCategory": return .completeCategory
+        case "startTraining": return .startMission
+        case "clearDungeonRooms": return .clearDungeonRooms
+        case "earnExp": return .earnEXP
+        case "earnGold": return .earnGold
+        case "maintainStreak": return .maintainStreak
+        case "forgeItem": return .forgeItem
+        case "useConsumable": return .useConsumable
+        case "completeArenaWave": return .completeArenaWave
+        case "checkMood": return .checkMood
+        case "completeDuty": return .completeDuty
+        case "partyTaskSync": return .partyTaskSync
+        case "attemptCardContent": return .attemptCardContent
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Quest Pool / Templates
 
-/// Generates daily quests scaled by character level
+/// Generates daily quests scaled by character level.
+/// Prefers server-driven templates from ContentManager (content_quests table)
+/// and falls back to hardcoded templates if ContentManager hasn't loaded.
 struct DailyQuestPool {
     
     /// Generate 3 quests + 1 bonus quest for a character
+    @MainActor
     static func generateQuests(for character: PlayerCharacter) -> [DailyQuest] {
         let level = character.level
         let pool = availableTemplates(for: level)
@@ -141,6 +180,9 @@ struct DailyQuestPool {
             selected.append(shuffled.removeFirst())
         }
         
+        // Apply level multiplier to rewards
+        let lvlMult = max(1, level / 10 + 1)
+        
         var quests = selected.map { template in
             DailyQuest(
                 title: template.title,
@@ -149,8 +191,8 @@ struct DailyQuestPool {
                 questType: template.type,
                 questParam: template.param,
                 targetValue: template.target,
-                expReward: template.expReward,
-                goldReward: template.goldReward,
+                expReward: template.expReward * lvlMult,
+                goldReward: template.goldReward * lvlMult,
                 characterID: character.id
             )
         }
@@ -188,10 +230,69 @@ struct DailyQuestPool {
         let goldReward: Int
     }
     
+    /// Build template pool — server-driven (ContentManager) with hardcoded fallback.
+    @MainActor
     private static func availableTemplates(for level: Int) -> [QuestTemplate] {
-        var templates: [QuestTemplate] = []
+        let cm = ContentManager.shared
         
-        // --- Always available ---
+        // Try server-driven quest definitions first
+        if cm.isLoaded && !cm.quests.isEmpty {
+            return serverDrivenTemplates(for: level, from: cm)
+        }
+        
+        // Fallback to hardcoded templates
+        return hardcodedTemplates(for: level)
+    }
+    
+    /// Build templates from ContentManager's server-driven quest definitions.
+    @MainActor
+    private static func serverDrivenTemplates(for level: Int, from cm: ContentManager) -> [QuestTemplate] {
+        let regular = cm.activeQuests(forLevel: level, isBonus: false)
+        
+        // Weighted random selection — higher weight = more likely
+        return regular.compactMap { quest in
+            guard let type = DailyQuestType.from(serverType: quest.questType) else { return nil }
+            let icon = iconFor(questType: type, category: quest.targetCategory)
+            return QuestTemplate(
+                title: quest.title,
+                description: quest.description,
+                icon: icon,
+                type: type,
+                param: quest.targetCategory,
+                target: quest.targetValue,
+                expReward: quest.rewardExp,
+                goldReward: quest.rewardGold
+            )
+        }
+    }
+    
+    /// Icon mapping for quest types
+    private static func iconFor(questType: DailyQuestType, category: String?) -> String {
+        switch questType {
+        case .completeTasks: return "checkmark.circle.fill"
+        case .completeCategory:
+            if let cat = category, let tc = TaskCategory(rawValue: cat.capitalized) {
+                return tc.icon
+            }
+            return "list.bullet"
+        case .startMission: return "figure.strengthtraining.traditional"
+        case .clearDungeonRooms: return "shield.lefthalf.filled"
+        case .earnEXP: return "sparkles"
+        case .earnGold: return "dollarsign.circle.fill"
+        case .maintainStreak: return "flame.fill"
+        case .forgeItem: return "hammer.fill"
+        case .useConsumable: return "cross.vial.fill"
+        case .completeArenaWave: return "figure.fencing"
+        case .checkMood: return "heart.text.square.fill"
+        case .completeDuty: return "clipboard.fill"
+        case .partyTaskSync: return "person.2.fill"
+        case .attemptCardContent: return "rectangle.stack.fill"
+        }
+    }
+    
+    /// Hardcoded template fallback (original implementation).
+    private static func hardcodedTemplates(for level: Int) -> [QuestTemplate] {
+        var templates: [QuestTemplate] = []
         
         let taskCount = level < 6 ? 2 : (level < 16 ? 3 : 5)
         templates.append(QuestTemplate(
@@ -205,7 +306,6 @@ struct DailyQuestPool {
             goldReward: taskCount * 8
         ))
         
-        // Category quests — pick a random category
         let category = TaskCategory.allCases.randomElement()!
         templates.append(QuestTemplate(
             title: "\(category.rawValue) Focus",
@@ -218,7 +318,6 @@ struct DailyQuestPool {
             goldReward: 10
         ))
         
-        // EXP earning
         let expTarget = level < 6 ? 50 : (level < 16 ? 100 : 200)
         templates.append(QuestTemplate(
             title: "EXP Hunter",
@@ -231,7 +330,6 @@ struct DailyQuestPool {
             goldReward: 15
         ))
         
-        // Gold earning
         let goldTarget = level < 6 ? 25 : (level < 16 ? 60 : 120)
         templates.append(QuestTemplate(
             title: "Gold Rush",
@@ -244,7 +342,6 @@ struct DailyQuestPool {
             goldReward: 20
         ))
         
-        // Streak quest
         if level >= 3 {
             templates.append(QuestTemplate(
                 title: "Streak Keeper",
@@ -256,12 +353,6 @@ struct DailyQuestPool {
                 expReward: 15,
                 goldReward: 10
             ))
-        }
-        
-        // --- Level-gated ---
-        
-        // Mission quest (level 3+)
-        if level >= 3 {
             templates.append(QuestTemplate(
                 title: "Training Session",
                 description: "Start an AFK training session",
@@ -274,7 +365,6 @@ struct DailyQuestPool {
             ))
         }
         
-        // Dungeon room quest (level 5+)
         if level >= 5 {
             let roomCount = level < 16 ? 1 : 2
             templates.append(QuestTemplate(
@@ -287,8 +377,76 @@ struct DailyQuestPool {
                 expReward: roomCount * 25,
                 goldReward: roomCount * 15
             ))
+            templates.append(QuestTemplate(
+                title: "Forge Ahead",
+                description: "Forge or enhance 1 item",
+                icon: "hammer.fill",
+                type: .forgeItem,
+                param: nil,
+                target: 1,
+                expReward: 30,
+                goldReward: 20
+            ))
+            templates.append(QuestTemplate(
+                title: "How Are You?",
+                description: "Log your mood today",
+                icon: "heart.text.square.fill",
+                type: .checkMood,
+                param: nil,
+                target: 1,
+                expReward: 15,
+                goldReward: 10
+            ))
+            templates.append(QuestTemplate(
+                title: "Duty Bound",
+                description: "Complete a duty board task",
+                icon: "clipboard.fill",
+                type: .completeDuty,
+                param: nil,
+                target: 1,
+                expReward: 20,
+                goldReward: 15
+            ))
+        }
+        
+        if level >= 10 {
+            templates.append(QuestTemplate(
+                title: "Arena Warm-Up",
+                description: "Reach wave 3 in the Arena",
+                icon: "figure.fencing",
+                type: .completeArenaWave,
+                param: nil,
+                target: 3,
+                expReward: 30,
+                goldReward: 25
+            ))
+            templates.append(QuestTemplate(
+                title: "Card Hunter",
+                description: "Attempt content that can drop a card",
+                icon: "rectangle.stack.fill",
+                type: .attemptCardContent,
+                param: nil,
+                target: 1,
+                expReward: 25,
+                goldReward: 20
+            ))
         }
         
         return templates
+    }
+    
+    // MARK: - Weekly Bonus Quest
+    
+    /// Check if the player qualifies for the weekly bonus quest reward.
+    /// Requires completing all 3 daily quests on 5 out of the last 7 days.
+    /// Returns true if the weekly bonus should be awarded.
+    static func checkWeeklyBonusEligibility(completedDays: Int) -> Bool {
+        return completedDays >= 5
+    }
+    
+    /// Weekly bonus rewards: gold + consumable + chance at rare equipment
+    static func weeklyBonusRewards(level: Int) -> (gold: Int, exp: Int) {
+        let lvlMult = max(1, level / 10 + 1)
+        return (gold: 200 * lvlMult, exp: 300 * lvlMult)
     }
 }

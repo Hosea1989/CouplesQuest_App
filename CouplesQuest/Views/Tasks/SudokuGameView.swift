@@ -78,23 +78,97 @@ struct CellPosition: Equatable, Hashable {
     let col: Int
 }
 
+// MARK: - Sudoku Reward Tiers
+
+/// Time-based reward tiers for Sudoku completion.
+/// A typical 38-blank Sudoku takes 5–15 minutes for most players.
+struct SudokuRewardTier {
+    let name: String
+    let icon: String
+    let color: String
+    let gold: Int
+    let consumableName: String
+    let consumableIcon: String
+    let consumableCount: Int
+    let wisdomBonus: Int
+    
+    /// Determine the reward tier based on elapsed seconds
+    static func tier(for elapsedSeconds: Int) -> SudokuRewardTier {
+        let minutes = elapsedSeconds / 60
+        switch minutes {
+        case ..<5:
+            return SudokuRewardTier(
+                name: "Lightning Solve",
+                icon: "bolt.fill",
+                color: "AccentGold",
+                gold: 200,
+                consumableName: "Brain Elixir",
+                consumableIcon: "brain.head.profile.fill",
+                consumableCount: 3,
+                wisdomBonus: 2
+            )
+        case 5..<10:
+            return SudokuRewardTier(
+                name: "Sharp Mind",
+                icon: "sparkles",
+                color: "AccentGreen",
+                gold: 150,
+                consumableName: "Green Tea",
+                consumableIcon: "leaf.fill",
+                consumableCount: 2,
+                wisdomBonus: 1
+            )
+        case 10..<15:
+            return SudokuRewardTier(
+                name: "Steady Solve",
+                icon: "checkmark.seal.fill",
+                color: "AccentOrange",
+                gold: 100,
+                consumableName: "Apple Juice",
+                consumableIcon: "cup.and.saucer.fill",
+                consumableCount: 1,
+                wisdomBonus: 1
+            )
+        default:
+            return SudokuRewardTier(
+                name: "Completed",
+                icon: "checkmark.circle.fill",
+                color: "StatWisdom",
+                gold: 50,
+                consumableName: "Apple Juice",
+                consumableIcon: "cup.and.saucer.fill",
+                consumableCount: 0,
+                wisdomBonus: 1
+            )
+        }
+    }
+    
+    /// All tiers for preview display
+    static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
+        ("Lightning Solve", "< 5 min", 200, "3× Brain Elixir"),
+        ("Sharp Mind", "5–10 min", 150, "2× Green Tea"),
+        ("Steady Solve", "10–15 min", 100, "1× Apple Juice"),
+        ("Completed", "> 15 min", 50, "—"),
+    ]
+}
+
 // MARK: - Isolated Timer View
 
 private struct SudokuTimerView: View {
-    let isGameOver: Bool
-    @State private var elapsedSeconds = 0
+    @Binding var elapsedSeconds: Int
+    let isStopped: Bool
     
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "clock")
-                .foregroundColor(isGameOver ? .secondary : Color("AccentGold"))
+                .foregroundColor(isStopped ? .secondary : Color("AccentGold"))
             Text(formatted)
                 .font(.custom("Avenir-Heavy", size: 16))
                 .monospacedDigit()
-                .foregroundColor(isGameOver ? .secondary : .primary)
+                .foregroundColor(isStopped ? .secondary : .primary)
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            if !isGameOver {
+            if !isStopped {
                 elapsedSeconds += 1
             }
         }
@@ -110,7 +184,8 @@ private struct SudokuTimerView: View {
 // MARK: - Sudoku Game View
 
 struct SudokuGameView: View {
-    let onComplete: () -> Void
+    /// Callback with elapsed seconds on successful completion
+    let onComplete: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
     
     @State private var puzzle: SudokuPuzzle
@@ -122,6 +197,7 @@ struct SudokuGameView: View {
     @State private var isGameOver = false
     @State private var showOverlay = false
     @State private var mistakeCount = 0
+    @State private var elapsedSeconds: Int = 0
     
     // Animation state
     @State private var flashingCells: Set<String> = []   // cells in a just-completed box
@@ -130,7 +206,12 @@ struct SudokuGameView: View {
     
     private var isEnded: Bool { isSolved || isGameOver }
     
-    init(onComplete: @escaping () -> Void) {
+    /// Computed reward tier based on current elapsed time
+    private var rewardTier: SudokuRewardTier {
+        SudokuRewardTier.tier(for: elapsedSeconds)
+    }
+    
+    init(onComplete: @escaping (Int) -> Void) {
         self.onComplete = onComplete
         let p = SudokuPuzzle.generate(blanks: 38)
         _puzzle = State(initialValue: p)
@@ -160,7 +241,7 @@ struct SudokuGameView: View {
                 VStack(spacing: 16) {
                     // Timer + mistakes
                     HStack {
-                        SudokuTimerView(isGameOver: isEnded)
+                        SudokuTimerView(elapsedSeconds: $elapsedSeconds, isStopped: isEnded)
                         
                         Spacer()
                         
@@ -465,24 +546,43 @@ struct SudokuGameView: View {
     
     // MARK: - Celebration (Win)
     
+    private var timeFormatted: String {
+        let m = elapsedSeconds / 60
+        let s = elapsedSeconds % 60
+        return String(format: "%d:%02d", m, s)
+    }
+    
     private var celebrationOverlay: some View {
-        ZStack {
+        let tier = rewardTier
+        
+        return ZStack {
             Color.black.opacity(0.5)
                 .ignoresSafeArea()
             
-            VStack(spacing: 20) {
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 64))
-                    .foregroundColor(Color("AccentGold"))
-                    .shadow(color: Color("AccentGold").opacity(0.5), radius: 12)
+            VStack(spacing: 16) {
+                Image(systemName: tier.icon)
+                    .font(.system(size: 56))
+                    .foregroundColor(Color(tier.color))
+                    .shadow(color: Color(tier.color).opacity(0.5), radius: 12)
                 
-                Text("Puzzle Solved!")
-                    .font(.custom("Avenir-Heavy", size: 28))
+                Text(tier.name)
+                    .font(.custom("Avenir-Heavy", size: 26))
                 
-                HStack(spacing: 24) {
+                // Time + mistakes summary
+                HStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("Time")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.secondary)
+                        Text(timeFormatted)
+                            .font(.custom("Avenir-Heavy", size: 18))
+                            .monospacedDigit()
+                            .foregroundColor(Color(tier.color))
+                    }
+                    
                     VStack(spacing: 4) {
                         Text("Mistakes")
-                            .font(.custom("Avenir-Medium", size: 13))
+                            .font(.custom("Avenir-Medium", size: 12))
                             .foregroundColor(.secondary)
                         Text("\(mistakeCount)")
                             .font(.custom("Avenir-Heavy", size: 18))
@@ -490,8 +590,59 @@ struct SudokuGameView: View {
                     }
                 }
                 
+                // Rewards earned
+                VStack(spacing: 10) {
+                    Text("REWARDS")
+                        .font(.custom("Avenir-Heavy", size: 11))
+                        .foregroundColor(.secondary)
+                        .tracking(1.5)
+                    
+                    // Gold
+                    HStack {
+                        Image(systemName: "dollarsign.circle.fill")
+                            .foregroundColor(Color("AccentGold"))
+                        Text("Gold")
+                            .font(.custom("Avenir-Medium", size: 15))
+                        Spacer()
+                        Text("+\(tier.gold)")
+                            .font(.custom("Avenir-Heavy", size: 17))
+                            .foregroundColor(Color("AccentGold"))
+                    }
+                    
+                    // Consumable loot
+                    if tier.consumableCount > 0 {
+                        HStack {
+                            Image(systemName: tier.consumableIcon)
+                                .foregroundColor(Color("AccentGreen"))
+                            Text(tier.consumableName)
+                                .font(.custom("Avenir-Medium", size: 15))
+                            Spacer()
+                            Text("×\(tier.consumableCount)")
+                                .font(.custom("Avenir-Heavy", size: 17))
+                                .foregroundColor(Color("AccentGreen"))
+                        }
+                    }
+                    
+                    // Wisdom stat bonus
+                    HStack {
+                        Image(systemName: StatType.wisdom.icon)
+                            .foregroundColor(Color(StatType.wisdom.color))
+                        Text("Wisdom")
+                            .font(.custom("Avenir-Medium", size: 15))
+                        Spacer()
+                        Text("+\(tier.wisdomBonus)")
+                            .font(.custom("Avenir-Heavy", size: 17))
+                            .foregroundColor(Color(StatType.wisdom.color))
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(tier.color).opacity(0.08))
+                )
+                
                 Button {
-                    onComplete()
+                    onComplete(elapsedSeconds)
                     dismiss()
                 } label: {
                     Text("Claim Rewards")
@@ -501,18 +652,18 @@ struct SudokuGameView: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(Color("AccentGold"))
+                                .fill(Color(tier.color == "AccentGold" ? "AccentGold" : tier.color))
                         )
                 }
-                .padding(.horizontal, 40)
-                .padding(.top, 8)
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
             }
-            .padding(32)
+            .padding(24)
             .background(
                 RoundedRectangle(cornerRadius: 24)
                     .fill(Color("CardBackground"))
             )
-            .padding(.horizontal, 32)
+            .padding(.horizontal, 28)
             .transition(.scale.combined(with: .opacity))
         }
     }

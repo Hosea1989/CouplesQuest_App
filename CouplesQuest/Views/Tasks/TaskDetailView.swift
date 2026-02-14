@@ -13,6 +13,7 @@ struct TaskDetailView: View {
     @State private var showCompletionCelebration = false
     @State private var lastCompletionResult: TaskCompletionResult?
     @State private var showTimer = false
+    @State private var showEditTask = false
     
     private var character: PlayerCharacter? {
         characters.first
@@ -64,6 +65,21 @@ struct TaskDetailView: View {
         }
         .navigationTitle("Task Details")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !isCompleted {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showEditTask = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .foregroundColor(Color("AccentGold"))
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showEditTask) {
+            EditTaskView(task: task)
+        }
         .sheet(isPresented: $showCompletionCelebration) {
             if let result = lastCompletionResult {
                 TaskCompletionCelebration(result: result)
@@ -271,7 +287,7 @@ struct TaskDetailView: View {
                             .font(.title3)
                             .foregroundColor(Color("AccentGold"))
                     }
-                    Text("+\(task.expReward)")
+                    Text("+\(task.scaledExpReward(characterLevel: character?.level ?? 1))")
                         .font(.custom("Avenir-Heavy", size: 18))
                         .foregroundColor(Color("AccentGold"))
                     Text("EXP")
@@ -295,7 +311,7 @@ struct TaskDetailView: View {
                             .font(.title3)
                             .foregroundColor(Color("AccentGold"))
                     }
-                    Text("+\(task.goldReward)")
+                    Text("+\(task.scaledGoldReward(characterLevel: character?.level ?? 1))")
                         .font(.custom("Avenir-Heavy", size: 18))
                         .foregroundColor(Color("AccentGold"))
                     Text("Gold")
@@ -364,14 +380,6 @@ struct TaskDetailView: View {
                 value: task.category.rawValue
             )
             
-            if let focus = task.physicalFocus {
-                DetailRow(
-                    icon: focus.icon,
-                    label: "Focus",
-                    value: focus.rawValue
-                )
-            }
-            
             DetailRow(
                 icon: task.verificationType.icon,
                 label: "Verification",
@@ -390,6 +398,28 @@ struct TaskDetailView: View {
                     label: "Assignment",
                     value: "Personal Task"
                 )
+            }
+            
+            if task.isSharedWithPartner {
+                DetailRow(
+                    icon: "person.2.fill",
+                    label: "Shared With",
+                    value: "Partner Invited",
+                    valueColor: Color("AccentPink")
+                )
+                
+                if let message = task.partnerMessage, !message.isEmpty {
+                    HStack(spacing: 10) {
+                        Image(systemName: "quote.opening")
+                            .font(.caption2)
+                            .foregroundColor(Color("AccentPink").opacity(0.6))
+                        Text(message)
+                            .font(.custom("Avenir-Medium", size: 13))
+                            .foregroundColor(Color("AccentPink"))
+                            .italic()
+                    }
+                    .padding(.leading, 34)
+                }
             }
             
             if task.isRecurring, let pattern = task.recurrencePattern {
@@ -478,11 +508,39 @@ struct TaskDetailView: View {
     private func completeTask() {
         guard let character = character else { return }
         
-        let result = gameEngine.completeTask(task, character: character)
+        // Haptic feedback on task completion
+        let impactHeavy = UIImpactFeedbackGenerator(style: .heavy)
+        impactHeavy.impactOccurred()
+        
+        // Play success sound
+        AudioManager.shared.play(.success)
+        
+        let result = gameEngine.completeTask(
+            task,
+            character: character,
+            context: modelContext
+        )
         lastCompletionResult = result
+        
+        // Delayed celebration haptic (after card animates in)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let notificationFeedback = UINotificationFeedbackGenerator()
+            notificationFeedback.notificationOccurred(.success)
+        }
+        
+        // Play loot drop sound if loot was found
+        if result.lootDropped != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                AudioManager.shared.play(.lootDrop)
+            }
+        }
+        
         showCompletionCelebration = true
         
         gameEngine.updateStreak(for: character, completedTaskToday: true)
+        
+        // Award crafting materials
+        gameEngine.awardMaterialsForTask(task: task, character: character, context: modelContext)
     }
     
     // MARK: - Due Date Urgency
@@ -555,6 +613,7 @@ struct DetailRow: View {
     let icon: String
     let label: String
     let value: String
+    var valueColor: Color? = nil
     
     var body: some View {
         HStack(spacing: 12) {
@@ -571,7 +630,7 @@ struct DetailRow: View {
             
             Text(value)
                 .font(.custom("Avenir-Medium", size: 14))
-                .foregroundColor(.primary)
+                .foregroundColor(valueColor ?? .primary)
         }
     }
 }
@@ -583,7 +642,6 @@ struct DetailRow: View {
                 title: "Go for a run",
                 description: "Run at least 2 miles around the neighborhood together",
                 category: .physical,
-                physicalFocus: .dexterity,
                 createdBy: UUID(),
                 isOnDutyBoard: true,
                 isRecurring: true,

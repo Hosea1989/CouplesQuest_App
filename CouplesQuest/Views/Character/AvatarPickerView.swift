@@ -25,6 +25,12 @@ struct AvatarPickerView: View {
         AvatarIcon(symbol: "avatar_13", name: "Koda", requiredLevel: 1, isPixelArt: true),
         AvatarIcon(symbol: "avatar_14", name: "Yuki", requiredLevel: 1, isPixelArt: true),
         AvatarIcon(symbol: "avatar_15", name: "Elder", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_16", name: "Diego", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_17", name: "Layla", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_18", name: "Takeshi", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_19", name: "Adira", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_20", name: "Cael", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_21", name: "Priya", requiredLevel: 1, isPixelArt: true),
     ]
     
     // MARK: - SF Symbol Icons
@@ -70,6 +76,7 @@ struct AvatarPickerView: View {
         AvatarFrame(id: "bronze", name: "Bronze Ring", requiredLevel: 10, colors: [Color("AccentOrange").opacity(0.6)]),
         AvatarFrame(id: "silver", name: "Silver Ring", requiredLevel: 25, colors: [Color.gray]),
         AvatarFrame(id: "gold", name: "Gold Ring", requiredLevel: 50, colors: [Color("AccentGold")]),
+        AvatarFrame(id: "rebirth", name: "Rebirth Star", requiredLevel: 100, colors: [Color("AccentGold"), Color("AccentPurple")]),
     ]
     
     var body: some View {
@@ -189,24 +196,18 @@ struct AvatarPickerView: View {
                                         character.avatarIcon = avatar.symbol
                                         character.avatarImageData = nil
                                     }) {
-                                        VStack(spacing: 6) {
-                                            ZStack {
-                                                Image(avatar.symbol)
-                                                    .resizable()
-                                                    .scaledToFill()
-                                                    .frame(width: 80, height: 80)
-                                                    .clipShape(Circle())
-                                                
-                                                if isSelected {
-                                                    Circle()
-                                                        .stroke(Color("AccentGold"), lineWidth: 3)
-                                                        .frame(width: 84, height: 84)
-                                                }
-                                            }
+                                        ZStack {
+                                            Image(avatar.symbol)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 80, height: 80)
+                                                .clipShape(Circle())
                                             
-                                            Text(avatar.name)
-                                                .font(.custom("Avenir-Medium", size: 11))
-                                                .foregroundColor(isSelected ? Color("AccentGold") : .primary)
+                                            if isSelected {
+                                                Circle()
+                                                    .stroke(Color("AccentGold"), lineWidth: 3)
+                                                    .frame(width: 84, height: 84)
+                                            }
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -303,7 +304,10 @@ struct AvatarPickerView: View {
                                 GridItem(.flexible())
                             ], spacing: 16) {
                                 ForEach(Self.allAvatarFrames, id: \.id) { frame in
-                                    let isUnlocked = character.level >= frame.requiredLevel
+                                    // Rebirth frame requires at least 1 rebirth; others use level
+                                    let isUnlocked = frame.id == "rebirth"
+                                        ? character.rebirthCount > 0
+                                        : character.level >= frame.requiredLevel
                                     let isSelected = character.avatarFrame == frame.id
                                     
                                     Button(action: {
@@ -389,12 +393,17 @@ struct AvatarPreview: View {
         case "bronze": return Color("AccentOrange").opacity(0.8)
         case "silver": return .gray
         case "gold": return Color("AccentGold")
+        case "rebirth": return Color("AccentGold") // fallback; rebirth uses gradient
         default: return .clear
         }
     }
     
     private var hasFrame: Bool {
         frame != "default"
+    }
+    
+    private var isRebirthFrame: Bool {
+        frame == "rebirth"
     }
     
     /// Resolve which image data to use: override first, then character's stored data
@@ -405,7 +414,52 @@ struct AvatarPreview: View {
     var body: some View {
         ZStack {
             // Frame ring
-            if hasFrame {
+            if isRebirthFrame {
+                // Rebirth Star frame: gold-to-purple gradient ring
+                Circle()
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                Color("AccentGold"),
+                                Color("AccentPurple"),
+                                Color("AccentGold"),
+                                Color("AccentOrange"),
+                                Color("AccentGold")
+                            ]),
+                            center: .center
+                        ),
+                        lineWidth: 4
+                    )
+                    .frame(width: size + 8, height: size + 8)
+                
+                // Rebirth star indicator (small star at top-right)
+                if character.rebirthCount > 0 {
+                    ZStack {
+                        Circle()
+                            .fill(Color("CardBackground"))
+                            .frame(width: size * 0.28, height: size * 0.28)
+                        
+                        Image(systemName: "star.fill")
+                            .font(.system(size: size * 0.14))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color("AccentGold"), Color("AccentOrange")],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        // Rebirth count badge (if > 1)
+                        if character.rebirthCount > 1 {
+                            Text("\(character.rebirthCount)")
+                                .font(.custom("Avenir-Heavy", size: size * 0.08))
+                                .foregroundColor(.white)
+                                .offset(y: size * 0.06)
+                        }
+                    }
+                    .offset(x: (size + 8) * 0.35, y: -(size + 8) * 0.35)
+                }
+            } else if hasFrame {
                 Circle()
                     .stroke(frameColor, lineWidth: 4)
                     .frame(width: size + 8, height: size + 8)

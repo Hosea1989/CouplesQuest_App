@@ -4,6 +4,7 @@ import SwiftData
 enum InventoryTab: String, CaseIterable {
     case equipment = "Equipment"
     case materials = "Materials"
+    case consumables = "Consumables"
 }
 
 struct InventoryView: View {
@@ -12,6 +13,7 @@ struct InventoryView: View {
     @Query private var allEquipment: [Equipment]
     @Query private var characters: [PlayerCharacter]
     @Query private var allMaterials: [CraftingMaterial]
+    @Query private var allConsumables: [Consumable]
     
     @State private var selectedTab: InventoryTab = .equipment
     @State private var selectedSlotFilter: EquipmentSlot?
@@ -52,6 +54,14 @@ struct InventoryView: View {
         return items.sorted { rarityOrder($0.rarity) > rarityOrder($1.rarity) }
     }
     
+    /// Consumables owned by the current character, sorted by type then name
+    private var ownedConsumables: [Consumable] {
+        guard let character = character else { return [] }
+        return allConsumables
+            .filter { $0.characterID == character.id && $0.remainingUses > 0 }
+            .sorted { ($0.consumableType.rawValue, $0.name) < ($1.consumableType.rawValue, $1.name) }
+    }
+    
     var body: some View {
         ZStack {
             LinearGradient(
@@ -74,8 +84,10 @@ struct InventoryView: View {
                     
                     if selectedTab == .equipment {
                         equipmentContent
-                    } else {
+                    } else if selectedTab == .materials {
                         materialsContent
+                    } else {
+                        consumablesContent
                     }
                 }
                 .padding(.vertical)
@@ -120,6 +132,51 @@ struct InventoryView: View {
             Button("OK") {}
         } message: {
             Text("Received \(lastDismantleFragments) Fragment\(lastDismantleFragments > 1 ? "s" : "")!")
+        }
+    }
+    
+    // MARK: - Consumables Content
+    
+    private var consumablesContent: some View {
+        VStack(spacing: 16) {
+            if ownedConsumables.isEmpty {
+                VStack(spacing: 16) {
+                    Spacer()
+                    Image(systemName: "cross.vial.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    Text("No Consumables Yet")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(.secondary)
+                    Text("Buy consumables from the Store or earn them from tasks and dungeons.")
+                        .font(.custom("Avenir-Medium", size: 14))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    Spacer()
+                }
+                .frame(minHeight: 300)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Consumables")
+                        .font(.custom("Avenir-Heavy", size: 20))
+                    ForEach(ownedConsumables, id: \.id) { consumable in
+                        ConsumableInventoryRow(
+                            consumable: consumable,
+                            character: character,
+                            onUse: { useConsumable(consumable) }
+                        )
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+    
+    private func useConsumable(_ consumable: Consumable) {
+        guard let char = character else { return }
+        if gameEngine.useConsumable(consumable, on: char, context: modelContext) {
+            ToastManager.shared.showSuccess("Used \(consumable.name)", subtitle: consumable.effectSummary)
         }
     }
     
@@ -168,48 +225,24 @@ struct InventoryView: View {
                             .font(.custom("Avenir-Heavy", size: 20))
                         
                         if let character = character {
-                            EquippedSlotCard(slot: .weapon, equipment: character.equipment.weapon) {
-                                if let item = character.equipment.weapon {
-                                    selectedItem = item
-                                    showItemDetail = true
-                                }
-                            }
-                            .contextMenu {
-                                if let item = character.equipment.weapon {
-                                    Button {
-                                        unequipItem(item)
-                                    } label: {
-                                        Label("Unequip", systemImage: "minus.circle")
+                            ForEach(EquipmentSlot.allCases, id: \.self) { slot in
+                                let equippedItem = character.equipment.item(for: slot)
+                                EquippedSlotCard(slot: slot, equipment: equippedItem) {
+                                    if let item = equippedItem {
+                                        selectedItem = item
+                                        showItemDetail = true
+                                    } else {
+                                        // Empty slot tapped — auto-filter inventory to that slot
+                                        selectedSlotFilter = slot
                                     }
                                 }
-                            }
-                            EquippedSlotCard(slot: .armor, equipment: character.equipment.armor) {
-                                if let item = character.equipment.armor {
-                                    selectedItem = item
-                                    showItemDetail = true
-                                }
-                            }
-                            .contextMenu {
-                                if let item = character.equipment.armor {
-                                    Button {
-                                        unequipItem(item)
-                                    } label: {
-                                        Label("Unequip", systemImage: "minus.circle")
-                                    }
-                                }
-                            }
-                            EquippedSlotCard(slot: .accessory, equipment: character.equipment.accessory) {
-                                if let item = character.equipment.accessory {
-                                    selectedItem = item
-                                    showItemDetail = true
-                                }
-                            }
-                            .contextMenu {
-                                if let item = character.equipment.accessory {
-                                    Button {
-                                        unequipItem(item)
-                                    } label: {
-                                        Label("Unequip", systemImage: "minus.circle")
+                                .contextMenu {
+                                    if let item = equippedItem {
+                                        Button {
+                                            unequipItem(item)
+                                        } label: {
+                                            Label("Unequip", systemImage: "minus.circle")
+                                        }
                                     }
                                 }
                             }
@@ -308,26 +341,15 @@ struct InventoryView: View {
     private func equipItem(_ item: Equipment) {
         guard let character = character else { return }
         
-        // Unequip current item in that slot
-        switch item.slot {
-        case .weapon:
-            if let current = character.equipment.weapon {
-                current.isEquipped = false
-            }
-            character.equipment.weapon = item
-        case .armor:
-            if let current = character.equipment.armor {
-                current.isEquipped = false
-            }
-            character.equipment.armor = item
-        case .accessory:
-            if let current = character.equipment.accessory {
-                current.isEquipped = false
-            }
-            character.equipment.accessory = item
+        // Unequip current item in that slot and sync the old item
+        if let current = character.equipment.item(for: item.slot) {
+            current.isEquipped = false
+            Task { try? await SupabaseService.shared.syncEquipment(current) }
         }
+        character.equipment.setItem(item, for: item.slot)
         
         item.isEquipped = true
+        Task { try? await SupabaseService.shared.syncEquipment(item) }
         showItemDetail = false
         equipTrigger += 1
         AudioManager.shared.play(.equipItem)
@@ -336,22 +358,12 @@ struct InventoryView: View {
     private func unequipItem(_ item: Equipment) {
         guard let character = character else { return }
         
-        switch item.slot {
-        case .weapon:
-            if character.equipment.weapon?.id == item.id {
-                character.equipment.weapon = nil
-            }
-        case .armor:
-            if character.equipment.armor?.id == item.id {
-                character.equipment.armor = nil
-            }
-        case .accessory:
-            if character.equipment.accessory?.id == item.id {
-                character.equipment.accessory = nil
-            }
+        if character.equipment.item(for: item.slot)?.id == item.id {
+            character.equipment.setItem(nil, for: item.slot)
         }
         
         item.isEquipped = false
+        Task { try? await SupabaseService.shared.syncEquipment(item) }
         showItemDetail = false
         equipTrigger += 1
     }
@@ -360,7 +372,9 @@ struct InventoryView: View {
         if item.isEquipped {
             unequipItem(item)
         }
+        let deletedID = item.id
         modelContext.delete(item)
+        Task { try? await SupabaseService.shared.deleteEquipment(id: deletedID) }
         showItemDetail = false
         discardTrigger += 1
     }
@@ -376,7 +390,9 @@ struct InventoryView: View {
         if item.isEquipped {
             unequipItem(item)
         }
+        let deletedID = item.id
         modelContext.delete(item)
+        Task { try? await SupabaseService.shared.deleteEquipment(id: deletedID) }
         showItemDetail = false
         lastDismantleFragments = fragments
         showDismantleResult = true
@@ -422,26 +438,29 @@ struct EquippedSlotCard: View {
                         Text(equipment.statSummary)
                             .font(.custom("Avenir-Medium", size: 12))
                             .foregroundColor(Color("AccentGreen"))
+                        // Show affixes if present
+                        if let affixText = equipment.affixSummary {
+                            Text(affixText)
+                                .font(.custom("Avenir-Medium", size: 11))
+                                .foregroundColor(Color("AccentPurple"))
+                        }
                     } else {
-                        Text("Empty")
+                        Text("Tap to browse")
                             .font(.custom("Avenir-Medium", size: 15))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color("AccentGold").opacity(0.6))
                     }
                 }
                 
                 Spacer()
                 
-                if equipment != nil {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
         }
         .buttonStyle(.plain)
-        .disabled(equipment == nil)
     }
 }
 
@@ -468,6 +487,12 @@ struct InventoryItemRow: View {
                     Text(item.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(.secondary)
+                    // Show affix summary
+                    if let affixText = item.affixSummary {
+                        Text(affixText)
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(Color("AccentPurple"))
+                    }
                 }
                 
                 Spacer()
@@ -479,6 +504,7 @@ struct InventoryItemRow: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color(item.rarity.color).opacity(0.2)))
+                        .rarityShimmer(item.rarity)
                     Text("Lv.\(item.levelRequirement)")
                         .font(.custom("Avenir-Medium", size: 10))
                         .foregroundColor(.secondary)
@@ -488,6 +514,57 @@ struct InventoryItemRow: View {
             .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Consumable Inventory Row
+
+struct ConsumableInventoryRow: View {
+    let consumable: Consumable
+    let character: PlayerCharacter?
+    let onUse: () -> Void
+    
+    private var isUsableType: Bool {
+        consumable.consumableType == .hpPotion || consumable.consumableType == .regenBuff
+    }
+    
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(consumable.consumableType.color).opacity(0.2))
+                    .frame(width: 46, height: 46)
+                Image(systemName: consumable.icon)
+                    .font(.title3)
+                    .foregroundColor(Color(consumable.consumableType.color))
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(consumable.name)
+                    .font(.custom("Avenir-Heavy", size: 14))
+                    .foregroundColor(Color(consumable.consumableType.color))
+                Text(consumable.effectSummary)
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            if isUsableType, character != nil {
+                Button {
+                    onUse()
+                } label: {
+                    Text("Use")
+                        .font(.custom("Avenir-Heavy", size: 12))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color("AccentGreen")))
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
     }
 }
 
@@ -547,6 +624,7 @@ struct MaterialCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color(material.rarity.color).opacity(0.2)))
+                        .rarityShimmer(material.rarity)
                 }
                 
                 Text(material.materialType.sourceDescription)
@@ -614,6 +692,7 @@ struct ItemDetailView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 4)
                                     .background(Capsule().fill(Color(item.rarity.color).opacity(0.2)))
+                                    .rarityShimmer(item.rarity)
                                 
                                 Text(item.slot.rawValue)
                                     .font(.custom("Avenir-Medium", size: 14))
@@ -660,6 +739,71 @@ struct ItemDetailView: View {
                                 }
                             }
                             
+                            // Affixes
+                            if item.hasAffixes {
+                                Divider()
+                                
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Affixes")
+                                        .font(.custom("Avenir-Heavy", size: 14))
+                                        .foregroundColor(Color("AccentPurple"))
+                                    
+                                    if let pfx = item.prefix {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "sparkle")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(Color("AccentPurple"))
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 4) {
+                                                    Text(pfx.name)
+                                                        .font(.custom("Avenir-Heavy", size: 13))
+                                                        .foregroundColor(pfx.isGreater ? Color("AccentGold") : Color("AccentPurple"))
+                                                    if pfx.isGreater {
+                                                        Text("GREATER")
+                                                            .font(.custom("Avenir-Heavy", size: 9))
+                                                            .foregroundColor(Color("AccentGold"))
+                                                            .padding(.horizontal, 4)
+                                                            .padding(.vertical, 1)
+                                                            .background(Capsule().fill(Color("AccentGold").opacity(0.2)))
+                                                    }
+                                                }
+                                                Text(pfx.displayText)
+                                                    .font(.custom("Avenir-Medium", size: 12))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                    
+                                    if let sfx = item.suffix {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "sparkle")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(Color("AccentPurple"))
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 4) {
+                                                    Text(sfx.name)
+                                                        .font(.custom("Avenir-Heavy", size: 13))
+                                                        .foregroundColor(sfx.isGreater ? Color("AccentGold") : Color("AccentPurple"))
+                                                    if sfx.isGreater {
+                                                        Text("GREATER")
+                                                            .font(.custom("Avenir-Heavy", size: 9))
+                                                            .foregroundColor(Color("AccentGold"))
+                                                            .padding(.horizontal, 4)
+                                                            .padding(.vertical, 1)
+                                                            .background(Capsule().fill(Color("AccentGold").opacity(0.2)))
+                                                    }
+                                                }
+                                                Text(sfx.displayText)
+                                                    .font(.custom("Avenir-Medium", size: 12))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                    }
+                                }
+                            }
+                            
                             Divider()
                             
                             HStack {
@@ -678,6 +822,12 @@ struct ItemDetailView: View {
                         .padding(20)
                         .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
                         .padding(.horizontal)
+                        
+                        // Comparison vs Equipped
+                        if !item.isEquipped, let character = character {
+                            EquipmentComparisonCard(item: item, character: character)
+                                .padding(.horizontal)
+                        }
                         
                         // Action Buttons
                         VStack(spacing: 12) {
@@ -778,6 +928,89 @@ struct EquipmentIconView: View {
                 .font(.system(size: size * 0.45))
                 .foregroundColor(item != nil ? Color(item!.rarity.color) : .secondary)
         }
+    }
+}
+
+// MARK: - Equipment Comparison Card
+
+struct EquipmentComparisonCard: View {
+    let item: Equipment
+    let character: PlayerCharacter
+    
+    /// The currently equipped item in the same slot
+    private var equippedItem: Equipment? {
+        character.equipment.item(for: item.slot)
+    }
+    
+    /// Compute stat deltas for all active stat types
+    private var statDeltas: [(statType: StatType, delta: Int)] {
+        StatType.allCases.compactMap { stat in
+            let newBonus = bonusFor(item: item, stat: stat)
+            let oldBonus = bonusFor(item: equippedItem, stat: stat)
+            let delta = newBonus - oldBonus
+            guard delta != 0 else { return nil }
+            return (stat, delta)
+        }
+    }
+    
+    /// Get stat bonus an item provides for a given stat type
+    private func bonusFor(item: Equipment?, stat: StatType) -> Int {
+        guard let item = item else { return 0 }
+        var total = 0
+        if item.primaryStat == stat { total += item.statBonus }
+        if item.secondaryStat == stat { total += item.secondaryStatBonus }
+        return total
+    }
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.left.arrow.right")
+                    .foregroundColor(Color("AccentGold"))
+                Text(equippedItem != nil ? "vs. Equipped" : "vs. Empty Slot")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+            }
+            
+            if let equipped = equippedItem {
+                HStack(spacing: 6) {
+                    Text("Current:")
+                        .font(.custom("Avenir-Medium", size: 12))
+                        .foregroundColor(.secondary)
+                    Text(equipped.name)
+                        .font(.custom("Avenir-Heavy", size: 12))
+                        .foregroundColor(Color(equipped.rarity.color))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            if statDeltas.isEmpty {
+                Text("No stat difference")
+                    .font(.custom("Avenir-Medium", size: 14))
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(statDeltas, id: \.statType) { entry in
+                    HStack {
+                        Image(systemName: entry.statType.icon)
+                            .font(.caption)
+                            .foregroundColor(Color(entry.statType.color))
+                            .frame(width: 20)
+                        Text(entry.statType.rawValue)
+                            .font(.custom("Avenir-Medium", size: 14))
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: entry.delta > 0 ? "arrow.up" : "arrow.down")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("\(abs(entry.delta))")
+                                .font(.custom("Avenir-Heavy", size: 16))
+                        }
+                        .foregroundColor(entry.delta > 0 ? Color("AccentGreen") : .red)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
     }
 }
 

@@ -17,6 +17,7 @@ struct DungeonRunView: View {
     @State private var hapticSuccess = 0
     @State private var hapticError = 0
     @State private var timerTick = 0 // forces UI refresh
+    @State private var collectedCards: [CardDropEngine.CollectResult] = []
     
     // Timer that fires every second to update countdown
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -258,10 +259,19 @@ struct DungeonRunView: View {
                     if let result = completionResult {
                         resultHeader(result: result)
                         summaryCard(result: result)
+                        
+                        if result.secretDiscovery {
+                            secretDiscoveryCard(result: result)
+                        }
+                        
                         roomLog(result: result)
                         
                         if !result.lootDrops.isEmpty {
                             lootSection(result: result)
+                        }
+                        
+                        if !collectedCards.isEmpty {
+                            cardDropSection
                         }
                         
                         if !run.feedEntries.isEmpty {
@@ -298,6 +308,17 @@ struct DungeonRunView: View {
     
     // MARK: - Result Header
     
+    private func ratingColor(_ rating: String) -> Color {
+        switch rating {
+        case "S": return Color("AccentGold")
+        case "A": return Color("AccentGreen")
+        case "B": return Color("AccentPurple")
+        case "C": return .secondary
+        case "D": return Color("AccentOrange")
+        default: return Color("DifficultyHard")
+        }
+    }
+    
     private func resultHeader(result: DungeonCompletionResult) -> some View {
         VStack(spacing: 16) {
             ZStack {
@@ -319,6 +340,28 @@ struct DungeonRunView: View {
             
             Text(result.success ? "Dungeon Cleared!" : "Dungeon Failed")
                 .font(.custom("Avenir-Heavy", size: 30))
+            
+            // Performance Rating Badge
+            if !result.performanceRating.isEmpty {
+                HStack(spacing: 8) {
+                    Text("Rating:")
+                        .font(.custom("Avenir-Medium", size: 14))
+                        .foregroundColor(.secondary)
+                    
+                    Text(result.performanceRating)
+                        .font(.custom("Avenir-Black", size: 24))
+                        .foregroundColor(ratingColor(result.performanceRating))
+                    
+                    if result.lootMultiplier != 1.0 {
+                        Text(String(format: "%.0f%% Loot", result.lootMultiplier * 100))
+                            .font(.custom("Avenir-Heavy", size: 12))
+                            .foregroundColor(result.lootMultiplier > 1.0 ? Color("AccentGreen") : Color("DifficultyHard"))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill((result.lootMultiplier > 1.0 ? Color("AccentGreen") : Color("DifficultyHard")).opacity(0.15)))
+                    }
+                }
+            }
             
             Text(dungeon.name)
                 .font(.custom("Avenir-Medium", size: 18))
@@ -458,6 +501,175 @@ struct DungeonRunView: View {
         .background(RoundedRectangle(cornerRadius: 20).fill(Color("CardBackground")))
     }
     
+    // MARK: - Secret Discovery Card
+    
+    private func secretDiscoveryCard(result: DungeonCompletionResult) -> some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.title2)
+                    .foregroundColor(Color("AccentGold"))
+                    .symbolEffect(.pulse)
+                Text("Secret Cache Discovered!")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                    .foregroundColor(Color("AccentGold"))
+            }
+            
+            if !result.secretNarrative.isEmpty {
+                Text(result.secretNarrative)
+                    .font(.custom("Avenir-Medium", size: 14))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+            
+            Divider()
+                .overlay(Color("AccentGold").opacity(0.3))
+            
+            VStack(spacing: 10) {
+                if result.secretBonusGold > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bitcoinsign.circle.fill")
+                            .foregroundColor(Color("AccentGold"))
+                        Text("Bonus Gold")
+                            .font(.custom("Avenir-Medium", size: 14))
+                        Spacer()
+                        Text("+\(result.secretBonusGold)")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                            .foregroundColor(Color("AccentGold"))
+                    }
+                }
+                
+                if result.secretBonusMaterials > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "hammer.fill")
+                            .foregroundColor(Color("AccentPurple"))
+                        Text("Bonus Materials")
+                            .font(.custom("Avenir-Medium", size: 14))
+                        Spacer()
+                        Text("+\(result.secretBonusMaterials)")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                            .foregroundColor(Color("AccentPurple"))
+                    }
+                }
+                
+                if result.secretEquipmentDrop {
+                    HStack(spacing: 8) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .foregroundColor(Color("RarityLegendary"))
+                        Text("Rare Equipment Found!")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                            .foregroundColor(Color("RarityLegendary"))
+                        Spacer()
+                        Image(systemName: "sparkle")
+                            .foregroundColor(Color("RarityLegendary"))
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color("AccentGold").opacity(0.4), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Card Drop Section
+    
+    private var cardDropSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "rectangle.portrait.fill")
+                    .foregroundColor(Color("AccentGreen"))
+                Text("Cards Discovered")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+                Text("\(collectedCards.count) card\(collectedCards.count == 1 ? "" : "s")")
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+            }
+            
+            ForEach(Array(collectedCards.enumerated()), id: \.offset) { _, result in
+                cardResultRow(result: result)
+            }
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color("CardBackground")))
+    }
+    
+    private func cardResultRow(result: CardDropEngine.CollectResult) -> some View {
+        let card: MonsterCard
+        let isNew: Bool
+        let rarityUpgraded: Bool
+        
+        switch result {
+        case .newCard(let c):
+            card = c
+            isNew = true
+            rarityUpgraded = false
+        case .duplicateAbsorbed(let c, let upgraded):
+            card = c
+            isNew = false
+            rarityUpgraded = upgraded
+        }
+        
+        return HStack(spacing: 12) {
+            // Card icon with rarity color
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(card.rarity.color).opacity(0.2))
+                    .frame(width: 40, height: 52)
+                Image(systemName: "rectangle.portrait.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(Color(card.rarity.color))
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(card.name)
+                        .font(.custom("Avenir-Heavy", size: 14))
+                    
+                    if isNew {
+                        Text("NEW")
+                            .font(.custom("Avenir-Heavy", size: 9))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color("AccentGreen"))
+                            .clipShape(Capsule())
+                    } else if rarityUpgraded {
+                        Text("RANK UP!")
+                            .font(.custom("Avenir-Heavy", size: 9))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color(card.rarity.color))
+                            .clipShape(Capsule())
+                    } else {
+                        Text("+1 DUP")
+                            .font(.custom("Avenir-Heavy", size: 9))
+                            .foregroundColor(Color("AccentGold"))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color("AccentGold").opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                }
+                
+                Text("\(card.rarity.rawValue) · \(card.bonusType.formatValue(card.bonusValue))")
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(Color(card.rarity.color))
+            }
+            
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+    
     // MARK: - Activity Feed
     
     private var activityFeedPanel: some View {
@@ -518,7 +730,8 @@ struct DungeonRunView: View {
             let result = DungeonEngine.autoRunDungeon(
                 dungeon: dungeon,
                 run: run,
-                party: party
+                party: party,
+                cardPool: ContentManager.shared.activeCardPool
             )
             
             completionResult = result
@@ -534,6 +747,23 @@ struct DungeonRunView: View {
             // Insert loot into model context
             for item in result.lootDrops {
                 modelContext.insert(item)
+            }
+            
+            // Collect any dropped cards
+            if let firstMember = party.first {
+                let cardPool = ContentManager.shared.activeCardPool
+                for roomResult in result.roomResults {
+                    if let cardID = roomResult.cardDroppedID,
+                       let contentCard = cardPool.first(where: { $0.id == cardID }) {
+                        if let collectResult = CardDropEngine.collectCard(
+                            contentCard: contentCard,
+                            character: firstMember,
+                            context: modelContext
+                        ) {
+                            collectedCards.append(collectResult)
+                        }
+                    }
+                }
             }
             
             // Update daily quest progress
@@ -556,6 +786,20 @@ struct DungeonRunView: View {
                             context: modelContext
                         )
                     }
+                }
+            }
+            
+            // Write remaining HP back to character's persistent HP
+            if let leadCharacter = party.first {
+                leadCharacter.currentHP = max(1, run.partyHP) // Revive to 1 if knocked out
+                leadCharacter.lastHPUpdateAt = Date()
+            }
+            
+            // Award Expedition Key from Hard+ dungeons
+            if result.success {
+                let dropped = GameEngine.rollExpeditionKeyDrop(difficulty: dungeon.difficulty)
+                if dropped {
+                    ExpeditionKeyStore.add(1)
                 }
             }
             
@@ -603,13 +847,7 @@ struct LootDropRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(equipment.rarity.color).opacity(0.2))
-                    .frame(width: 40, height: 40)
-                Image(systemName: equipment.slot.icon)
-                    .foregroundColor(Color(equipment.rarity.color))
-            }
+            EquipmentIconView(item: equipment, slot: equipment.slot, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(equipment.name)
                     .font(.custom("Avenir-Heavy", size: 14))
@@ -625,6 +863,7 @@ struct LootDropRow: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Capsule().fill(Color(equipment.rarity.color).opacity(0.2)))
+                .rarityShimmer(equipment.rarity)
         }
     }
 }

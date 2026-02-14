@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// View for assigning a task to your partner
+/// View for assigning a task to a party member
 struct AssignTaskView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -13,7 +13,6 @@ struct AssignTaskView: View {
     @State private var description: String = ""
     @State private var partnerMessage: String = ""
     @State private var selectedCategory: TaskCategory = .physical
-    @State private var selectedPhysicalFocus: PhysicalActivityFocus = .strength
     @State private var selectedVerification: VerificationType = .none
     @State private var isOnDutyBoard: Bool = false
     @State private var hasDueDate: Bool = false
@@ -27,14 +26,17 @@ struct AssignTaskView: View {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
-    // Quick task templates for common partner tasks
-    private let quickTemplates: [(title: String, desc: String, category: TaskCategory, focus: PhysicalActivityFocus?)] = [
-        ("Go for a Walk", "30 minutes, fresh air!", .physical, .dexterity),
-        ("Workout Together", "Let's get those gains!", .physical, .strength),
-        ("Run Together", "Cardio day!", .physical, .dexterity),
-        ("Read a Chapter", "Feed that wisdom stat!", .mental, nil),
-        ("Study Session", "Knowledge is power!", .mental, nil),
-        ("Yoga Together", "Stretch and breathe", .physical, .dexterity),
+    /// Selected member to assign to (nil = assign to first/only member, like legacy partner)
+    @State private var selectedMemberID: UUID?
+    
+    // Quick task templates for common party member tasks
+    private let quickTemplates: [(title: String, desc: String, category: TaskCategory)] = [
+        ("Go for a Walk", "30 minutes, fresh air!", .physical),
+        ("Workout Together", "Let's get those gains!", .physical),
+        ("Read a Chapter", "Feed that wisdom stat!", .mental),
+        ("Cook a Meal", "Make something delicious!", .household),
+        ("Call a Friend", "Stay connected!", .social),
+        ("Sketch Something", "Express yourself!", .creative),
     ]
     
     var body: some View {
@@ -44,6 +46,11 @@ struct AssignTaskView: View {
                 
                 ScrollView {
                     VStack(spacing: 20) {
+                        // Party Member Picker (if more than 1 ally)
+                        if let character = character, character.partyMembers.count > 1 {
+                            memberPickerSection
+                        }
+                        
                         // Quick Templates
                         quickTemplatesSection
                         
@@ -62,7 +69,7 @@ struct AssignTaskView: View {
                     .padding()
                 }
             }
-            .navigationTitle("Assign to Partner")
+            .navigationTitle("Assign to Ally")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -88,9 +95,6 @@ struct AssignTaskView: View {
                             title = template.title
                             description = template.desc
                             selectedCategory = template.category
-                            if let focus = template.focus {
-                                selectedPhysicalFocus = focus
-                            }
                         }) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Image(systemName: template.category.icon)
@@ -158,7 +162,11 @@ struct AssignTaskView: View {
                         .font(.custom("Avenir-Medium", size: 13))
                         .foregroundColor(.secondary)
                     
-                    HStack(spacing: 8) {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 8) {
                         ForEach(TaskCategory.allCases, id: \.self) { category in
                             CategoryButton(
                                 category: category,
@@ -166,19 +174,6 @@ struct AssignTaskView: View {
                                 action: { selectedCategory = category }
                             )
                         }
-                    }
-                    
-                    if selectedCategory == .physical {
-                        Text("Focus")
-                            .font(.custom("Avenir-Medium", size: 13))
-                            .foregroundColor(.secondary)
-                        
-                        Picker("Focus", selection: $selectedPhysicalFocus) {
-                            ForEach(PhysicalActivityFocus.activeCases, id: \.self) { focus in
-                                Text(focus.rawValue).tag(focus)
-                            }
-                        }
-                        .pickerStyle(.segmented)
                     }
                 }
                 
@@ -214,14 +209,57 @@ struct AssignTaskView: View {
         }
     }
     
-    // MARK: - Partner Message
+    // MARK: - Member Picker
+    
+    private var memberPickerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Assign To")
+                .font(.custom("Avenir-Heavy", size: 16))
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    if let character = character {
+                        ForEach(character.partyMembers) { member in
+                            Button(action: { selectedMemberID = member.id }) {
+                                VStack(spacing: 4) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(selectedMemberID == member.id ? Color("AccentPink").opacity(0.3) : Color.secondary.opacity(0.1))
+                                            .frame(width: 44, height: 44)
+                                        Image(systemName: "person.fill")
+                                            .foregroundColor(selectedMemberID == member.id ? Color("AccentPink") : .secondary)
+                                    }
+                                    Text(member.name)
+                                        .font(.custom("Avenir-Heavy", size: 12))
+                                        .foregroundColor(selectedMemberID == member.id ? .primary : .secondary)
+                                        .lineLimit(1)
+                                    Text("Lv.\(member.level)")
+                                        .font(.custom("Avenir-Medium", size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(width: 70)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
+    }
+    
+    // MARK: - Ally Message
     
     private var partnerMessageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "message.fill")
                     .foregroundColor(Color("AccentPurple"))
-                Text("Message for Partner")
+                Text("Message for Ally")
                     .font(.custom("Avenir-Heavy", size: 16))
             }
             
@@ -308,7 +346,7 @@ struct AssignTaskView: View {
         Button(action: createAndAssignTask) {
             HStack {
                 Image(systemName: "paperplane.fill")
-                Text("Send to Partner")
+                Text("Send to Ally")
             }
             .font(.custom("Avenir-Heavy", size: 16))
             .foregroundColor(.black)
@@ -337,13 +375,15 @@ struct AssignTaskView: View {
     private func createAndAssignTask() {
         guard let character = character else { return }
         
+        // Determine assignee: selected member, or fall back to legacy partner
+        let assigneeID = selectedMemberID ?? character.partnerCharacterID
+        
         let task = GameTask(
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             description: description.isEmpty ? nil : description,
             category: selectedCategory,
-            physicalFocus: selectedCategory == .physical ? selectedPhysicalFocus : nil,
             createdBy: character.id,
-            assignedTo: character.partnerCharacterID,
+            assignedTo: assigneeID,
             isOnDutyBoard: isOnDutyBoard,
             dueDate: hasDueDate ? dueDate : nil,
             partnerMessage: partnerMessage.isEmpty ? nil : partnerMessage,
@@ -362,6 +402,34 @@ struct AssignTaskView: View {
             )
             modelContext.insert(interaction)
             bond.gainBondEXP(2) // Small bond EXP for assigning
+        }
+        
+        // Push task to Supabase + send push notification + cloud interaction
+        let taskTitle = task.title
+        let characterName = character.name
+        Task {
+            // 1. Push task to partner_tasks table
+            do {
+                try await SupabaseService.shared.pushPartnerTask(task)
+            } catch {
+                print("❌ Failed to push partner task to cloud: \(error)")
+            }
+            
+            // 2. Send push notification to partner's device
+            await PushNotificationService.shared.notifyPartnerTaskAssigned(
+                fromName: characterName,
+                taskTitle: taskTitle
+            )
+            
+            // 3. Send cloud interaction record
+            do {
+                try await SupabaseService.shared.sendInteraction(
+                    type: "task_assigned",
+                    message: "Assigned: \(taskTitle)"
+                )
+            } catch {
+                print("❌ Failed to send task_assigned interaction: \(error)")
+            }
         }
         
         dismiss()

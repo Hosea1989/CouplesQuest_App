@@ -38,3 +38,8 @@ Thumbs.db
 
 # Cursor
 .cursor/
+
+# Secrets
+.env
+.env.*
+Secrets.xcconfig
