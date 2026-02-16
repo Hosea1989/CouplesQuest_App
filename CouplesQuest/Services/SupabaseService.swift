@@ -20,6 +20,10 @@ final class SupabaseService: ObservableObject {
     @Published var currentUserID: UUID?
     @Published var currentProfile: Profile?
     
+    /// Cached Supabase party UUID (set from Bond.supabasePartyID when the party screen loads).
+    /// Used by fire-and-forget party feed posts so they don't need ModelContext access.
+    var cachedPartyID: UUID?
+    
     // MARK: - Init
     
     private init() {
@@ -247,6 +251,8 @@ final class SupabaseService: ObservableObject {
     // MARK: - Character Data Sync
     
     /// Push the full character snapshot to the cloud as JSONB.
+    /// Gracefully handles the case where `character_data` column doesn't exist yet
+    /// by falling back to syncing only the basic profile fields.
     func syncCharacterData(_ character: PlayerCharacter) async throws {
         guard let userID = currentUserID else {
             print("⚠️ syncCharacterData: No currentUserID, skipping")
@@ -264,29 +270,57 @@ final class SupabaseService: ObservableObject {
         
         print("📡 Syncing character to cloud: \(character.name) Lv.\(character.level) for user \(userID.uuidString.prefix(8))…")
         
-        try await client
-            .from("profiles")
-            .update(payload)
-            .eq("id", value: userID.uuidString)
-            .execute()
-        
-        print("✅ syncCharacterData succeeded")
+        do {
+            try await client
+                .from("profiles")
+                .update(payload)
+                .eq("id", value: userID.uuidString)
+                .execute()
+            
+            print("✅ syncCharacterData succeeded")
+        } catch {
+            let errorString = "\(error)"
+            if errorString.contains("character_data") || errorString.contains("PGRST204") {
+                // character_data column doesn't exist yet — fall back to basic profile update
+                print("⚠️ syncCharacterData: character_data column not found, falling back to basic profile sync")
+                try await updateProfile(
+                    characterName: character.name,
+                    characterClass: character.characterClass?.rawValue,
+                    level: character.level,
+                    avatarName: character.avatarIcon
+                )
+            } else {
+                throw error
+            }
+        }
     }
     
     /// Fetch the character snapshot from the cloud profile.
-    /// Returns nil if no character data has been synced yet.
+    /// Returns nil if no character data has been synced yet, or if the
+    /// `character_data` column doesn't exist (migration not run yet).
     func fetchCharacterData() async throws -> CharacterSnapshot? {
         guard let userID = currentUserID else { return nil }
         
-        let row: CharacterDataRow = try await client
-            .from("profiles")
-            .select("character_data")
-            .eq("id", value: userID.uuidString)
-            .single()
-            .execute()
-            .value
-        
-        return row.characterData
+        do {
+            let row: CharacterDataRow = try await client
+                .from("profiles")
+                .select("character_data")
+                .eq("id", value: userID.uuidString)
+                .single()
+                .execute()
+                .value
+            
+            return row.characterData
+        } catch {
+            // If the column doesn't exist (PGRST204), treat as "no cloud data"
+            // so the user can proceed to character creation instead of seeing an error
+            let errorString = "\(error)"
+            if errorString.contains("character_data") || errorString.contains("PGRST204") {
+                print("⚠️ fetchCharacterData: column not found, treating as no cloud data")
+                return nil
+            }
+            throw error
+        }
     }
     
     // MARK: - Character Snapshot Sync (from SyncManager)
@@ -357,6 +391,40 @@ final class SupabaseService: ObservableObject {
             .execute()
     }
     
+    /// Fetch a partner's completed tasks from the cloud for leaderboard display.
+    /// Returns lightweight task summaries filtered by completion date.
+    func fetchPartnerCompletedTasks(partnerID: UUID, since: Date? = nil) async throws -> [CloudTaskSummary] {
+        var query = client
+            .from("player_tasks")
+            .select("category,completed_at,custom_exp")
+            .eq("player_id", value: partnerID.uuidString)
+            .eq("status", value: "completed")
+            .not("completed_at", operator: .is, value: "null")
+        
+        if let since = since {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            query = query.gte("completed_at", value: formatter.string(from: since))
+        }
+        
+        return try await query
+            .execute()
+            .value
+    }
+    
+    // MARK: - Player Tasks Fetch (for restore)
+    
+    /// Fetch all tasks for the current user from the cloud (for restore on reinstall).
+    func fetchOwnTasks() async throws -> [CloudTask] {
+        guard let userID = currentUserID else { return [] }
+        return try await client
+            .from("player_tasks")
+            .select()
+            .eq("player_id", value: userID.uuidString)
+            .execute()
+            .value
+    }
+    
     // MARK: - Player Goals Sync
     
     /// Upsert a goal to the cloud.
@@ -367,12 +435,200 @@ final class SupabaseService: ObservableObject {
             .execute()
     }
     
+    /// Fetch all goals for the current user from the cloud (for restore on reinstall).
+    func fetchOwnGoals() async throws -> [CloudGoal] {
+        guard let userID = currentUserID else { return [] }
+        return try await client
+            .from("player_goals")
+            .select()
+            .eq("player_id", value: userID.uuidString)
+            .execute()
+            .value
+    }
+    
     // MARK: - Player Mood Entries Sync
     
     /// Upsert a mood entry to the cloud.
     func syncMoodEntry(_ data: MoodSyncData) async throws {
         try await client
             .from("player_mood_entries")
+            .upsert(data, onConflict: "player_id,local_id")
+            .execute()
+    }
+    
+    /// Fetch all mood entries for the current user from the cloud (for restore on reinstall).
+    func fetchOwnMoodEntries() async throws -> [CloudMoodEntry] {
+        guard let userID = currentUserID else { return [] }
+        return try await client
+            .from("player_mood_entries")
+            .select()
+            .eq("player_id", value: userID.uuidString)
+            .execute()
+            .value
+    }
+    
+    // MARK: - Party Raid Boss Sync
+    
+    /// Push or update a party raid boss to the cloud.
+    func syncRaidBoss(_ boss: WeeklyRaidBoss, partyID: UUID) async throws {
+        let attackLogJSON: String
+        if let data = try? JSONEncoder().encode(boss.attackLog),
+           let json = String(data: data, encoding: .utf8) {
+            attackLogJSON = json
+        } else {
+            attackLogJSON = "[]"
+        }
+        
+        let row = CloudRaidBossUpsert(
+            id: boss.id,
+            partyID: partyID,
+            name: boss.name,
+            description: boss.bossDescription,
+            icon: boss.icon,
+            tier: boss.tier,
+            maxHP: boss.maxHP,
+            currentHP: boss.currentHP,
+            weekStartDate: boss.weekStartDate,
+            weekEndDate: boss.weekEndDate,
+            isDefeated: boss.isDefeated,
+            templateID: boss.templateID,
+            modifierName: boss.modifierName,
+            modifierDescription: boss.modifierDescription,
+            partyScaleFactor: boss.partyScaleFactor,
+            attackLog: attackLogJSON
+        )
+        
+        try await client
+            .from("party_raid_bosses")
+            .upsert(row)
+            .execute()
+    }
+    
+    /// Fetch the current week's raid boss for a party.
+    func fetchPartyRaidBoss(partyID: UUID) async throws -> CloudRaidBoss? {
+        let rows: [CloudRaidBoss] = try await client
+            .from("party_raid_bosses")
+            .select()
+            .eq("party_id", value: partyID.uuidString)
+            .gte("week_end_date", value: ISO8601DateFormatter().string(from: Date()))
+            .order("created_at", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first
+    }
+    
+    // MARK: - Party Challenges Sync
+    
+    /// Push or update a party challenge to the cloud.
+    func syncPartyChallenge(_ challenge: PartyChallenge, partyID: UUID) async throws {
+        let row = CloudPartyChallengeUpsert(
+            id: challenge.id,
+            partyID: partyID,
+            challengeType: challenge.challengeTypeRaw,
+            targetCount: challenge.targetCount,
+            title: challenge.title,
+            createdAt: challenge.createdAt,
+            deadline: challenge.deadline,
+            createdBy: challenge.createdBy,
+            isActive: challenge.isActive,
+            memberProgress: challenge.memberProgressJSON,
+            rewardBondEXP: challenge.rewardBondEXP,
+            rewardGold: challenge.rewardGold,
+            partyBonusBondEXP: challenge.partyBonusBondEXP,
+            partyBonusAwarded: challenge.partyBonusAwarded
+        )
+        
+        try await client
+            .from("party_challenges")
+            .upsert(row)
+            .execute()
+    }
+    
+    /// Fetch active party challenges for a given party.
+    func fetchPartyChallenges(partyID: UUID) async throws -> [CloudPartyChallenge] {
+        return try await client
+            .from("party_challenges")
+            .select()
+            .eq("party_id", value: partyID.uuidString)
+            .eq("is_active", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+    
+    // MARK: - Bond/Party Fetch (for restore)
+    
+    /// Fetch the party row for the current user from the cloud (for restore on reinstall).
+    func fetchOwnParty() async throws -> CloudParty? {
+        guard let userID = currentUserID else { return nil }
+        let rows: [CloudParty] = try await client
+            .from("parties")
+            .select()
+            .contains("member_ids", value: [userID.uuidString])
+            .execute()
+            .value
+        return rows.first
+    }
+    
+    // MARK: - Player Daily Quests Sync
+    
+    /// Push a daily quest to the cloud (upsert by player_id + local_id).
+    func syncDailyQuest(_ quest: DailyQuest) async throws {
+        guard let userID = currentUserID else { return }
+        
+        let row = CloudDailyQuestUpsert(
+            playerID: userID,
+            localID: quest.id,
+            title: quest.title,
+            questDescription: quest.questDescription,
+            icon: quest.icon,
+            questType: quest.questType.rawValue,
+            questParam: quest.questParam,
+            targetValue: quest.targetValue,
+            currentValue: quest.currentValue,
+            expReward: quest.expReward,
+            goldReward: quest.goldReward,
+            isCompleted: quest.isCompleted,
+            isClaimed: quest.isClaimed,
+            isBonusQuest: quest.isBonusQuest,
+            generatedDate: quest.generatedDate
+        )
+        
+        try await client
+            .from("player_daily_quests")
+            .upsert(row, onConflict: "player_id,local_id")
+            .execute()
+    }
+    
+    /// Fetch today's daily quests for the current user from the cloud.
+    func fetchTodaysDailyQuests() async throws -> [CloudDailyQuest] {
+        guard let userID = currentUserID else { return [] }
+        
+        let todayStr = Self.dateOnlyFormatter.string(from: Calendar.current.startOfDay(for: Date()))
+        
+        return try await client
+            .from("player_daily_quests")
+            .select()
+            .eq("player_id", value: userID.uuidString)
+            .eq("generated_date", value: todayStr)
+            .execute()
+            .value
+    }
+    
+    /// Date-only formatter for daily quest dates (YYYY-MM-DD).
+    private static let dateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+    
+    /// Upsert daily quest data from SyncManager queue.
+    func syncDailyQuestData(_ data: DailyQuestSyncData) async throws {
+        try await client
+            .from("player_daily_quests")
             .upsert(data, onConflict: "player_id,local_id")
             .execute()
     }
@@ -531,6 +787,50 @@ final class SupabaseService: ObservableObject {
             .execute()
     }
     
+    /// Fetch recent events from the party_feed table.
+    func fetchPartyFeed(partyID: UUID, limit: Int = 50) async throws -> [PartyFeedEvent] {
+        let events: [PartyFeedEvent] = try await client
+            .from("party_feed")
+            .select()
+            .eq("party_id", value: partyID.uuidString)
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        
+        return events
+    }
+    
+    /// Subscribe to new party feed events in realtime (INSERT on party_feed table).
+    func subscribeToPartyFeed(partyID: UUID, onEvent: @escaping (PartyFeedEvent) -> Void) async -> RealtimeChannelV2? {
+        let channel = client.realtimeV2.channel("party-feed-\(partyID.uuidString.prefix(8))")
+        
+        let inserts = await channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "party_feed",
+            filter: "party_id=eq.\(partyID.uuidString)"
+        )
+        
+        await channel.subscribe()
+        
+        Task {
+            for await insert in inserts {
+                do {
+                    let event = try insert.decodeRecord(as: PartyFeedEvent.self, decoder: JSONDecoder.supabaseDecoder)
+                    await MainActor.run {
+                        onEvent(event)
+                    }
+                } catch {
+                    print("⚠️ Failed to decode realtime party feed event: \(error)")
+                }
+            }
+        }
+        
+        print("📡 Subscribed to party feed for party \(partyID.uuidString.prefix(8))")
+        return channel
+    }
+    
     /// Lightweight decoder for the party row response
     private struct PartyRow: Decodable {
         let id: UUID
@@ -609,6 +909,34 @@ final class SupabaseService: ObservableObject {
         )
     }
     
+    /// Send a partner request directly to a user by their Supabase user ID.
+    /// Used by QR scan flow where we already have the target's UUID.
+    func sendPartnerRequest(toUserID targetID: UUID) async throws {
+        guard let myID = currentUserID else { return }
+        guard targetID != myID else {
+            throw SupabaseServiceError.cannotPairWithSelf
+        }
+        
+        // Insert the request
+        let request = PartnerRequestInsert(
+            fromUserID: myID,
+            toUserID: targetID
+        )
+        
+        try await client
+            .from("partner_requests")
+            .insert(request)
+            .execute()
+        
+        // Send a push notification to the target user about the partner request
+        let senderName = currentProfile?.characterName ?? "Someone"
+        await PushNotificationService.shared.notifyPartner(
+            type: "pair_request",
+            title: "Party Request!",
+            body: "\(senderName) wants to join your party in Swords & Chores!"
+        )
+    }
+    
     /// Fetch incoming partner requests for the current user.
     func fetchIncomingRequests() async throws -> [PartnerRequest] {
         guard let userID = currentUserID else { return [] }
@@ -648,20 +976,31 @@ final class SupabaseService: ObservableObject {
         
         guard let request = requests.first else { return }
         
-        // Link both profiles
+        // Use SECURITY DEFINER RPC to set partner_id on BOTH profiles.
+        // Direct updates fail because RLS only allows auth.uid() = id.
         try await client
-            .from("profiles")
-            .update(["partner_id": AnyJSON.string(request.fromUserID.uuidString)])
-            .eq("id", value: myID.uuidString)
-            .execute()
-        
-        try await client
-            .from("profiles")
-            .update(["partner_id": AnyJSON.string(myID.uuidString)])
-            .eq("id", value: request.fromUserID.uuidString)
+            .rpc("link_partners", params: ["target_user_id": AnyJSON.string(request.fromUserID.uuidString)])
             .execute()
         
         await fetchProfile()
+    }
+    
+    /// Directly link two profiles as partners (used by QR scan for instant pairing).
+    /// Sets `partner_id` on both profiles so both devices see the link immediately.
+    func linkPartnerDirect(partnerUserID: UUID) async throws {
+        guard let myID = currentUserID else { return }
+        guard partnerUserID != myID else {
+            throw SupabaseServiceError.cannotPairWithSelf
+        }
+        
+        // Use SECURITY DEFINER RPC to set partner_id on BOTH profiles.
+        // Direct updates fail because RLS only allows auth.uid() = id.
+        try await client
+            .rpc("link_partners", params: ["target_user_id": AnyJSON.string(partnerUserID.uuidString)])
+            .execute()
+        
+        await fetchProfile()
+        print("🤝 Direct partner link: \(myID.uuidString.prefix(8)) ↔ \(partnerUserID.uuidString.prefix(8))")
     }
     
     /// Reject a partner request.
@@ -675,23 +1014,17 @@ final class SupabaseService: ObservableObject {
     
     /// Unlink from current partner.
     func unlinkPartner() async throws {
-        guard let myID = currentUserID,
-              let partnerID = currentProfile?.partnerID else { return }
+        guard currentUserID != nil,
+              currentProfile?.partnerID != nil else { return }
         
-        // Clear both sides
+        // Use SECURITY DEFINER RPC to clear partner_id on BOTH profiles.
+        // Direct updates fail because RLS only allows auth.uid() = id.
         try await client
-            .from("profiles")
-            .update(["partner_id": AnyJSON.null])
-            .eq("id", value: myID.uuidString)
-            .execute()
-        
-        try await client
-            .from("profiles")
-            .update(["partner_id": AnyJSON.null])
-            .eq("id", value: partnerID.uuidString)
+            .rpc("unlink_partners")
             .execute()
         
         await fetchProfile()
+        print("🔓 Partner unlinked via RPC")
     }
     
     // MARK: - Partner Interactions
@@ -963,6 +1296,109 @@ final class SupabaseService: ObservableObject {
         }
         
         print("📡 Subscribed to own profile realtime for user \(userID.uuidString.prefix(8))")
+        return channel
+    }
+    
+    /// Subscribe to own profile changes specifically to detect when partner_id is set.
+    /// Used by QRPairingView to instantly react when the other device links via `linkPartnerDirect`.
+    func subscribeForPairingDetection(onPartnerLinked: @escaping (Profile) -> Void) async -> RealtimeChannelV2? {
+        guard let userID = currentUserID else { return nil }
+        
+        let channel = client.realtimeV2.channel("pairing-detect-\(userID.uuidString.prefix(8))")
+        
+        let updates = await channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "profiles",
+            filter: "id=eq.\(userID.uuidString)"
+        )
+        
+        await channel.subscribe()
+        
+        Task {
+            for await update in updates {
+                do {
+                    let profile = try update.decodeRecord(as: Profile.self, decoder: JSONDecoder.supabaseDecoder)
+                    if profile.partnerID != nil {
+                        await MainActor.run {
+                            self.currentProfile = profile
+                            onPartnerLinked(profile)
+                        }
+                    }
+                } catch {
+                    print("⚠️ Failed to decode realtime pairing detection: \(error)")
+                }
+            }
+        }
+        
+        print("📡 Subscribed to pairing detection for user \(userID.uuidString.prefix(8))")
+        return channel
+    }
+    
+    /// Subscribe to incoming partner requests (INSERT events on partner_requests where to_user_id = me).
+    /// Used by the QR display screen to detect when someone scans their code and sends a request.
+    func subscribeToIncomingRequests(onRequest: @escaping (PartnerRequest) -> Void) async -> RealtimeChannelV2? {
+        guard let userID = currentUserID else { return nil }
+        
+        let channel = client.realtimeV2.channel("incoming-requests-\(userID.uuidString.prefix(8))")
+        
+        let inserts = await channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "partner_requests",
+            filter: "to_user_id=eq.\(userID.uuidString)"
+        )
+        
+        await channel.subscribe()
+        
+        Task {
+            for await insert in inserts {
+                do {
+                    let request = try insert.decodeRecord(as: PartnerRequest.self, decoder: JSONDecoder.supabaseDecoder)
+                    if request.status == "pending" {
+                        await MainActor.run {
+                            onRequest(request)
+                        }
+                    }
+                } catch {
+                    print("⚠️ Failed to decode realtime partner request: \(error)")
+                }
+            }
+        }
+        
+        print("📡 Subscribed to incoming partner requests for user \(userID.uuidString.prefix(8))")
+        return channel
+    }
+    
+    /// Subscribe to incoming partner interactions (kudos, nudges, challenges) in realtime.
+    func subscribeToInteractions(onInteraction: @escaping (CloudInteraction) -> Void) async -> RealtimeChannelV2? {
+        guard let userID = currentUserID else { return nil }
+        
+        let channel = client.realtimeV2.channel("incoming-interactions-\(userID.uuidString.prefix(8))")
+        
+        let inserts = await channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "partner_interactions",
+            filter: "to_user_id=eq.\(userID.uuidString)"
+        )
+        
+        await channel.subscribe()
+        
+        Task {
+            for await insert in inserts {
+                do {
+                    let interaction = try insert.decodeRecord(as: CloudInteraction.self, decoder: JSONDecoder.supabaseDecoder)
+                    await MainActor.run {
+                        onInteraction(interaction)
+                    }
+                } catch {
+                    print("⚠️ Failed to decode realtime interaction: \(error)")
+                }
+            }
+        }
+        
+        print("📡 Subscribed to incoming partner interactions for user \(userID.uuidString.prefix(8))")
         return channel
     }
     
@@ -1426,6 +1862,31 @@ struct CloudInteraction: Codable, Identifiable {
     }
 }
 
+// MARK: - Task Cloud DTOs
+
+/// Lightweight task summary returned by `fetchPartnerCompletedTasks`.
+struct CloudTaskSummary: Codable {
+    let category: String
+    let completedAt: Date?
+    let customExp: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case category
+        case completedAt = "completed_at"
+        case customExp = "custom_exp"
+    }
+    
+    /// Resolve the TaskCategory enum value (falls back to .physical if unknown).
+    var taskCategory: TaskCategory {
+        TaskCategory(rawValue: category) ?? .physical
+    }
+    
+    /// EXP reward — uses customEXP if set, otherwise the base EXP constant.
+    var expReward: Int {
+        customExp ?? GameTask.baseEXP
+    }
+}
+
 // MARK: - Inventory Cloud DTOs
 
 /// Equipment row read from the `equipment` table.
@@ -1723,6 +2184,338 @@ struct DungeonInviteWithDetails: Identifiable {
     var id: UUID { invite.id }
 }
 
+// MARK: - Cloud DTOs for Restore/Pull
+
+/// Full task row from `player_tasks` for restoring on reinstall.
+struct CloudTask: Codable {
+    let localID: UUID
+    let title: String
+    let description: String?
+    let category: String
+    let status: String
+    let isHabit: Bool
+    let isRecurring: Bool
+    let recurrencePattern: String?
+    let habitStreak: Int
+    let habitLongestStreak: Int
+    let isFromPartner: Bool
+    let assignedTo: UUID?
+    let createdBy: UUID
+    let verificationType: String
+    let isVerified: Bool
+    let dueDate: Date?
+    let completedAt: Date?
+    let goalID: UUID?
+    let customEXP: Int?
+    let createdAt: Date?
+    let updatedAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case localID = "local_id"
+        case title, description, category, status
+        case isHabit = "is_habit"
+        case isRecurring = "is_recurring"
+        case recurrencePattern = "recurrence_pattern"
+        case habitStreak = "habit_streak"
+        case habitLongestStreak = "habit_longest_streak"
+        case isFromPartner = "is_from_partner"
+        case assignedTo = "assigned_to"
+        case createdBy = "created_by"
+        case verificationType = "verification_type"
+        case isVerified = "is_verified"
+        case dueDate = "due_date"
+        case completedAt = "completed_at"
+        case goalID = "goal_id"
+        case customEXP = "custom_exp"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Full goal row from `player_goals` for restoring on reinstall.
+struct CloudGoal: Codable {
+    let localID: UUID
+    let title: String
+    let description: String?
+    let category: String
+    let status: String
+    let targetDate: Date?
+    let milestone25Claimed: Bool
+    let milestone50Claimed: Bool
+    let milestone75Claimed: Bool
+    let milestone100Claimed: Bool
+    let completedAt: Date?
+    let createdAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case localID = "local_id"
+        case title, description, category, status
+        case targetDate = "target_date"
+        case milestone25Claimed = "milestone_25_claimed"
+        case milestone50Claimed = "milestone_50_claimed"
+        case milestone75Claimed = "milestone_75_claimed"
+        case milestone100Claimed = "milestone_100_claimed"
+        case completedAt = "completed_at"
+        case createdAt = "created_at"
+    }
+}
+
+/// Full mood entry row from `player_mood_entries` for restoring on reinstall.
+struct CloudMoodEntry: Codable {
+    let localID: UUID
+    let moodLevel: Int
+    let journalText: String?
+    let date: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case localID = "local_id"
+        case moodLevel = "mood_level"
+        case journalText = "journal_text"
+        case date
+    }
+}
+
+/// Party row from `parties` for restoring bond data on reinstall.
+struct CloudParty: Codable, Identifiable {
+    let id: UUID
+    let memberIDs: [UUID]
+    let bondLevel: Int
+    let bondExp: Int
+    let partyStreakDays: Int
+    let partyStreakLastDate: Date?
+    let createdBy: UUID
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case memberIDs = "member_ids"
+        case bondLevel = "bond_level"
+        case bondExp = "bond_exp"
+        case partyStreakDays = "party_streak_days"
+        case partyStreakLastDate = "party_streak_last_date"
+        case createdBy = "created_by"
+    }
+}
+
+// MARK: - Daily Quest Cloud DTOs
+
+/// Daily quest upsert payload.
+struct CloudDailyQuestUpsert: Encodable {
+    let playerID: UUID
+    let localID: UUID
+    let title: String
+    let questDescription: String
+    let icon: String
+    let questType: String
+    let questParam: String?
+    let targetValue: Int
+    let currentValue: Int
+    let expReward: Int
+    let goldReward: Int
+    let isCompleted: Bool
+    let isClaimed: Bool
+    let isBonusQuest: Bool
+    let generatedDate: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case playerID = "player_id"
+        case localID = "local_id"
+        case title
+        case questDescription = "quest_description"
+        case icon
+        case questType = "quest_type"
+        case questParam = "quest_param"
+        case targetValue = "target_value"
+        case currentValue = "current_value"
+        case expReward = "exp_reward"
+        case goldReward = "gold_reward"
+        case isCompleted = "is_completed"
+        case isClaimed = "is_claimed"
+        case isBonusQuest = "is_bonus_quest"
+        case generatedDate = "generated_date"
+    }
+}
+
+/// Daily quest row read from the cloud.
+struct CloudDailyQuest: Codable {
+    let localID: UUID
+    let title: String
+    let questDescription: String?
+    let icon: String
+    let questType: String
+    let questParam: String?
+    let targetValue: Int
+    let currentValue: Int
+    let expReward: Int
+    let goldReward: Int
+    let isCompleted: Bool
+    let isClaimed: Bool
+    let isBonusQuest: Bool
+    let generatedDate: String
+    
+    enum CodingKeys: String, CodingKey {
+        case localID = "local_id"
+        case title
+        case questDescription = "quest_description"
+        case icon
+        case questType = "quest_type"
+        case questParam = "quest_param"
+        case targetValue = "target_value"
+        case currentValue = "current_value"
+        case expReward = "exp_reward"
+        case goldReward = "gold_reward"
+        case isCompleted = "is_completed"
+        case isClaimed = "is_claimed"
+        case isBonusQuest = "is_bonus_quest"
+        case generatedDate = "generated_date"
+    }
+}
+
+// MARK: - Party Raid Boss Cloud DTOs
+
+/// Raid boss upsert payload.
+struct CloudRaidBossUpsert: Encodable {
+    let id: UUID
+    let partyID: UUID
+    let name: String
+    let description: String
+    let icon: String
+    let tier: Int
+    let maxHP: Int
+    let currentHP: Int
+    let weekStartDate: Date
+    let weekEndDate: Date
+    let isDefeated: Bool
+    let templateID: String?
+    let modifierName: String?
+    let modifierDescription: String?
+    let partyScaleFactor: Double
+    let attackLog: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partyID = "party_id"
+        case name, description, icon, tier
+        case maxHP = "max_hp"
+        case currentHP = "current_hp"
+        case weekStartDate = "week_start_date"
+        case weekEndDate = "week_end_date"
+        case isDefeated = "is_defeated"
+        case templateID = "template_id"
+        case modifierName = "modifier_name"
+        case modifierDescription = "modifier_description"
+        case partyScaleFactor = "party_scale_factor"
+        case attackLog = "attack_log"
+    }
+}
+
+/// Raid boss row read from the cloud.
+struct CloudRaidBoss: Codable, Identifiable {
+    let id: UUID
+    let partyID: UUID
+    let name: String
+    let description: String?
+    let icon: String
+    let tier: Int
+    let maxHP: Int
+    let currentHP: Int
+    let weekStartDate: Date
+    let weekEndDate: Date
+    let isDefeated: Bool
+    let templateID: String?
+    let modifierName: String?
+    let modifierDescription: String?
+    let partyScaleFactor: Double
+    let attackLog: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partyID = "party_id"
+        case name, description, icon, tier
+        case maxHP = "max_hp"
+        case currentHP = "current_hp"
+        case weekStartDate = "week_start_date"
+        case weekEndDate = "week_end_date"
+        case isDefeated = "is_defeated"
+        case templateID = "template_id"
+        case modifierName = "modifier_name"
+        case modifierDescription = "modifier_description"
+        case partyScaleFactor = "party_scale_factor"
+        case attackLog = "attack_log"
+    }
+}
+
+// MARK: - Party Challenge Cloud DTOs
+
+/// Party challenge upsert payload.
+struct CloudPartyChallengeUpsert: Encodable {
+    let id: UUID
+    let partyID: UUID
+    let challengeType: String
+    let targetCount: Int
+    let title: String
+    let createdAt: Date
+    let deadline: Date
+    let createdBy: UUID
+    let isActive: Bool
+    let memberProgress: String
+    let rewardBondEXP: Int
+    let rewardGold: Int
+    let partyBonusBondEXP: Int
+    let partyBonusAwarded: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partyID = "party_id"
+        case challengeType = "challenge_type"
+        case targetCount = "target_count"
+        case title
+        case createdAt = "created_at"
+        case deadline
+        case createdBy = "created_by"
+        case isActive = "is_active"
+        case memberProgress = "member_progress"
+        case rewardBondEXP = "reward_bond_exp"
+        case rewardGold = "reward_gold"
+        case partyBonusBondEXP = "party_bonus_bond_exp"
+        case partyBonusAwarded = "party_bonus_awarded"
+    }
+}
+
+/// Party challenge row read from the cloud.
+struct CloudPartyChallenge: Codable, Identifiable {
+    let id: UUID
+    let partyID: UUID
+    let challengeType: String
+    let targetCount: Int
+    let title: String
+    let createdAt: Date?
+    let deadline: Date
+    let createdBy: UUID
+    let isActive: Bool
+    let memberProgress: String?
+    let rewardBondEXP: Int
+    let rewardGold: Int
+    let partyBonusBondEXP: Int
+    let partyBonusAwarded: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partyID = "party_id"
+        case challengeType = "challenge_type"
+        case targetCount = "target_count"
+        case title
+        case createdAt = "created_at"
+        case deadline
+        case createdBy = "created_by"
+        case isActive = "is_active"
+        case memberProgress = "member_progress"
+        case rewardBondEXP = "reward_bond_exp"
+        case rewardGold = "reward_gold"
+        case partyBonusBondEXP = "party_bonus_bond_exp"
+        case partyBonusAwarded = "party_bonus_awarded"
+    }
+}
+
 // MARK: - JSON Decoder Extension
 
 extension JSONDecoder {
@@ -1733,11 +2526,22 @@ extension JSONDecoder {
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let isoFallback = ISO8601DateFormatter()
         isoFallback.formatOptions = [.withInternetDateTime]
+        // Fallback for dates without timezone (e.g. "2026-02-14T08:43:13.804" from JSONB columns)
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(identifier: "UTC")
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        let dateFormatterNoFrac = DateFormatter()
+        dateFormatterNoFrac.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatterNoFrac.timeZone = TimeZone(identifier: "UTC")
+        dateFormatterNoFrac.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
             if let date = isoFormatter.date(from: dateString) { return date }
             if let date = isoFallback.date(from: dateString) { return date }
+            if let date = dateFormatter.date(from: dateString) { return date }
+            if let date = dateFormatterNoFrac.date(from: dateString) { return date }
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Cannot decode date: \(dateString)"

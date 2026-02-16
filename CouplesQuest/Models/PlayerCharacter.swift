@@ -1038,8 +1038,15 @@ final class PlayerCharacter {
         daysSinceLastActive >= 3 && !comebackGiftClaimed
     }
     
-    /// Whether the player can claim today's daily login reward
+    /// Whether the player can claim today's daily login reward.
+    /// Uses both SwiftData and UserDefaults to prevent double-claiming
+    /// even if SwiftData persistence fails on restart.
     var canClaimDailyLoginReward: Bool {
+        // Check UserDefaults backup first (survives even if SwiftData save fails)
+        if let backupDate = UserDefaults.standard.object(forKey: "lastLoginRewardDate") as? Date,
+           Calendar.current.isDateInToday(backupDate) {
+            return false
+        }
         guard let lastClaim = lastLoginRewardDate else { return true }
         return !Calendar.current.isDateInToday(lastClaim)
     }
@@ -1054,13 +1061,60 @@ final class PlayerCharacter {
         return !allCompleted || onboardingBreadcrumbs.isEmpty
     }
     
-    /// Claim the daily login reward and advance the cycle
+    /// Claim the daily login reward, advance the cycle, and update the day streak.
+    /// The day streak is now driven by consecutive daily reward claims, not task completions.
     func claimDailyLoginReward() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // Update the day streak based on consecutive claims
+        if let lastClaim = lastLoginRewardDate {
+            let lastClaimDay = calendar.startOfDay(for: lastClaim)
+            let daysSinceLastClaim = calendar.dateComponents([.day], from: lastClaimDay, to: today).day ?? 0
+            
+            if daysSinceLastClaim == 1 {
+                // Claimed on the very next day — streak continues
+                currentStreak += 1
+            } else if daysSinceLastClaim > 1 {
+                // Missed a day — streak resets
+                currentStreak = 1
+            }
+            // daysSinceLastClaim == 0 shouldn't happen (canClaimDailyLoginReward guards it)
+        } else {
+            // First ever claim
+            currentStreak = 1
+        }
+        
+        longestStreak = max(longestStreak, currentStreak)
         lastLoginRewardDate = Date()
+        lastActiveAt = Date()
+        
+        // Backup to UserDefaults so the claim persists even if SwiftData save fails
+        UserDefaults.standard.set(Date(), forKey: "lastLoginRewardDate")
+        
+        // Advance the 7-day cycle
         if loginStreakDay >= 7 {
             loginStreakDay = 1
         } else {
             loginStreakDay += 1
+        }
+        
+        // Post streak milestone to party feed at notable thresholds
+        let milestones = [7, 14, 21, 30, 50, 100]
+        if milestones.contains(currentStreak) {
+            let charName = self.name
+            let streak = self.currentStreak
+            Task { @MainActor in
+                guard let partyID = SupabaseService.shared.cachedPartyID,
+                      let actorID = SupabaseService.shared.currentUserID else { return }
+                try? await SupabaseService.shared.postPartyFeedEvent(
+                    partyID: partyID,
+                    actorID: actorID,
+                    eventType: "streak_milestone",
+                    message: "\(charName) hit a \(streak)-day streak!",
+                    metadata: ["streak": "\(streak)"]
+                )
+            }
         }
     }
     
@@ -2052,7 +2106,7 @@ final class EquipmentLoadout {
 // MARK: - Cached Party Member
 
 /// Lightweight cached party member data stored as JSON in PlayerCharacter.partyMembersJSON.
-/// Used for offline display and co-op dungeon proxy stats.
+/// Used for offline display, co-op dungeon proxy stats, and the player inspect view.
 struct CachedPartyMember: Codable, Identifiable, Equatable {
     let id: UUID
     let name: String
@@ -2061,6 +2115,28 @@ struct CachedPartyMember: Codable, Identifiable, Equatable {
     let statTotal: Int?
     /// SF Symbol name for the member's avatar (from their Supabase profile)
     let avatarName: String?
+    
+    // MARK: - Enriched Stats (populated from CharacterSnapshot on refresh)
+    
+    /// Individual stat values for the inspect view
+    let strength: Int?
+    let wisdom: Int?
+    let charisma: Int?
+    let dexterity: Int?
+    let luck: Int?
+    let defense: Int?
+    
+    // MARK: - Enriched Progression
+    
+    let currentEXP: Int?
+    let tasksCompleted: Int?
+    let currentStreak: Int?
+    let arenaBestWave: Int?
+    let avatarFrame: String?
+    let paragonLevel: Int?
+    let gold: Int?
+    
+    // MARK: - Computed Properties
     
     var characterClass: CharacterClass? {
         guard let cls = className else { return nil }
@@ -2077,6 +2153,79 @@ struct CachedPartyMember: Codable, Identifiable, Equatable {
             return avatar
         }
         return "person.fill"
+    }
+    
+    /// Computed hero power (sum of all stats) from enriched data
+    var heroPower: Int? {
+        guard let s = strength, let w = wisdom, let c = charisma,
+              let d = dexterity, let l = luck, let def = defense else {
+            return statTotal
+        }
+        return s + w + c + d + l + def
+    }
+    
+    /// Get a specific stat value
+    func statValue(for type: StatType) -> Int? {
+        switch type {
+        case .strength: return strength
+        case .wisdom: return wisdom
+        case .charisma: return charisma
+        case .dexterity: return dexterity
+        case .endurance: return dexterity  // legacy
+        case .luck: return luck
+        case .defense: return defense
+        }
+    }
+    
+    // MARK: - Backwards-Compatible Initializer
+    
+    /// Convenience initializer for code that doesn't have enriched data yet
+    init(id: UUID, name: String, level: Int, className: String?, statTotal: Int?, avatarName: String?) {
+        self.id = id
+        self.name = name
+        self.level = level
+        self.className = className
+        self.statTotal = statTotal
+        self.avatarName = avatarName
+        self.strength = nil
+        self.wisdom = nil
+        self.charisma = nil
+        self.dexterity = nil
+        self.luck = nil
+        self.defense = nil
+        self.currentEXP = nil
+        self.tasksCompleted = nil
+        self.currentStreak = nil
+        self.arenaBestWave = nil
+        self.avatarFrame = nil
+        self.paragonLevel = nil
+        self.gold = nil
+    }
+    
+    /// Full initializer with enriched data
+    init(id: UUID, name: String, level: Int, className: String?, statTotal: Int?, avatarName: String?,
+         strength: Int?, wisdom: Int?, charisma: Int?, dexterity: Int?, luck: Int?, defense: Int?,
+         currentEXP: Int?, tasksCompleted: Int?, currentStreak: Int?, arenaBestWave: Int?,
+         avatarFrame: String?, paragonLevel: Int?, gold: Int?) {
+        self.id = id
+        self.name = name
+        self.level = level
+        self.className = className
+        self.statTotal = statTotal
+        self.avatarName = avatarName
+        self.strength = strength
+        self.wisdom = wisdom
+        self.charisma = charisma
+        self.dexterity = dexterity
+        self.luck = luck
+        self.defense = defense
+        self.currentEXP = currentEXP
+        self.tasksCompleted = tasksCompleted
+        self.currentStreak = currentStreak
+        self.arenaBestWave = arenaBestWave
+        self.avatarFrame = avatarFrame
+        self.paragonLevel = paragonLevel
+        self.gold = gold
     }
 }
 

@@ -3,8 +3,8 @@ import SwiftData
 import OneSignalFramework
 import Supabase
 
-// MARK: - AppDelegate for OneSignal Initialization
-class AppDelegate: NSObject, UIApplicationDelegate {
+// MARK: - AppDelegate for OneSignal Initialization + Notification Tap Handling
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Read the OneSignal App ID from Info.plist (set via Secrets.xcconfig)
@@ -22,12 +22,60 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             print("📬 Push permission accepted: \(accepted)")
         }, fallbackToSettings: true)
         
+        // Set ourselves as the notification center delegate to handle taps
+        UNUserNotificationCenter.current().delegate = self
+        
         return true
     }
     
     func application(_ application: UIApplication,
                      didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         // OneSignal handles this automatically, but we keep the callback for completeness
+    }
+    
+    // MARK: - UNUserNotificationCenterDelegate
+    
+    /// Called when the user taps a notification (app was in background or terminated)
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        
+        if let deepLink = userInfo[PushNotificationService.deepLinkKey] as? String {
+            let destination: DeepLinkDestination? = {
+                switch deepLink {
+                case "characterLevelUp": return .characterLevelUp
+                case "dungeons": return .dungeons
+                case "training": return .training
+                case "expeditions": return .expeditions
+                case "home": return .home
+                case "tasks": return .tasks
+                case "party": return .party
+                default: return nil
+                }
+            }()
+            
+            if let destination {
+                // Small delay to ensure the app UI is ready before navigating
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    DeepLinkRouter.shared.pendingDestination = destination
+                }
+            }
+        }
+        
+        completionHandler()
+    }
+    
+    /// Called when a notification arrives while the app is in the foreground.
+    /// Show it as a banner so the user can tap it.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }
 
@@ -57,7 +105,8 @@ struct SwordsAndChoresApp: App {
             Consumable.self,
             MoodEntry.self,
             Goal.self,
-            MonsterCard.self
+            MonsterCard.self,
+            PartyChallenge.self
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -252,6 +301,8 @@ struct SwordsAndChoresApp: App {
             
             partnerProfileChannel = await SupabaseService.shared.subscribeToPartnerProfile { profile in
                 character.partnerName = profile.characterName
+                    ?? profile.email?.components(separatedBy: "@").first
+                    ?? "Partner"
                 character.partnerLevel = profile.level
                 character.partnerClassName = profile.characterClass
                 
@@ -266,8 +317,8 @@ struct SwordsAndChoresApp: App {
     }
     
     /// Sync the local character to the cloud when the app goes to background.
-    /// Flushes the SyncManager queue, does a comprehensive character sync,
-    /// and schedules re-engagement push notifications.
+    /// Wraps async work in a UIKit background task so iOS grants ~30 seconds
+    /// of execution time instead of suspending the process immediately.
     private func syncCharacterToCloud() {
         let context = modelContainer.mainContext
         let descriptor = FetchDescriptor<PlayerCharacter>()
@@ -286,7 +337,27 @@ struct SwordsAndChoresApp: App {
             notificationsSentThisLapse: character.reengagementNotificationsSent
         )
         
+        // Request background execution time from iOS (~30 seconds)
+        var bgTaskID: UIBackgroundTaskIdentifier = .invalid
+        bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "CloudSync") {
+            // Expiration handler — clean up if we run out of time
+            print("⚠️ Background sync time expired")
+            UIApplication.shared.endBackgroundTask(bgTaskID)
+            bgTaskID = .invalid
+        }
+        
+        // Guard against failure to start background task
+        guard bgTaskID != .invalid else {
+            print("⚠️ Could not start background task for cloud sync")
+            return
+        }
+        
         Task {
+            defer {
+                UIApplication.shared.endBackgroundTask(bgTaskID)
+                bgTaskID = .invalid
+            }
+            
             // 1. Flush the SyncManager queue (achievements, tasks, goals, mood, etc.)
             await SyncManager.shared.flush()
             

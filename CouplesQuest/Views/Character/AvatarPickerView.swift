@@ -31,6 +31,8 @@ struct AvatarPickerView: View {
         AvatarIcon(symbol: "avatar_19", name: "Adira", requiredLevel: 1, isPixelArt: true),
         AvatarIcon(symbol: "avatar_20", name: "Cael", requiredLevel: 1, isPixelArt: true),
         AvatarIcon(symbol: "avatar_21", name: "Priya", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_22", name: "Whiskers", requiredLevel: 1, isPixelArt: true),
+        AvatarIcon(symbol: "avatar_23", name: "Fang", requiredLevel: 1, isPixelArt: true),
     ]
     
     // MARK: - SF Symbol Icons

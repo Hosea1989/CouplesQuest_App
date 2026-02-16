@@ -48,7 +48,7 @@ struct HomeView: View {
     @State private var claimedDailyQuest: DailyQuest? = nil
     
     // Card entrance animation
-    @State private var cardsVisible: [Bool] = Array(repeating: false, count: 13)
+    @State private var cardsVisible: [Bool] = Array(repeating: false, count: 14)
     
     private var character: PlayerCharacter? {
         characters.first
@@ -93,6 +93,12 @@ struct HomeView: View {
                             // 1. Character Summary Card (with avatar — compact)
                             CharacterSummaryCard(character: character)
                                 .cardEntrance(visible: cardsVisible[0], delay: 0)
+                            
+                            // 1.25. Party Bar (shows allies when in a party)
+                            if character.isInParty {
+                                PartyBarCard(character: character, bond: bonds.first)
+                                    .cardEntrance(visible: cardsVisible[13], delay: 0)
+                            }
                             
                             // 1.5. Breadcrumb Quest Log (first 7 days only)
                             if character.shouldShowBreadcrumbs {
@@ -207,6 +213,11 @@ struct HomeView: View {
                     let hasStreak = character.currentStreak > 0
                     NotificationService.shared.setupRecurringReminders(hasHabits: hasHabits, hasStreak: hasStreak)
                     NotificationService.shared.scheduleAllDueDateReminders(context: modelContext)
+                    
+                    // Cache party ID for fire-and-forget party feed posts
+                    if let partyID = bonds.first?.supabasePartyID {
+                        SupabaseService.shared.cachedPartyID = partyID
+                    }
                 }
             }
             .task {
@@ -2593,6 +2604,114 @@ struct CardEntranceModifier: ViewModifier {
 extension View {
     func cardEntrance(visible: Bool, delay: Int) -> some View {
         modifier(CardEntranceModifier(visible: visible))
+    }
+}
+
+// MARK: - Party Bar Card
+
+/// Compact horizontal bar showing party allies on the Home screen.
+/// Displays each ally's avatar, name, level, and a quick status indicator.
+struct PartyBarCard: View {
+    let character: PlayerCharacter
+    let bond: Bond?
+    
+    private static let memberColors: [String] = ["AccentPurple", "AccentOrange", "AccentGreen"]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Header row
+            HStack {
+                Image(systemName: "person.3.fill")
+                    .font(.caption)
+                    .foregroundColor(Color("AccentPink"))
+                Text("Your Party")
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(Color("AccentPink"))
+                
+                Spacer()
+                
+                if let streakDays = bond?.partyStreakDays, streakDays > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10))
+                        Text("\(streakDays)d streak")
+                            .font(.custom("Avenir-Heavy", size: 10))
+                    }
+                    .foregroundColor(Color("AccentOrange"))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color("AccentOrange").opacity(0.12))
+                    .clipShape(Capsule())
+                }
+            }
+            
+            // Ally cards
+            HStack(spacing: 10) {
+                ForEach(Array(character.partyMembers.enumerated()), id: \.element.id) { index, member in
+                    allyCell(member: member, color: Self.memberColors[index % Self.memberColors.count])
+                }
+                
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 3)
+        )
+    }
+    
+    private func allyCell(member: CachedPartyMember, color: String) -> some View {
+        HStack(spacing: 10) {
+            // Avatar
+            ZStack {
+                if UIImage(named: member.displayAvatarIcon) != nil {
+                    Image(member.displayAvatarIcon)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color(color).opacity(0.18))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: member.displayAvatarIcon)
+                        .font(.body)
+                        .foregroundColor(Color(color))
+                }
+            }
+            
+            // Name, level, status
+            VStack(alignment: .leading, spacing: 2) {
+                Text(member.name)
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .lineLimit(1)
+                
+                HStack(spacing: 4) {
+                    Text("Lv.\(member.level)")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(Color(color))
+                    
+                    if let cls = member.className {
+                        Text("·")
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                        Text(cls)
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(color).opacity(0.06))
+        )
     }
 }
 

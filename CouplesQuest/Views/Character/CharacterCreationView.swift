@@ -851,6 +851,14 @@ struct CharacterCreationView: View {
                         print("✅ New character synced to cloud: \(character.name)")
                     } catch {
                         print("❌ Failed to sync new character to cloud: \(error)")
+                        // Retry with updateProfile as fallback to ensure character_name reaches Supabase
+                        try? await Task.sleep(for: .seconds(2))
+                        try? await SupabaseService.shared.updateProfile(
+                            characterName: character.name,
+                            characterClass: character.characterClass?.rawValue,
+                            level: character.level,
+                            avatarName: character.avatarIcon
+                        )
                     }
                 }
             } else {

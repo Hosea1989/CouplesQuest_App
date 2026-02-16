@@ -11,8 +11,18 @@ final class Bond {
     /// Legacy single-partner ID (kept for backwards compatibility during migration)
     var partnerID: UUID
     
+    /// All party member IDs stored as JSON string (SwiftData can't store [UUID] directly)
+    var memberIDsJSON: String
+    
     /// All party member IDs (max 4, includes the owner). Empty array = solo.
-    var memberIDs: [UUID]
+    var memberIDs: [UUID] {
+        get {
+            (try? JSONDecoder().decode([UUID].self, from: Data(memberIDsJSON.utf8))) ?? []
+        }
+        set {
+            memberIDsJSON = (try? String(data: JSONEncoder().encode(newValue), encoding: .utf8)) ?? "[]"
+        }
+    }
     
     /// Current bond level (1-50)
     var bondLevel: Int
@@ -50,6 +60,16 @@ final class Bond {
     /// Supabase party UUID (links to `parties` table)
     var supabasePartyID: UUID?
     
+    /// The party leader's character UUID (the person who scanned the QR / initiated the party).
+    /// Only the leader can kick members; others can only leave.
+    var leaderID: UUID?
+    
+    /// Daily interaction counters (reset each calendar day)
+    var kudosSentToday: Int
+    var nudgesSentToday: Int
+    var challengesSentToday: Int
+    var interactionCounterDate: Date?
+    
     /// Current party streak day count (all members completing 1+ task/day)
     var partyStreakDays: Int
     
@@ -60,7 +80,7 @@ final class Bond {
     init(partnerID: UUID) {
         self.id = UUID()
         self.partnerID = partnerID
-        self.memberIDs = [partnerID]
+        self.memberIDsJSON = (try? String(data: JSONEncoder().encode([partnerID]), encoding: .utf8)) ?? "[]"
         self.bondLevel = 1
         self.bondEXP = 0
         self.totalBondEXP = 0
@@ -73,6 +93,10 @@ final class Bond {
         self.createdAt = Date()
         self.lastInteractionAt = Date()
         self.supabasePartyID = nil
+        self.kudosSentToday = 0
+        self.nudgesSentToday = 0
+        self.challengesSentToday = 0
+        self.interactionCounterDate = nil
         self.partyStreakDays = 0
         self.partyStreakLastDate = nil
     }
@@ -81,7 +105,7 @@ final class Bond {
     init(memberIDs: [UUID], supabasePartyID: UUID? = nil) {
         self.id = UUID()
         self.partnerID = memberIDs.first ?? UUID()
-        self.memberIDs = memberIDs
+        self.memberIDsJSON = (try? String(data: JSONEncoder().encode(memberIDs), encoding: .utf8)) ?? "[]"
         self.bondLevel = 1
         self.bondEXP = 0
         self.totalBondEXP = 0
@@ -94,8 +118,65 @@ final class Bond {
         self.createdAt = Date()
         self.lastInteractionAt = Date()
         self.supabasePartyID = supabasePartyID
+        self.kudosSentToday = 0
+        self.nudgesSentToday = 0
+        self.challengesSentToday = 0
+        self.interactionCounterDate = nil
         self.partyStreakDays = 0
         self.partyStreakLastDate = nil
+    }
+    
+    // MARK: - Daily Interaction Limits
+    
+    /// Maximum kudos/nudges/challenges per day
+    static let maxInteractionsPerType = 2
+    
+    /// Reset daily counters if the stored date is not today.
+    func resetDailyCountersIfNeeded() {
+        let calendar = Calendar.current
+        if let lastDate = interactionCounterDate, calendar.isDateInToday(lastDate) {
+            return // already today, nothing to reset
+        }
+        kudosSentToday = 0
+        nudgesSentToday = 0
+        challengesSentToday = 0
+        interactionCounterDate = Date()
+    }
+    
+    /// Whether the user can send more kudos today.
+    var canSendKudos: Bool {
+        resetDailyCountersIfNeeded()
+        return kudosSentToday < Bond.maxInteractionsPerType
+    }
+    
+    /// Whether the user can send more nudges today.
+    var canSendNudge: Bool {
+        resetDailyCountersIfNeeded()
+        return nudgesSentToday < Bond.maxInteractionsPerType
+    }
+    
+    /// Whether the user can send more challenges today.
+    var canSendChallenge: Bool {
+        resetDailyCountersIfNeeded()
+        return challengesSentToday < Bond.maxInteractionsPerType
+    }
+    
+    /// Remaining kudos the user can send today.
+    var kudosRemainingToday: Int {
+        resetDailyCountersIfNeeded()
+        return max(0, Bond.maxInteractionsPerType - kudosSentToday)
+    }
+    
+    /// Remaining nudges the user can send today.
+    var nudgesRemainingToday: Int {
+        resetDailyCountersIfNeeded()
+        return max(0, Bond.maxInteractionsPerType - nudgesSentToday)
+    }
+    
+    /// Remaining challenges the user can send today.
+    var challengesRemainingToday: Int {
+        resetDailyCountersIfNeeded()
+        return max(0, Bond.maxInteractionsPerType - challengesSentToday)
     }
     
     // MARK: - Party Helpers
@@ -131,6 +212,11 @@ final class Bond {
     /// Check if a given UUID is a member of this party
     func isMember(_ memberID: UUID) -> Bool {
         memberIDs.contains(memberID)
+    }
+    
+    /// Whether the given player is the party leader
+    func isLeader(_ playerID: UUID) -> Bool {
+        leaderID == playerID
     }
     
     /// Get all member IDs except the given one (useful for "other members")
@@ -460,6 +546,8 @@ struct PairingData: Codable {
     let partyID: String?
     /// SF Symbol name for the member's avatar
     let avatarName: String?
+    /// The Supabase auth user ID (needed for cloud-side partner linking)
+    let supabaseUserID: String?
     
     init(character: PlayerCharacter, partyID: UUID? = nil) {
         self.version = 2
@@ -469,10 +557,11 @@ struct PairingData: Codable {
         self.characterClass = character.characterClass?.rawValue
         self.partyID = partyID?.uuidString
         self.avatarName = character.avatarIcon
+        self.supabaseUserID = character.supabaseUserID
     }
     
     /// Convenience init from raw values (used after cloud pairing acceptance)
-    init(characterID: String, name: String, level: Int, characterClass: String?, partyID: String? = nil, avatarName: String? = nil) {
+    init(characterID: String, name: String, level: Int, characterClass: String?, partyID: String? = nil, avatarName: String? = nil, supabaseUserID: String? = nil) {
         self.version = 2
         self.characterID = characterID
         self.name = name
@@ -480,6 +569,7 @@ struct PairingData: Codable {
         self.characterClass = characterClass
         self.partyID = partyID
         self.avatarName = avatarName
+        self.supabaseUserID = supabaseUserID
     }
     
     /// Encode to JSON string for QR code
@@ -506,6 +596,16 @@ struct PartyFeedEvent: Codable, Identifiable {
     let message: String
     let metadata: [String: String]
     let createdAt: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partyID = "party_id"
+        case actorID = "actor_id"
+        case eventType = "event_type"
+        case message
+        case metadata
+        case createdAt = "created_at"
+    }
     
     /// Display name mapping for event types
     var eventIcon: String {

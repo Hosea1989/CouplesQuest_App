@@ -34,9 +34,9 @@ struct DungeonLobbyView: View {
         character.partyMembers
     }
     
-    /// Whether the host can start (always true — they can start any time)
+    /// The host can always start — no need to wait for members to ready up
     private var canStart: Bool {
-        !isCreatingInvite && !hasStarted
+        !hasStarted
     }
     
     /// Count of members who accepted
@@ -276,20 +276,25 @@ struct DungeonLobbyView: View {
     // MARK: - Status Message
     
     private var statusMessage: some View {
-        Group {
+        VStack(spacing: 6) {
             if isCreatingInvite {
                 HStack(spacing: 8) {
                     ProgressView()
                         .tint(.white)
-                    Text("Sending invites...")
+                    Text("Notifying party members...")
                         .font(.custom("Avenir-Medium", size: 14))
                         .foregroundColor(.white.opacity(0.7))
                 }
-            } else {
-                Text("\(acceptedCount)/\(allMemberIDs.count) party members ready")
+            } else if acceptedCount > 0 {
+                Text("\(acceptedCount)/\(otherMembers.count) allies ready")
                     .font(.custom("Avenir-Medium", size: 14))
                     .foregroundColor(.white.opacity(0.7))
             }
+            
+            Text("You can start any time — allies who haven't responded will join as proxies")
+                .font(.custom("Avenir-Medium", size: 12))
+                .foregroundColor(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
         }
     }
     
@@ -301,7 +306,7 @@ struct DungeonLobbyView: View {
             Button(action: startDungeon) {
                 HStack {
                     Image(systemName: "play.fill")
-                    Text("Start Dungeon")
+                    Text(acceptedCount > 0 ? "Start Dungeon (\(acceptedCount + 1) ready)" : "Start Dungeon")
                 }
                 .font(.custom("Avenir-Heavy", size: 16))
                 .foregroundColor(.white)
@@ -343,14 +348,15 @@ struct DungeonLobbyView: View {
     // MARK: - Actions
     
     private func createInviteAndNotify() async {
-        guard let partyID = bond.supabasePartyID else {
-            isCreatingInvite = false
-            return
-        }
-        
         // Initialize statuses
         for member in otherMembers {
             memberStatuses[member.id] = .pending
+        }
+        
+        guard let partyID = bond.supabasePartyID else {
+            // No cloud party — host can still start with proxies
+            isCreatingInvite = false
+            return
         }
         
         do {
@@ -377,12 +383,12 @@ struct DungeonLobbyView: View {
                 dungeonName: dungeon.name
             )
             
-            isCreatingInvite = false
-            
         } catch {
-            print("❌ Failed to create dungeon invite: \(error)")
-            isCreatingInvite = false
+            print("⚠️ Dungeon invite creation failed (non-blocking): \(error)")
+            // Non-blocking — host can still start with proxies
         }
+        
+        isCreatingInvite = false
     }
     
     private func startDungeon() {

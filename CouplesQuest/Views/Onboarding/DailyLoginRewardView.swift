@@ -37,11 +37,11 @@ struct DailyLoginRewardView: View {
                 .onTapGesture { } // Prevent dismissal by tapping background
             
             // Card content
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 // Header
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 36))
+                        .font(.system(size: 44))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [Color("AccentGold"), Color("AccentOrange")],
@@ -51,11 +51,24 @@ struct DailyLoginRewardView: View {
                         )
                     
                     Text("Daily Login Reward")
-                        .font(.custom("Avenir-Heavy", size: 22))
+                        .font(.custom("Avenir-Heavy", size: 24))
                     
-                    Text("Day \(currentDay) of 7")
-                        .font(.custom("Avenir-Medium", size: 14))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Day \(currentDay) of 7")
+                            .font(.custom("Avenir-Medium", size: 15))
+                            .foregroundColor(.secondary)
+                        
+                        if character.currentStreak > 0 {
+                            Text("•")
+                                .foregroundColor(.secondary)
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(Color("AccentOrange"))
+                            Text("\(character.currentStreak) day streak")
+                                .font(.custom("Avenir-Heavy", size: 15))
+                                .foregroundColor(Color("AccentOrange"))
+                        }
+                    }
                 }
                 
                 // 7-day calendar grid
@@ -64,7 +77,7 @@ struct DailyLoginRewardView: View {
                     GridItem(.flexible()),
                     GridItem(.flexible()),
                     GridItem(.flexible())
-                ], spacing: 12) {
+                ], spacing: 14) {
                     ForEach(rewards, id: \.day) { reward in
                         DayRewardCell(
                             reward: reward,
@@ -74,30 +87,30 @@ struct DailyLoginRewardView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 4)
                 
                 // Today's reward highlight
                 if let todayReward = rewards.first(where: { $0.day == currentDay }) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         Text("Today's Reward")
-                            .font(.custom("Avenir-Heavy", size: 14))
+                            .font(.custom("Avenir-Heavy", size: 15))
                             .foregroundColor(.secondary)
                         
-                        HStack(spacing: 12) {
+                        HStack(spacing: 14) {
                             Image(systemName: todayReward.icon)
-                                .font(.system(size: 24))
+                                .font(.system(size: 28))
                                 .foregroundColor(Color(todayReward.color))
                             
                             Text(todayReward.label)
-                                .font(.custom("Avenir-Heavy", size: 18))
+                                .font(.custom("Avenir-Heavy", size: 20))
                         }
-                        .padding(16)
+                        .padding(18)
                         .frame(maxWidth: .infinity)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: 14)
                                 .fill(Color(todayReward.color).opacity(0.1))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
+                                    RoundedRectangle(cornerRadius: 14)
                                         .stroke(Color(todayReward.color).opacity(0.3), lineWidth: 1)
                                 )
                         )
@@ -117,10 +130,10 @@ struct DailyLoginRewardView: View {
                             Text(claimed ? "Claimed!" : "Claim Reward")
                         }
                     }
-                    .font(.custom("Avenir-Heavy", size: 16))
+                    .font(.custom("Avenir-Heavy", size: 18))
                     .foregroundColor(claimed ? Color("AccentGreen") : .black)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 18)
                     .background(
                         claimed
                         ? AnyShapeStyle(Color("AccentGreen").opacity(0.2))
@@ -130,15 +143,15 @@ struct DailyLoginRewardView: View {
                             endPoint: .trailing
                         ))
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 .disabled(claimed)
             }
-            .padding(24)
+            .padding(28)
             .background(Color("CardBackground"))
-            .cornerRadius(24)
-            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 24)
+            .cornerRadius(28)
+            .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 12)
+            .padding(.horizontal, 16)
         }
     }
     
@@ -188,7 +201,11 @@ struct DailyLoginRewardView: View {
         // Advance the login cycle
         character.claimDailyLoginReward()
         
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            print("❌ DailyLoginRewardView: Failed to save after claim: \(error)")
+        }
         
         // Haptics + sound
         let generator = UINotificationFeedbackGenerator()
@@ -240,27 +257,27 @@ struct DayRewardCell: View {
     let isFuture: Bool
     
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Text("Day \(reward.day)")
-                .font(.custom("Avenir-Heavy", size: 11))
+                .font(.custom("Avenir-Heavy", size: 12))
                 .foregroundColor(isToday ? Color("AccentGold") : .secondary)
             
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(backgroundColor)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 62, height: 62)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: 12)
                             .stroke(isToday ? Color("AccentGold") : Color.clear, lineWidth: 2)
                     )
                 
                 if isClaimed {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 26))
                         .foregroundColor(Color("AccentGreen"))
                 } else {
                     Image(systemName: reward.icon)
-                        .font(.system(size: 20))
+                        .font(.system(size: 24))
                         .foregroundColor(isFuture ? .secondary.opacity(0.5) : Color(reward.color))
                 }
             }

@@ -237,7 +237,21 @@ struct DungeonEngine {
         // Pick narrative text — use class-line-aware narratives when available
         let classLine = party.first?.characterClass?.classLine
         let narrativeText: String
-        if let approach = effectiveApproach {
+        
+        // In co-op, ~60% chance to use a party-aware narrative that mentions an ally
+        let allies = Array(party.dropFirst())
+        let usePartyNarrative = !allies.isEmpty && Double.random(in: 0...1) < 0.6
+        
+        if usePartyNarrative, let ally = allies.randomElement(),
+           let partyText = room.encounterType.partyNarrative(
+               success: success,
+               approach: effectiveApproach,
+               leadClassLine: classLine,
+               allyName: ally.name,
+               allyClassLine: ally.characterClass?.classLine
+           ) {
+            narrativeText = partyText
+        } else if let approach = effectiveApproach {
             let narratives = success
                 ? room.encounterType.successNarrative(for: approach, classLine: classLine)
                 : room.encounterType.failureNarrative(for: approach, classLine: classLine)
@@ -417,18 +431,122 @@ struct DungeonEngine {
                 )
             }
             
-            // Co-op partner flavor
-            if run.isCoopRun, let partnerName = run.partyMemberNames.last, run.partyMemberNames.count > 1 {
-                let partnerActions = [
-                    "\(partnerName) backed you up!",
-                    "\(partnerName) covered your flank!",
-                    "\(partnerName) provided support!",
-                    "\(partnerName) combined their strength with yours!"
-                ]
+            // Co-op partner flavor — context-aware based on encounter type, outcome, and ally class
+            if run.isCoopRun, run.partyMemberNames.count > 1 {
+                let allyIndex = Int.random(in: 1..<party.count)
+                let allyName = party[allyIndex].name
+                let allyClass = party[allyIndex].characterClass
+                let encounter = room.encounterType
+                
+                let partnerMessage: String
+                if result.success {
+                    switch encounter {
+                    case .combat:
+                        let options: [String] = {
+                            switch allyClass?.classLine {
+                            case .warrior:
+                                return [
+                                    "\(allyName) charged in alongside you!",
+                                    "\(allyName) landed a crushing blow from the flank!",
+                                    "\(allyName) held the line while you struck!",
+                                ]
+                            case .mage:
+                                return [
+                                    "\(allyName) provided magical support from the rear!",
+                                    "\(allyName) enchanted your weapon mid-fight!",
+                                    "\(allyName) blasted the enemy with arcane fire!",
+                                ]
+                            case .archer:
+                                return [
+                                    "\(allyName) provided deadly covering fire!",
+                                    "\(allyName) picked off stragglers from the shadows!",
+                                    "\(allyName) called out the enemy's weak point!",
+                                ]
+                            case nil:
+                                return ["\(allyName) fought bravely at your side!"]
+                            }
+                        }()
+                        partnerMessage = options.randomElement()!
+                    case .puzzle:
+                        partnerMessage = [
+                            "\(allyName) pointed out a clue you missed!",
+                            "\(allyName)'s knowledge filled in the gaps!",
+                            "\(allyName) worked the other half of the mechanism!",
+                        ].randomElement()!
+                    case .trap:
+                        partnerMessage = [
+                            "\(allyName) pulled you back from the trigger just in time!",
+                            "\(allyName) spotted the mechanism first!",
+                            "\(allyName) disarmed the secondary trap you didn't see!",
+                        ].randomElement()!
+                    case .boss:
+                        partnerMessage = [
+                            "\(allyName) drew the boss's attention while you struck!",
+                            "\(allyName) and you combined for a devastating combo!",
+                            "\(allyName) kept the pressure on from the other side!",
+                        ].randomElement()!
+                    case .treasure:
+                        partnerMessage = [
+                            "\(allyName) helped you haul the loot!",
+                            "\(allyName) found a hidden compartment with more treasure!",
+                        ].randomElement()!
+                    }
+                } else {
+                    partnerMessage = [
+                        "\(allyName) tried to help but the \(encounter.rawValue) was too much.",
+                        "Even \(allyName)'s support wasn't enough this time.",
+                        "\(allyName) took the hit alongside you. Regroup and try again.",
+                    ].randomElement()!
+                }
+                
                 run.addFeedEntry(
                     type: .partnerAction,
-                    message: partnerActions.randomElement() ?? "\(partnerName) helped!"
+                    message: partnerMessage
                 )
+                
+                // Class synergy callouts — only when the synergy actually mattered
+                let enchanterMember = party.first(where: { $0.characterClass == .enchanter })
+                if let enchanter = enchanterMember, result.success {
+                    run.addFeedEntry(
+                        type: .partnerAction,
+                        message: "\(enchanter.name)'s enchantments amplified the party's power!",
+                        icon: "sparkles",
+                        color: "AccentPurple"
+                    )
+                }
+                
+                if !result.success {
+                    let rangerMember = party.first(where: { $0.characterClass == .ranger })
+                    let paladinMember = party.first(where: { $0.characterClass == .paladin })
+                    if let ranger = rangerMember {
+                        run.addFeedEntry(
+                            type: .partnerAction,
+                            message: "\(ranger.name)'s Ranger instincts softened the blow.",
+                            icon: "shield.lefthalf.filled",
+                            color: "AccentGreen"
+                        )
+                    }
+                    if let paladin = paladinMember {
+                        run.addFeedEntry(
+                            type: .partnerAction,
+                            message: "\(paladin.name)'s Paladin aura shielded the party from the worst of it.",
+                            icon: "shield.checkered",
+                            color: "AccentGold"
+                        )
+                    }
+                }
+                
+                if result.lootDropped {
+                    let tricksterMember = party.first(where: { $0.characterClass == .trickster })
+                    if let trickster = tricksterMember {
+                        run.addFeedEntry(
+                            type: .partnerAction,
+                            message: "\(trickster.name)'s Trickster luck shook loose bonus loot!",
+                            icon: "wand.and.stars",
+                            color: "AccentOrange"
+                        )
+                    }
+                }
             }
             
             // Check for party wipe
@@ -728,6 +846,26 @@ struct DungeonCompletionResult {
     let secretBonusMaterials: Int
     let secretEquipmentDrop: Bool
     let secretNarrative: String
+    
+    // MARK: - Character Progress Snapshot (set by the view after reward application)
+    
+    /// Character level before rewards
+    var characterLevel: Int = 1
+    
+    /// EXP bar progress before rewards (0.0–1.0)
+    var expProgressBefore: Double = 0
+    
+    /// EXP bar progress after rewards (0.0–1.0)
+    var expProgressAfter: Double = 0
+    
+    /// Gold total before rewards
+    var goldBefore: Int = 0
+    
+    /// Gold total after rewards
+    var goldAfter: Int = 0
+    
+    /// All character effective stats after rewards
+    var currentStats: [StatType: Int] = [:]
     
     /// Content card IDs that dropped during this dungeon run
     var cardDropIDs: [String] {

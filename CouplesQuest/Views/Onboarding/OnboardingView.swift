@@ -736,7 +736,8 @@ struct OnboardingView: View {
             rarity: .common,
             primaryStat: primaryStat,
             statBonus: 3,
-            levelRequirement: 1
+            levelRequirement: 1,
+            ownerID: character.id
         )
         modelContext.insert(weapon)
         character.equipment.weapon = weapon
@@ -750,7 +751,8 @@ struct OnboardingView: View {
             rarity: .common,
             primaryStat: .defense,
             statBonus: 2,
-            levelRequirement: 1
+            levelRequirement: 1,
+            ownerID: character.id
         )
         modelContext.insert(armor)
         character.equipment.armor = armor

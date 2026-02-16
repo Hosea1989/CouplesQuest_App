@@ -6,6 +6,9 @@ struct ContentView: View {
     @Query private var characters: [PlayerCharacter]
     @State private var selectedTab: Tab = .home
     
+    /// Observes deep link navigation requests from notification taps
+    @ObservedObject private var deepLinkRouter = DeepLinkRouter.shared
+    
     // MARK: - Onboarding & Retention State
     @State private var showOnboarding = false
     @State private var showWelcomeBack = false
@@ -201,6 +204,34 @@ struct ContentView: View {
                 ActiveMission.clearPersisted()
             }
         }
+        // MARK: - Deep Link Navigation
+        .onChange(of: deepLinkRouter.pendingDestination) { _, destination in
+            guard let destination else { return }
+            handleDeepLink(destination)
+        }
+    }
+    
+    /// Navigate to the correct tab (and sub-screen) based on a notification deep link.
+    private func handleDeepLink(_ destination: DeepLinkDestination) {
+        switch destination {
+        case .characterLevelUp:
+            selectedTab = .character
+            // Clear after tab switch; character tab handles the rest
+            deepLinkRouter.pendingDestination = nil
+        case .dungeons, .training, .expeditions:
+            // Switch to adventures tab; AdventuresHubView observes the router
+            // and clears the destination after switching its sub-category
+            selectedTab = .adventures
+        case .home:
+            selectedTab = .home
+            deepLinkRouter.pendingDestination = nil
+        case .tasks:
+            selectedTab = .tasks
+            deepLinkRouter.pendingDestination = nil
+        case .party:
+            selectedTab = .partner
+            deepLinkRouter.pendingDestination = nil
+        }
     }
     
     // MARK: - Retention Flow Logic
@@ -236,13 +267,13 @@ struct ContentView: View {
         // Priority 3: Daily login reward
         checkDailyLoginReward()
         
+        // Check if the streak should be broken (missed daily reward claim for 2+ days)
+        gameEngine.updateStreak(for: character, completedTaskToday: false)
+        
         // Reset comeback tracking for active users (they're here, so they're active)
         if character.daysSinceLastActive <= 1 && character.comebackGiftClaimed {
             character.resetComebackTracking()
         }
-        
-        // NOTE: lastActiveAt is updated by updateStreak() after streak logic runs.
-        // Do NOT set it here — it would prevent streak day-boundary detection.
     }
     
     /// Show the daily login reward if not claimed today

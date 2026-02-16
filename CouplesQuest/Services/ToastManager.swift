@@ -115,6 +115,42 @@ final class ToastManager: ObservableObject {
         show(Toast(icon: "flame.fill", iconColor: Color("AccentOrange"), title: title, subtitle: subtitle, style: .streak))
     }
     
+    /// Kudos received — warm golden toast with longer duration.
+    func showKudos(from senderName: String, message: String? = nil) {
+        show(Toast(
+            icon: "hands.clap.fill",
+            iconColor: Color("AccentGold"),
+            title: "\(senderName) cheered for you!",
+            subtitle: message ?? "Keep up the amazing work, adventurer!",
+            style: .reward,
+            duration: 3.5
+        ))
+    }
+    
+    /// Nudge received — playful purple toast with longer duration.
+    func showNudge(from senderName: String, message: String? = nil) {
+        show(Toast(
+            icon: "bell.badge.fill",
+            iconColor: Color("AccentPurple"),
+            title: "\(senderName) poked you!",
+            subtitle: message ?? "Your quest log awaits, adventurer!",
+            style: .loot,
+            duration: 3.5
+        ))
+    }
+    
+    /// Challenge received — bold orange toast.
+    func showChallenge(from senderName: String, message: String? = nil) {
+        show(Toast(
+            icon: "flag.checkered",
+            iconColor: Color("AccentOrange"),
+            title: "\(senderName) issued a challenge!",
+            subtitle: message ?? "Do you dare accept?",
+            style: .streak,
+            duration: 3.5
+        ))
+    }
+    
     // MARK: - Queue Logic
     
     /// Dismiss the current toast immediately and show the next one if queued.

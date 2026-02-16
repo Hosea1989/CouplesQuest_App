@@ -154,6 +154,11 @@ class GameEngine: ObservableObject {
             totalGold += (totalGold * streakBonus) / 100
         }
         
+        // --- SNAPSHOT: Capture character state BEFORE stat/reward changes ---
+        let snapshotExpProgressBefore = character.levelProgress
+        let snapshotGoldBefore = character.gold
+        let snapshotLevel = character.level
+        
         // Partner co-task bonus: +15% EXP/Gold + always +1 CHA
         var bonusStatGains: [(StatType, Int)] = []
         if task.isFromPartner {
@@ -288,6 +293,41 @@ class GameEngine: ObservableObject {
         // Award gold (with rebirth bonus)
         character.gainGold(totalGold)
         
+        // --- SNAPSHOT: Capture character state AFTER rewards ---
+        let snapshotExpProgressAfter = character.levelProgress
+        let snapshotGoldAfter = character.gold
+        let snapshotCanLevelUp = character.canLevelUp
+        var snapshotCurrentStats: [StatType: Int] = [:]
+        for statType in StatType.allCases {
+            snapshotCurrentStats[statType] = character.effectiveStats.value(for: statType)
+        }
+        
+        // Heal character HP from IRL task completion
+        // Wellness tasks heal more (+20 HP), all other categories heal +10 HP
+        let taskHealAmount = task.category == .wellness ? 20 : 10
+        let hpBefore = character.currentHP
+        character.heal(amount: taskHealAmount)
+        let actualHeal = character.currentHP - hpBefore
+        
+        // If character has an active dungeon run, add a feed entry about the IRL heal
+        if actualHeal > 0, let ctx = context {
+            let fetchDescriptor = FetchDescriptor<DungeonRun>(
+                sortBy: [SortDescriptor(\DungeonRun.startedAt, order: .reverse)]
+            )
+            if let activeRuns = try? ctx.fetch(fetchDescriptor),
+               let activeRun = activeRuns.first(where: { $0.status == .inProgress }) {
+                let categoryName = task.category.rawValue.lowercased()
+                activeRun.addFeedEntry(
+                    type: .irlTaskHeal,
+                    message: "Completed a \(categoryName) task in the real world! +\(actualHeal) HP restored.",
+                    icon: "heart.circle.fill",
+                    color: "AccentGreen"
+                )
+                // Also heal the dungeon run's party HP pool
+                activeRun.partyHP = min(activeRun.maxPartyHP, activeRun.partyHP + actualHeal)
+            }
+        }
+        
         // Update task count + daily count
         character.tasksCompleted += 1
         character.checkDailyReset()
@@ -335,9 +375,36 @@ class GameEngine: ObservableObject {
             try? await SupabaseService.shared.syncCharacterData(charForSync)
         }
         
+        // Post to party feed so party members see the completion
+        if let partyID = bond?.supabasePartyID,
+           let actorID = SupabaseService.shared.currentUserID {
+            let taskName = task.title
+            let expAmount = totalEXP
+            Task {
+                try? await SupabaseService.shared.postPartyFeedEvent(
+                    partyID: partyID,
+                    actorID: actorID,
+                    eventType: "task_completed",
+                    message: "\(character.name) completed '\(taskName)' (+\(expAmount) EXP)",
+                    metadata: ["task_name": taskName, "exp": "\(expAmount)", "gold": "\(totalGold)"]
+                )
+            }
+        }
+        
         // Check goal progress if this task is linked to a goal
         if let goalID = task.goalID, let ctx = context {
             checkGoalMilestones(goalID: goalID, character: character, context: ctx)
+        }
+        
+        // Update party challenge progress (tasks type)
+        if let ctx = context {
+            updateChallengeProgress(
+                type: .tasks,
+                characterID: character.id,
+                character: character,
+                bond: bond,
+                context: ctx
+            )
         }
         
         return TaskCompletionResult(
@@ -359,7 +426,15 @@ class GameEngine: ObservableObject {
             classAffinityBonusEXP: classAffinityBonusEXP,
             classMessage: character.classCompletionMessage,
             routineBundleCompleted: routineBundleCompleted,
-            routineBonusEXP: routineBonusEXP
+            routineBonusEXP: routineBonusEXP,
+            characterLevel: snapshotLevel,
+            expProgressBefore: snapshotExpProgressBefore,
+            expProgressAfter: snapshotExpProgressAfter,
+            goldBefore: snapshotGoldBefore,
+            goldAfter: snapshotGoldAfter,
+            currentStats: snapshotCurrentStats,
+            canLevelUp: snapshotCanLevelUp,
+            hpHealed: actualHeal
         )
     }
     
@@ -574,6 +649,14 @@ class GameEngine: ObservableObject {
             return false // Cannot train while in a dungeon
         }
         
+        // Check HP cost — character must have enough HP to start training
+        guard character.currentHP >= mission.hpCost else {
+            return false
+        }
+        
+        // Deduct HP cost
+        character.takeDamage(mission.hpCost)
+        
         let newMission = ActiveMission(mission: mission, characterID: character.id)
         
         // Apply research tree mission duration reduction
@@ -608,6 +691,7 @@ class GameEngine: ObservableObject {
             // Capture before state for animated reward screen
             let previousLevel = character.level
             let expProgressBefore = character.levelProgress
+            let missionGoldBefore = character.gold
             
             // Calculate rewards
             let expReward = mission.expReward
@@ -717,7 +801,14 @@ class GameEngine: ObservableObject {
             activeMission = nil
             ActiveMission.clearPersisted()
             
-            return MissionCompletionResult(
+            // Capture post-reward state for stat display
+            let missionGoldAfter = character.gold
+            var missionStatsSnapshot: [StatType: Int] = [:]
+            for statType in StatType.allCases {
+                missionStatsSnapshot[statType] = character.effectiveStats.value(for: statType)
+            }
+            
+            var missionResult = MissionCompletionResult(
                 success: true,
                 expGained: expReward,
                 goldGained: goldReward,
@@ -732,6 +823,10 @@ class GameEngine: ObservableObject {
                 researchTokensDropped: researchTokensDropped,
                 rankedUpToClass: rankedUpToClass
             )
+            missionResult.goldBefore = missionGoldBefore
+            missionResult.goldAfter = missionGoldAfter
+            missionResult.currentStats = missionStatsSnapshot
+            return missionResult
         } else {
             // Mission failed — award consolation rewards (25%) so time isn't wasted
             let consolationEXP = max(5, mission.expReward / 4)
@@ -739,6 +834,7 @@ class GameEngine: ObservableObject {
             
             let previousLevel = character.level
             let expProgressBefore = character.levelProgress
+            let failGoldBefore = character.gold
             
             character.gainEXP(consolationEXP)
             character.gainGold(consolationGold)
@@ -760,7 +856,13 @@ class GameEngine: ObservableObject {
             activeMission = nil
             ActiveMission.clearPersisted()
             
-            return MissionCompletionResult(
+            let failGoldAfter = character.gold
+            var failStatsSnapshot: [StatType: Int] = [:]
+            for statType in StatType.allCases {
+                failStatsSnapshot[statType] = character.effectiveStats.value(for: statType)
+            }
+            
+            var failResult = MissionCompletionResult(
                 success: false,
                 expGained: consolationEXP,
                 goldGained: consolationGold,
@@ -773,6 +875,10 @@ class GameEngine: ObservableObject {
                 statPointsGained: statPointsGained,
                 statGained: nil
             )
+            failResult.goldBefore = failGoldBefore
+            failResult.goldAfter = failGoldAfter
+            failResult.currentStats = failStatsSnapshot
+            return failResult
         }
     }
     
@@ -788,41 +894,27 @@ class GameEngine: ObservableObject {
     // MARK: - Streak Management
     
     /// Update daily streak (with streak freeze support)
+    /// Check if the streak should be broken due to a missed daily login reward claim.
+    /// The streak is now incremented by `claimDailyLoginReward()` on PlayerCharacter.
+    /// This method only handles detecting breaks (called on app launch).
     func updateStreak(for character: PlayerCharacter, completedTaskToday: Bool) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let lastActive = calendar.startOfDay(for: character.lastActiveAt)
         
-        let daysDifference = calendar.dateComponents([.day], from: lastActive, to: today).day ?? 0
-        
-        if completedTaskToday {
-            if daysDifference == 0 {
-                // Same day — initialize streak to 1 if this is the first completion
-                if character.currentStreak == 0 {
-                    character.currentStreak = 1
-                    character.longestStreak = max(character.longestStreak, 1)
+        // Streak is now driven by daily reward claims, not task completions.
+        // Check if the last claim was too long ago, and break the streak if so.
+        if let lastClaim = character.lastLoginRewardDate {
+            let lastClaimDay = calendar.startOfDay(for: lastClaim)
+            let daysSinceClaim = calendar.dateComponents([.day], from: lastClaimDay, to: today).day ?? 0
+            
+            if daysSinceClaim > 1 {
+                // More than 1 day since last claim — check for streak freeze
+                if daysSinceClaim == 2 && applyStreakFreezeIfAvailable(character: character) {
+                    // Freeze consumed, streak preserved (but not incremented until next claim)
+                } else if daysSinceClaim > 1 {
+                    // Streak broken
+                    character.currentStreak = 0
                 }
-            } else if daysDifference == 1 {
-                // Next day, increment streak
-                character.currentStreak += 1
-                character.longestStreak = max(character.longestStreak, character.currentStreak)
-            } else {
-                // Gap of more than 1 day — check for streak freeze
-                if daysDifference == 2 && applyStreakFreezeIfAvailable(character: character) {
-                    // Streak freeze consumed — streak continues as if no gap
-                    character.currentStreak += 1
-                    character.longestStreak = max(character.longestStreak, character.currentStreak)
-                } else {
-                    // Streak broken, reset
-                    character.currentStreak = 1
-                }
-            }
-        } else if daysDifference > 1 {
-            // Missed a day without completing a task
-            if daysDifference == 2 && applyStreakFreezeIfAvailable(character: character) {
-                // Freeze consumed, streak preserved (not incremented since no task today)
-            } else {
-                character.currentStreak = 0
             }
         }
         
@@ -908,6 +1000,26 @@ class GameEngine: ObservableObject {
         
         pendingLevelUpRewards = allRewards
         showLevelUpCelebration = true
+        
+        // Queue character sync so level-up is pushed to cloud promptly
+        SyncManager.shared.queueCharacterSync(character)
+        Task { try? await SupabaseService.shared.syncCharacterData(character) }
+        
+        // Post level-up to party feed
+        if let partyID = SupabaseService.shared.cachedPartyID,
+           let actorID = SupabaseService.shared.currentUserID {
+            let charName = character.name
+            let newLevel = character.level
+            Task {
+                try? await SupabaseService.shared.postPartyFeedEvent(
+                    partyID: partyID,
+                    actorID: actorID,
+                    eventType: "level_up",
+                    message: "\(charName) reached Level \(newLevel)!",
+                    metadata: ["level": "\(newLevel)"]
+                )
+            }
+        }
     }
     
     /// Trigger a Paragon level-up (character is level 100+, EXP threshold met)
@@ -1121,6 +1233,36 @@ class GameEngine: ObservableObject {
         // Check bonus quest
         updateBonusQuest(quests: quests)
         
+        // Update party challenge progress for daily quests
+        let bond = (try? context.fetch(FetchDescriptor<Bond>()))?.first
+        if bond != nil {
+            let completedQuestCount = quests.filter { $0.isCompleted && !$0.isBonusQuest }.count
+            let challengeDescriptor = FetchDescriptor<PartyChallenge>()
+            if let challenges = try? context.fetch(challengeDescriptor),
+               let challenge = challenges.first(where: { $0.isActive && !$0.isExpired && $0.challengeType == .dailyQuests }) {
+                let currentProgress = challenge.progress(for: character.id)
+                if completedQuestCount > currentProgress {
+                    let diff = completedQuestCount - currentProgress
+                    for _ in 0..<diff {
+                        let justCompleted = challenge.incrementProgress(for: character.id)
+                        if justCompleted {
+                            character.gainGold(challenge.rewardGold)
+                            bond?.gainBondEXP(challenge.rewardBondEXP)
+                            ToastManager.shared.showReward(
+                                "Challenge Goal Hit!",
+                                subtitle: "+\(challenge.rewardBondEXP) Bond EXP · +\(challenge.rewardGold) Gold",
+                                icon: "flag.checkered"
+                            )
+                            if challenge.isFullPartyComplete && !challenge.partyBonusAwarded {
+                                challenge.partyBonusAwarded = true
+                                bond?.gainBondEXP(challenge.partyBonusBondEXP)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         dailyQuests = quests
         try? context.save()
     }
@@ -1289,8 +1431,11 @@ class GameEngine: ObservableObject {
         bond.dutyBoardTasksClaimed += 1
     }
     
-    /// Send a kudos interaction
-    func sendKudos(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction {
+    /// Send a kudos interaction (returns nil if daily limit reached)
+    func sendKudos(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction? {
+        bond.resetDailyCountersIfNeeded()
+        guard bond.canSendKudos else { return nil }
+        
         let interaction = PartnerInteraction(
             type: .kudos,
             message: message ?? InteractionType.kudos.defaultMessage,
@@ -1304,12 +1449,16 @@ class GameEngine: ObservableObject {
         
         bond.gainBondEXP(bondEXP)
         bond.kudosSent += 1
+        bond.kudosSentToday += 1
         
         return interaction
     }
     
-    /// Send a nudge interaction
-    func sendNudge(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction {
+    /// Send a nudge interaction (returns nil if daily limit reached)
+    func sendNudge(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction? {
+        bond.resetDailyCountersIfNeeded()
+        guard bond.canSendNudge else { return nil }
+        
         let interaction = PartnerInteraction(
             type: .nudge,
             message: message ?? InteractionType.nudge.defaultMessage,
@@ -1323,6 +1472,7 @@ class GameEngine: ObservableObject {
         
         bond.gainBondEXP(bondEXP)
         bond.nudgesSent += 1
+        bond.nudgesSentToday += 1
         
         return interaction
     }
@@ -2792,6 +2942,8 @@ class GameEngine: ObservableObject {
             // Legacy single-partner refresh
             if let partnerProfile = try await SupabaseService.shared.fetchPartnerProfile() {
                 character.partnerName = partnerProfile.characterName
+                    ?? partnerProfile.email?.components(separatedBy: "@").first
+                    ?? "Partner"
                 character.partnerLevel = partnerProfile.level
                 character.partnerClassName = partnerProfile.characterClass
                 
@@ -2812,7 +2964,8 @@ class GameEngine: ObservableObject {
         }
     }
     
-    /// Refresh all cached party member data from the Supabase profiles table
+    /// Refresh all cached party member data from the Supabase profiles table.
+    /// Populates enriched stats and progression fields from the CharacterSnapshot.
     func refreshAllPartyMemberData(character: PlayerCharacter) async {
         guard character.isInParty else { return }
         
@@ -2820,18 +2973,31 @@ class GameEngine: ObservableObject {
             var updatedMembers: [CachedPartyMember] = []
             for member in character.partyMembers {
                 if let profile = try await SupabaseService.shared.fetchProfile(byID: member.id) {
-                    var statTotal: Int?
-                    if let snapshot = profile.characterData {
-                        statTotal = snapshot.strength + snapshot.wisdom + snapshot.charisma +
-                                    snapshot.dexterity + snapshot.luck + snapshot.defense
+                    let snapshot = profile.characterData
+                    let statTotal: Int? = snapshot.map {
+                        $0.strength + $0.wisdom + $0.charisma + $0.dexterity + $0.luck + $0.defense
                     }
+                    
                     updatedMembers.append(CachedPartyMember(
                         id: member.id,
                         name: profile.characterName ?? member.name,
                         level: profile.level ?? member.level,
                         className: profile.characterClass ?? member.className,
                         statTotal: statTotal ?? member.statTotal,
-                        avatarName: profile.avatarName ?? member.avatarName
+                        avatarName: profile.avatarName ?? member.avatarName,
+                        strength: snapshot?.strength,
+                        wisdom: snapshot?.wisdom,
+                        charisma: snapshot?.charisma,
+                        dexterity: snapshot?.dexterity,
+                        luck: snapshot?.luck,
+                        defense: snapshot?.defense,
+                        currentEXP: snapshot?.currentEXP,
+                        tasksCompleted: snapshot?.tasksCompleted,
+                        currentStreak: snapshot?.currentStreak,
+                        arenaBestWave: snapshot?.arenaBestWave,
+                        avatarFrame: snapshot?.avatarFrame,
+                        paragonLevel: snapshot?.paragonLevel,
+                        gold: snapshot?.gold
                     ))
                 } else {
                     updatedMembers.append(member)
@@ -2844,8 +3010,11 @@ class GameEngine: ObservableObject {
         }
     }
     
-    /// Send a challenge interaction
-    func sendChallenge(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction {
+    /// Send a challenge interaction (returns nil if daily limit reached)
+    func sendChallenge(from character: PlayerCharacter, bond: Bond, message: String?) -> PartnerInteraction? {
+        bond.resetDailyCountersIfNeeded()
+        guard bond.canSendChallenge else { return nil }
+        
         let interaction = PartnerInteraction(
             type: .challenge,
             message: message ?? InteractionType.challenge.defaultMessage,
@@ -2853,8 +3022,61 @@ class GameEngine: ObservableObject {
         )
         
         bond.gainBondEXP(GameEngine.bondEXPForKudos)
+        bond.challengesSentToday += 1
         
         return interaction
+    }
+    
+    // MARK: - Party Challenge Progress
+    
+    /// Increment the active party challenge for a given type and member.
+    /// Call this after a task is completed, a duty is claimed, a dungeon is cleared, or a daily quest is done.
+    /// Returns the challenge if the member just hit the target (for celebration purposes).
+    @discardableResult
+    func updateChallengeProgress(
+        type: PartyChallengeType,
+        characterID: UUID,
+        character: PlayerCharacter,
+        bond: Bond?,
+        context: ModelContext
+    ) -> PartyChallenge? {
+        let descriptor = FetchDescriptor<PartyChallenge>()
+        guard let challenges = try? context.fetch(descriptor) else { return nil }
+        
+        // Find the active, non-expired challenge of matching type
+        guard let challenge = challenges.first(where: {
+            $0.isActive && !$0.isExpired && $0.challengeType == type
+        }) else { return nil }
+        
+        let justCompleted = challenge.incrementProgress(for: characterID)
+        
+        if justCompleted {
+            // Award individual rewards
+            character.gainGold(challenge.rewardGold)
+            bond?.gainBondEXP(challenge.rewardBondEXP)
+            
+            ToastManager.shared.showReward(
+                "Challenge Goal Hit!",
+                subtitle: "+\(challenge.rewardBondEXP) Bond EXP · +\(challenge.rewardGold) Gold",
+                icon: "flag.checkered"
+            )
+            
+            // Check if entire party is now done
+            if challenge.isFullPartyComplete && !challenge.partyBonusAwarded {
+                challenge.partyBonusAwarded = true
+                bond?.gainBondEXP(challenge.partyBonusBondEXP)
+                
+                ToastManager.shared.showReward(
+                    "Full Party Clear!",
+                    subtitle: "Everyone finished! +\(challenge.partyBonusBondEXP) Bonus Bond EXP",
+                    icon: "star.fill"
+                )
+            }
+            
+            return challenge
+        }
+        
+        return nil
     }
     
     // MARK: - Task Loot Rolls
@@ -3083,6 +3305,32 @@ struct TaskCompletionResult {
     /// Routine completion bonus EXP (included in expGained)
     let routineBonusEXP: Int
     
+    // MARK: - Character Progress Snapshot (for animated reward screen)
+    
+    /// Character level (doesn't change on task completion since level-up is manual)
+    let characterLevel: Int
+    
+    /// EXP bar progress before rewards (0.0–1.0)
+    let expProgressBefore: Double
+    
+    /// EXP bar progress after rewards (0.0–1.0)
+    let expProgressAfter: Double
+    
+    /// Gold total before this task's rewards
+    let goldBefore: Int
+    
+    /// Gold total after this task's rewards
+    let goldAfter: Int
+    
+    /// All character effective stats after rewards (for stat display card)
+    let currentStats: [StatType: Int]
+    
+    /// Whether the character can level up after this completion
+    let canLevelUp: Bool
+    
+    /// HP healed from completing this task (0 if already at max)
+    let hpHealed: Int
+    
     /// Convenience: first bonus stat gain (for backward-compatible display)
     var bonusStatGain: (StatType, Int)? {
         bonusStatGains.first
@@ -3107,7 +3355,15 @@ struct TaskCompletionResult {
         classAffinityBonusEXP: Int = 0,
         classMessage: String? = nil,
         routineBundleCompleted: Bool = false,
-        routineBonusEXP: Int = 0
+        routineBonusEXP: Int = 0,
+        characterLevel: Int = 1,
+        expProgressBefore: Double = 0,
+        expProgressAfter: Double = 0,
+        goldBefore: Int = 0,
+        goldAfter: Int = 0,
+        currentStats: [StatType: Int] = [:],
+        canLevelUp: Bool = false,
+        hpHealed: Int = 0
     ) {
         self.expGained = expGained
         self.goldGained = goldGained
@@ -3128,6 +3384,14 @@ struct TaskCompletionResult {
         self.classMessage = classMessage
         self.routineBundleCompleted = routineBundleCompleted
         self.routineBonusEXP = routineBonusEXP
+        self.characterLevel = characterLevel
+        self.expProgressBefore = expProgressBefore
+        self.expProgressAfter = expProgressAfter
+        self.goldBefore = goldBefore
+        self.goldAfter = goldAfter
+        self.currentStats = currentStats
+        self.canLevelUp = canLevelUp
+        self.hpHealed = hpHealed
     }
 }
 
@@ -3334,6 +3598,17 @@ struct MissionCompletionResult {
     
     /// Class the character ranked up to (nil if not a rank-up training)
     var rankedUpToClass: CharacterClass? = nil
+    
+    // MARK: - Character Progress Snapshot
+    
+    /// Gold total before mission rewards
+    var goldBefore: Int = 0
+    
+    /// Gold total after mission rewards
+    var goldAfter: Int = 0
+    
+    /// All character effective stats after rewards (for stat display card)
+    var currentStats: [StatType: Int] = [:]
 }
 
 /// Result of a meditation session

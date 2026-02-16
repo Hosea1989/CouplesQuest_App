@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import SwiftData
 import Combine
 
@@ -188,6 +189,33 @@ final class SyncManager: ObservableObject {
         ))
     }
     
+    /// Queue a daily quest sync.
+    func queueDailyQuestSync(_ quest: DailyQuest) {
+        guard let userID = SupabaseService.shared.currentUserID else { return }
+        queue(SyncOperation(
+            type: .dailyQuest,
+            key: "\(userID.uuidString)_\(quest.id.uuidString)",
+            timestamp: Date(),
+            payload: .dailyQuest(DailyQuestSyncData(
+                playerID: userID,
+                localID: quest.id,
+                title: quest.title,
+                questDescription: quest.questDescription,
+                icon: quest.icon,
+                questType: quest.questType.rawValue,
+                questParam: quest.questParam,
+                targetValue: quest.targetValue,
+                currentValue: quest.currentValue,
+                expReward: quest.expReward,
+                goldReward: quest.goldReward,
+                isCompleted: quest.isCompleted,
+                isClaimed: quest.isClaimed,
+                isBonusQuest: quest.isBonusQuest,
+                generatedDate: quest.generatedDate
+            ))
+        ))
+    }
+    
     /// Queue a daily state sync.
     func queueDailyStateSync(_ character: PlayerCharacter) {
         guard let userID = SupabaseService.shared.currentUserID else { return }
@@ -253,9 +281,11 @@ final class SyncManager: ObservableObject {
             // Exponential backoff for retries
             backoffDelay = min(backoffDelay * 2, maxBackoffDelay)
             
-            // Schedule retry
+            // Schedule retry only if app is still in the foreground
+            // (background retries would be killed by iOS before completing)
             Task {
                 try? await Task.sleep(for: .seconds(backoffDelay))
+                guard await UIApplication.shared.applicationState == .active else { return }
                 await flush()
             }
         }
@@ -438,6 +468,223 @@ final class SyncManager: ObservableObject {
                 }
             }
             
+            // 3. Pull tasks (restore missing local tasks from cloud)
+            let charDescriptor = FetchDescriptor<PlayerCharacter>()
+            if let localChar = (try? context.fetch(charDescriptor))?.first {
+                let cloudTasks = try await SupabaseService.shared.fetchOwnTasks()
+                if !cloudTasks.isEmpty {
+                    let taskDescriptor = FetchDescriptor<GameTask>()
+                    let localTasks = (try? context.fetch(taskDescriptor)) ?? []
+                    let localIDs = Set(localTasks.map { $0.id })
+                    
+                    var restoredTasks = 0
+                    for ct in cloudTasks {
+                        guard !localIDs.contains(ct.localID) else { continue }
+                        let task = GameTask(
+                            title: ct.title,
+                            description: ct.description,
+                            category: TaskCategory(rawValue: ct.category) ?? .physical,
+                            createdBy: ct.createdBy,
+                            assignedTo: ct.assignedTo,
+                            isRecurring: ct.isRecurring,
+                            recurrencePattern: ct.recurrencePattern.flatMap { RecurrencePattern(rawValue: $0) },
+                            dueDate: ct.dueDate,
+                            isFromPartner: ct.isFromPartner,
+                            verificationType: VerificationType(rawValue: ct.verificationType) ?? .none,
+                            isHabit: ct.isHabit,
+                            goalID: ct.goalID
+                        )
+                        // Restore the original UUID so future syncs match
+                        task.id = ct.localID
+                        task.status = TaskStatus(rawValue: ct.status) ?? .pending
+                        task.completedAt = ct.completedAt
+                        task.isVerified = ct.isVerified
+                        task.habitStreak = ct.habitStreak
+                        task.habitLongestStreak = ct.habitLongestStreak
+                        task.customEXP = ct.customEXP
+                        context.insert(task)
+                        restoredTasks += 1
+                    }
+                    if restoredTasks > 0 {
+                        print("✅ SyncManager: Restored \(restoredTasks) tasks from cloud")
+                    }
+                }
+                
+                // 4. Pull goals (restore missing local goals from cloud)
+                let cloudGoals = try await SupabaseService.shared.fetchOwnGoals()
+                if !cloudGoals.isEmpty {
+                    let goalDescriptor = FetchDescriptor<Goal>()
+                    let localGoals = (try? context.fetch(goalDescriptor)) ?? []
+                    let localGoalIDs = Set(localGoals.map { $0.id })
+                    
+                    var restoredGoals = 0
+                    for cg in cloudGoals {
+                        guard !localGoalIDs.contains(cg.localID) else { continue }
+                        let goal = Goal(
+                            title: cg.title,
+                            description: cg.description,
+                            category: TaskCategory(rawValue: cg.category) ?? .physical,
+                            targetDate: cg.targetDate,
+                            createdBy: localChar.id
+                        )
+                        goal.id = cg.localID
+                        goal.status = GoalStatus(rawValue: cg.status) ?? .active
+                        goal.completedAt = cg.completedAt
+                        goal.milestone25Claimed = cg.milestone25Claimed
+                        goal.milestone50Claimed = cg.milestone50Claimed
+                        goal.milestone75Claimed = cg.milestone75Claimed
+                        goal.milestone100Claimed = cg.milestone100Claimed
+                        context.insert(goal)
+                        restoredGoals += 1
+                    }
+                    if restoredGoals > 0 {
+                        print("✅ SyncManager: Restored \(restoredGoals) goals from cloud")
+                    }
+                }
+                
+                // 5. Pull mood entries (restore missing local mood entries from cloud)
+                let cloudMoods = try await SupabaseService.shared.fetchOwnMoodEntries()
+                if !cloudMoods.isEmpty {
+                    let moodDescriptor = FetchDescriptor<MoodEntry>()
+                    let localMoods = (try? context.fetch(moodDescriptor)) ?? []
+                    let localMoodIDs = Set(localMoods.map { $0.id })
+                    
+                    var restoredMoods = 0
+                    for cm in cloudMoods {
+                        guard !localMoodIDs.contains(cm.localID) else { continue }
+                        let entry = MoodEntry(
+                            moodLevel: cm.moodLevel,
+                            journalText: cm.journalText,
+                            ownerID: localChar.id
+                        )
+                        entry.id = cm.localID
+                        entry.date = cm.date
+                        context.insert(entry)
+                        restoredMoods += 1
+                    }
+                    if restoredMoods > 0 {
+                        print("✅ SyncManager: Restored \(restoredMoods) mood entries from cloud")
+                    }
+                }
+                
+                // 6. Pull bond/party data (restore bond level, EXP, streaks from cloud)
+                if let cloudParty = try? await SupabaseService.shared.fetchOwnParty() {
+                    let bondDescriptor = FetchDescriptor<Bond>()
+                    let localBonds = (try? context.fetch(bondDescriptor)) ?? []
+                    
+                    if let existingBond = localBonds.first {
+                        // Merge: take higher values from cloud
+                        existingBond.bondLevel = max(existingBond.bondLevel, cloudParty.bondLevel)
+                        existingBond.bondEXP = max(existingBond.bondEXP, cloudParty.bondExp)
+                        existingBond.partyStreakDays = max(existingBond.partyStreakDays, cloudParty.partyStreakDays)
+                        if existingBond.supabasePartyID == nil {
+                            existingBond.supabasePartyID = cloudParty.id
+                        }
+                    } else if cloudParty.memberIDs.count >= 2 {
+                        // No local bond — create from cloud
+                        let newBond = Bond(memberIDs: cloudParty.memberIDs)
+                        newBond.bondLevel = cloudParty.bondLevel
+                        newBond.bondEXP = cloudParty.bondExp
+                        newBond.partyStreakDays = cloudParty.partyStreakDays
+                        newBond.supabasePartyID = cloudParty.id
+                        context.insert(newBond)
+                        print("✅ SyncManager: Restored bond from cloud (level \(cloudParty.bondLevel))")
+                    }
+                    
+                    // 7. Pull daily quests (restore today's quests from cloud if missing locally)
+                    let cloudDailyQuests = try await SupabaseService.shared.fetchTodaysDailyQuests()
+                    if !cloudDailyQuests.isEmpty {
+                        let dqDescriptor = FetchDescriptor<DailyQuest>()
+                        let localDQs = (try? context.fetch(dqDescriptor)) ?? []
+                        let localDQIDs = Set(localDQs.map { $0.id })
+                        
+                        var restoredDQs = 0
+                        for cq in cloudDailyQuests {
+                            if localDQIDs.contains(cq.localID) {
+                                // Update existing with cloud progress (take higher)
+                                if let existing = localDQs.first(where: { $0.id == cq.localID }) {
+                                    existing.currentValue = max(existing.currentValue, cq.currentValue)
+                                    if cq.isCompleted { existing.isCompleted = true }
+                                    if cq.isClaimed { existing.isClaimed = true }
+                                }
+                            } else {
+                                // Restore from cloud
+                                let quest = DailyQuest(
+                                    title: cq.title,
+                                    description: cq.questDescription ?? "",
+                                    icon: cq.icon,
+                                    questType: DailyQuestType(rawValue: cq.questType) ?? .completeTasks,
+                                    questParam: cq.questParam,
+                                    targetValue: cq.targetValue,
+                                    expReward: cq.expReward,
+                                    goldReward: cq.goldReward,
+                                    isBonusQuest: cq.isBonusQuest,
+                                    characterID: localChar.id
+                                )
+                                quest.id = cq.localID
+                                quest.currentValue = cq.currentValue
+                                quest.isCompleted = cq.isCompleted
+                                quest.isClaimed = cq.isClaimed
+                                context.insert(quest)
+                                restoredDQs += 1
+                            }
+                        }
+                        if restoredDQs > 0 {
+                            print("✅ SyncManager: Restored \(restoredDQs) daily quests from cloud")
+                        }
+                    }
+                    
+                    // 8. Pull party challenges (restore/sync from cloud)
+                    let partyID = (try? context.fetch(FetchDescriptor<Bond>()))?.first?.supabasePartyID
+                    if let partyID {
+                        let cloudChallenges = try await SupabaseService.shared.fetchPartyChallenges(partyID: partyID)
+                        if !cloudChallenges.isEmpty {
+                            let challengeDescriptor = FetchDescriptor<PartyChallenge>()
+                            let localChallenges = (try? context.fetch(challengeDescriptor)) ?? []
+                            let localChallengeIDs = Set(localChallenges.map { $0.id })
+                            
+                            var restoredChallenges = 0
+                            for cc in cloudChallenges {
+                                if localChallengeIDs.contains(cc.id) {
+                                    // Update existing local challenge with cloud progress
+                                    if let existing = localChallenges.first(where: { $0.id == cc.id }) {
+                                        existing.memberProgressJSON = cc.memberProgress ?? "[]"
+                                        existing.isActive = cc.isActive
+                                        existing.partyBonusAwarded = cc.partyBonusAwarded
+                                    }
+                                } else {
+                                    // Create new local challenge from cloud
+                                    let challenge = PartyChallenge(
+                                        challengeType: PartyChallengeType(rawValue: cc.challengeType) ?? .tasks,
+                                        targetCount: cc.targetCount,
+                                        durationDays: 7,
+                                        createdBy: cc.createdBy,
+                                        members: []
+                                    )
+                                    challenge.id = cc.id
+                                    challenge.title = cc.title
+                                    challenge.createdAt = cc.createdAt ?? Date()
+                                    challenge.deadline = cc.deadline
+                                    challenge.isActive = cc.isActive
+                                    challenge.memberProgressJSON = cc.memberProgress ?? "[]"
+                                    challenge.rewardBondEXP = cc.rewardBondEXP
+                                    challenge.rewardGold = cc.rewardGold
+                                    challenge.partyBonusBondEXP = cc.partyBonusBondEXP
+                                    challenge.partyBonusAwarded = cc.partyBonusAwarded
+                                    context.insert(challenge)
+                                    restoredChallenges += 1
+                                }
+                            }
+                            if restoredChallenges > 0 {
+                                print("✅ SyncManager: Restored \(restoredChallenges) party challenges from cloud")
+                            }
+                        }
+                    }
+                }
+                
+                try? context.save()
+            }
+            
         } catch {
             print("⚠️ SyncManager: Pull & merge failed: \(error.localizedDescription)")
         }
@@ -550,6 +797,8 @@ final class SyncManager: ObservableObject {
             try await SupabaseService.shared.syncMissionHistory(data)
         case .cardCollection(let data):
             try await SupabaseService.shared.syncPlayerCard(cardID: data.cardID)
+        case .dailyQuest(let data):
+            try await SupabaseService.shared.syncDailyQuestData(data)
         }
     }
     
@@ -640,6 +889,7 @@ enum SyncOperationType: String {
     case dungeonRun
     case missionHistory
     case cardCollection
+    case dailyQuest
 }
 
 enum SyncPayload {
@@ -653,6 +903,7 @@ enum SyncPayload {
     case dungeonRun(DungeonRunSyncData)
     case missionHistory(MissionHistorySyncData)
     case cardCollection(CardSyncData)
+    case dailyQuest(DailyQuestSyncData)
 }
 
 // MARK: - Sync Data Models
@@ -876,6 +1127,42 @@ struct CardSyncData: Encodable {
     enum CodingKeys: String, CodingKey {
         case playerID = "owner_id"
         case cardID = "card_id"
+    }
+}
+
+struct DailyQuestSyncData: Encodable {
+    let playerID: UUID
+    let localID: UUID
+    let title: String
+    let questDescription: String
+    let icon: String
+    let questType: String
+    let questParam: String?
+    let targetValue: Int
+    let currentValue: Int
+    let expReward: Int
+    let goldReward: Int
+    let isCompleted: Bool
+    let isClaimed: Bool
+    let isBonusQuest: Bool
+    let generatedDate: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case playerID = "player_id"
+        case localID = "local_id"
+        case title
+        case questDescription = "quest_description"
+        case icon
+        case questType = "quest_type"
+        case questParam = "quest_param"
+        case targetValue = "target_value"
+        case currentValue = "current_value"
+        case expReward = "exp_reward"
+        case goldReward = "gold_reward"
+        case isCompleted = "is_completed"
+        case isClaimed = "is_claimed"
+        case isBonusQuest = "is_bonus_quest"
+        case generatedDate = "generated_date"
     }
 }
 

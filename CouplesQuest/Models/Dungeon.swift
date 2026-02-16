@@ -97,6 +97,11 @@ final class Dungeon {
         roomCount * difficulty.secondsPerRoom
     }
     
+    /// HP cost to start this dungeon run (1 HP per minute of duration)
+    var hpCost: Int {
+        max(10, durationSeconds / 60)
+    }
+    
     /// Duration formatted as string
     var durationFormatted: String {
         let hours = durationSeconds / 3600
@@ -241,6 +246,7 @@ enum FeedEntryType: String, Codable {
     case dungeonComplete = "Dungeon Complete"
     case dungeonFailed = "Dungeon Failed"
     case secretDiscovery = "Secret Discovery"
+    case irlTaskHeal = "IRL Task Heal"
     
     var defaultIcon: String {
         switch self {
@@ -254,6 +260,7 @@ enum FeedEntryType: String, Codable {
         case .dungeonComplete: return "trophy.fill"
         case .dungeonFailed: return "xmark.shield.fill"
         case .secretDiscovery: return "sparkles"
+        case .irlTaskHeal: return "cross.vial.fill"
         }
     }
     
@@ -269,6 +276,7 @@ enum FeedEntryType: String, Codable {
         case .dungeonComplete: return "AccentGold"
         case .dungeonFailed: return "DifficultyHard"
         case .secretDiscovery: return "RarityLegendary"
+        case .irlTaskHeal: return "AccentGreen"
         }
     }
 }
@@ -307,6 +315,7 @@ final class DungeonRun {
     var dungeonName: String
     var partyMemberIDs: [UUID]
     var partyMemberNames: [String]
+    var partyMemberClasses: [String]
     var currentRoomIndex: Int
     var roomResults: [RoomResult]
     var feedEntries: [DungeonFeedEntry]
@@ -341,6 +350,7 @@ final class DungeonRun {
         self.dungeonName = dungeon.name
         self.partyMemberIDs = partyMembers.map { $0.id }
         self.partyMemberNames = partyMembers.map { $0.name }
+        self.partyMemberClasses = partyMembers.map { $0.characterClass?.rawValue ?? "Adventurer" }
         self.currentRoomIndex = 0
         self.roomResults = []
         self.feedEntries = []
@@ -1079,6 +1089,255 @@ enum EncounterType: String, Codable, CaseIterable {
                 "The dungeon lord laughs as you falter."
             ]
         }
+    }
+    
+    // MARK: - Party-Aware Narratives
+    
+    /// Generate a narrative line that weaves a party member into the story.
+    /// Returns nil if no suitable template exists, allowing the caller to fall back to solo narrative.
+    func partyNarrative(
+        success: Bool,
+        approach: RoomApproach?,
+        leadClassLine: ClassLine?,
+        allyName: String,
+        allyClassLine: ClassLine?
+    ) -> String? {
+        let allyTitle: String = {
+            switch allyClassLine {
+            case .warrior: return "\(allyName) the Warrior"
+            case .mage: return "\(allyName) the Mage"
+            case .archer: return "\(allyName) the Archer"
+            case nil: return allyName
+            }
+        }()
+        
+        if success {
+            return partySuccessNarrative(allyName: allyName, allyTitle: allyTitle, allyClassLine: allyClassLine, approach: approach)
+        } else {
+            return partyFailureNarrative(allyName: allyName, allyTitle: allyTitle, allyClassLine: allyClassLine, approach: approach)
+        }
+    }
+    
+    private func partySuccessNarrative(allyName: String, allyTitle: String, allyClassLine: ClassLine?, approach: RoomApproach?) -> String? {
+        let templates: [String]
+        
+        switch (self, allyClassLine) {
+        // ── Combat ──
+        case (.combat, .warrior):
+            templates = [
+                "\(allyTitle) charges in beside you — together you overwhelm the enemy!",
+                "Your strike opens a gap and \(allyName) drives through it with a devastating follow-up!",
+                "\(allyName) draws their attention with a battle cry while you land the finishing blow!",
+                "Back to back with \(allyName), you cut through the opposition like a well-oiled machine!",
+                "\(allyName) shields you from a counter-attack, giving you the opening you needed!",
+            ]
+        case (.combat, .mage):
+            templates = [
+                "\(allyTitle) unleashes a blast of arcane energy while you close the distance — a perfect combo!",
+                "\(allyName)'s barrier absorbs the counter-strike, keeping you safe to press the attack!",
+                "A burst of magical fire from \(allyName) scatters the enemy formation — you mop up the rest!",
+                "\(allyName) enchants your weapon mid-swing — the amplified strike shatters their defenses!",
+                "Your assault falters for a moment, but \(allyName)'s spell turns the tide!",
+            ]
+        case (.combat, .archer):
+            templates = [
+                "\(allyTitle) pins the enemy with covering fire while you move in for the kill!",
+                "An arrow from \(allyName) takes out the flanker you didn't see coming!",
+                "\(allyName)'s precise shots keep the enemy pinned — you finish the job up close!",
+                "You draw their attention and \(allyName) picks them off from the shadows!",
+                "\(allyName) calls out the weak point — your strike lands exactly where it counts!",
+            ]
+        case (.combat, nil):
+            templates = [
+                "\(allyName) rushes in alongside you — the combined assault overwhelms the enemy!",
+                "With \(allyName) at your side, the fight is over before it truly begins!",
+                "\(allyName) covers your blind spot just when you need it most!",
+            ]
+            
+        // ── Puzzle ──
+        case (.puzzle, .warrior):
+            templates = [
+                "\(allyName) notices a structural weakness in the mechanism — brute force meets brains!",
+                "While you study the runes, \(allyName) keeps watch and spots a hidden clue on the wall!",
+                "\(allyName) accidentally leans on the right pressure plate. Sometimes muscle is the answer!",
+            ]
+        case (.puzzle, .mage):
+            templates = [
+                "\(allyTitle) recognizes the arcane script — together you piece the answer together!",
+                "\(allyName) senses the magical frequency of the lock and guides your hand to the solution!",
+                "Your hunch and \(allyName)'s knowledge combine to crack the puzzle in record time!",
+                "\(allyName) translates the ancient text while you work the mechanism — perfect teamwork!",
+            ]
+        case (.puzzle, .archer):
+            templates = [
+                "\(allyName) spots a pattern you missed from across the room — keen eyes save the day!",
+                "\(allyTitle) notices the hidden sequence carved into the ceiling — you'd never have looked up!",
+                "\(allyName) points out the odd tile and you both work the solution together!",
+            ]
+        case (.puzzle, nil):
+            templates = [
+                "\(allyName) points out a detail you missed — together you crack the puzzle!",
+                "Two minds are better than one — \(allyName) fills in the gap you couldn't see!",
+            ]
+            
+        // ── Trap ──
+        case (.trap, .warrior):
+            templates = [
+                "\(allyName) yanks you back just as the trap fires — those reflexes are no joke!",
+                "\(allyTitle) throws up a shield and absorbs the worst of it for you!",
+                "\(allyName) smashes the trigger mechanism before it fully activates!",
+            ]
+        case (.trap, .mage):
+            templates = [
+                "\(allyTitle) senses the magical tripwire and throws up a ward — crisis averted!",
+                "\(allyName) dispels the enchantment on the trap before it can spring!",
+                "A quick barrier from \(allyName) catches the projectile that would've hit you!",
+            ]
+        case (.trap, .archer):
+            templates = [
+                "\(allyTitle) spots the nearly-invisible wire and calls out a warning just in time!",
+                "\(allyName) shoots the trigger mechanism from across the room — disarmed from a distance!",
+                "\(allyName) grabs your arm and pulls you onto the safe path — those eyes miss nothing!",
+            ]
+        case (.trap, nil):
+            templates = [
+                "\(allyName) spots the danger and pulls you clear just in time!",
+                "Thanks to \(allyName)'s quick warning, you sidestep the trap entirely!",
+            ]
+            
+        // ── Boss ──
+        case (.boss, .warrior):
+            templates = [
+                "\(allyTitle) draws the boss's fury while you strike from behind — a devastating combo!",
+                "You and \(allyName) trade off tanking the boss's attacks — together you outlast it!",
+                "\(allyName) locks blades with the boss and creates the opening for your finishing blow!",
+                "The boss staggers from \(allyName)'s relentless assault — you deliver the final strike!",
+            ]
+        case (.boss, .mage):
+            templates = [
+                "\(allyTitle) channels a massive spell while you keep the boss distracted — it crumbles!",
+                "\(allyName)'s enchantments strengthen your weapon just when you need it most — the boss falls!",
+                "A combined assault — your steel and \(allyName)'s arcane power — topples the dungeon master!",
+                "\(allyName) reveals the boss's magical weakness and you exploit it without mercy!",
+            ]
+        case (.boss, .archer):
+            templates = [
+                "\(allyTitle) lands a critical shot on the boss's weak point — you capitalize and finish it!",
+                "A relentless barrage from \(allyName) keeps the boss off-balance while you close in!",
+                "The boss turns toward \(allyName), and you seize the moment for a devastating backstrike!",
+                "\(allyName)'s arrows pin the boss in place — your final blow ends the fight!",
+            ]
+        case (.boss, nil):
+            templates = [
+                "Together with \(allyName), you overwhelm the dungeon boss with a coordinated assault!",
+                "\(allyName) creates the opening you need — the boss falls to your combined might!",
+            ]
+            
+        // ── Treasure ──
+        case (.treasure, _):
+            templates = [
+                "\(allyName) spots the glint of gold before you do — you split the haul!",
+                "You and \(allyName) uncover a hidden cache together — more loot for everyone!",
+                "\(allyName) keeps watch while you crack the treasure chest — a smooth operation!",
+            ]
+        }
+        
+        return templates.randomElement()
+    }
+    
+    private func partyFailureNarrative(allyName: String, allyTitle: String, allyClassLine: ClassLine?, approach: RoomApproach?) -> String? {
+        let templates: [String]
+        
+        switch (self, allyClassLine) {
+        // ── Combat ──
+        case (.combat, .warrior):
+            templates = [
+                "Even with \(allyName) fighting alongside you, the enemy overwhelms your position.",
+                "\(allyName) tries to shield you, but the assault breaks through both your guards.",
+                "You and \(allyName) are pushed back — more strength training would change this outcome.",
+            ]
+        case (.combat, .mage):
+            templates = [
+                "\(allyName)'s barrier flickers and fails under the onslaught — you're both caught in the blast.",
+                "Even \(allyName)'s spells aren't enough this time — the enemy shrugs off the magic and hits hard.",
+                "\(allyName) tries to enchant your weapon but the enemy strikes before the spell completes.",
+            ]
+        case (.combat, .archer):
+            templates = [
+                "\(allyName)'s arrows bounce off the enemy's armor — you're both in trouble.",
+                "\(allyName) tries to provide cover fire, but the enemy closes the distance too fast.",
+                "You and \(allyName) get separated in the chaos — divided, you fall.",
+            ]
+        case (.combat, nil):
+            templates = [
+                "Even fighting together, you and \(allyName) can't break through.",
+                "\(allyName) fights bravely at your side, but the enemy is too strong this time.",
+            ]
+            
+        // ── Puzzle ──
+        case (.puzzle, _):
+            templates = [
+                "You and \(allyName) stare at the puzzle, equally stumped. Two confused heads aren't better than one.",
+                "\(allyName) suggests a solution — it triggers the penalty instead. Back to the drawing board.",
+                "Between the two of you, nobody can crack this one. The mechanism punishes your failed attempt.",
+            ]
+            
+        // ── Trap ──
+        case (.trap, .warrior):
+            templates = [
+                "\(allyName) tries to block the trap but it catches you both off guard.",
+                "\(allyName) pushes you aside but takes the hit instead — the trap was a two-parter.",
+            ]
+        case (.trap, .mage):
+            templates = [
+                "\(allyName)'s ward shatters under the trap's force — you both feel the impact.",
+                "The trap overwhelms \(allyName)'s dispel attempt and fires anyway.",
+            ]
+        case (.trap, .archer):
+            templates = [
+                "\(allyName) spots it too late — the trap catches you both mid-stride.",
+                "Even \(allyName)'s sharp eyes couldn't detect this one in time.",
+            ]
+        case (.trap, nil):
+            templates = [
+                "\(allyName) shouts a warning but it's too late — the trap springs on both of you.",
+                "Neither you nor \(allyName) saw it coming. The trap catches you both.",
+            ]
+            
+        // ── Boss ──
+        case (.boss, .warrior):
+            templates = [
+                "The boss swats \(allyName) aside and turns on you — its power is overwhelming.",
+                "\(allyName) holds the line as long as possible, but the boss is simply too strong.",
+                "You and \(allyName) coordinate your attack, but the boss punishes every opening.",
+            ]
+        case (.boss, .mage):
+            templates = [
+                "\(allyName) pours everything into a massive spell, but the boss absorbs it and counters.",
+                "The boss shatters \(allyName)'s barriers like glass and catches you both exposed.",
+                "\(allyName)'s enchantments fade under the boss's anti-magic aura.",
+            ]
+        case (.boss, .archer):
+            templates = [
+                "\(allyName)'s arrows find their mark but the boss barely flinches — it's too powerful.",
+                "The boss corners \(allyName) and forces you to choose between helping and attacking.",
+                "\(allyName) tries to kite the boss but it closes the distance impossibly fast.",
+            ]
+        case (.boss, nil):
+            templates = [
+                "The boss overpowers both you and \(allyName). You'll need to come back stronger.",
+                "Even together, you and \(allyName) can't match the boss's devastating power.",
+            ]
+            
+        // ── Treasure ──
+        case (.treasure, _):
+            templates = [
+                "You and \(allyName) trigger the guardian together — it attacks you both.",
+                "The chest was a trap and \(allyName)'s attempt to grab the loot makes it worse.",
+            ]
+        }
+        
+        return templates.randomElement()
     }
 }
 

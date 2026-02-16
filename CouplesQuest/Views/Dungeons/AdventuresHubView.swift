@@ -48,6 +48,9 @@ struct AdventuresHubView: View {
     @EnvironmentObject var gameEngine: GameEngine
     @Query private var characters: [PlayerCharacter]
     
+    /// Observes deep link requests to switch adventure sub-categories
+    @ObservedObject private var deepLinkRouter = DeepLinkRouter.shared
+    
     @State private var selectedCategory: AdventureCategory = .training
     @State private var showCharacterCreation = false
     @State private var questGiverDismissed = false
@@ -116,6 +119,22 @@ struct AdventuresHubView: View {
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showCharacterCreation) {
                 CharacterCreationView()
+            }
+            .onChange(of: deepLinkRouter.pendingDestination) { _, destination in
+                guard let destination else { return }
+                switch destination {
+                case .dungeons:
+                    selectedCategory = .dungeons
+                    deepLinkRouter.pendingDestination = nil
+                case .training:
+                    selectedCategory = .training
+                    deepLinkRouter.pendingDestination = nil
+                case .expeditions:
+                    selectedCategory = .expeditions
+                    deepLinkRouter.pendingDestination = nil
+                default:
+                    break
+                }
             }
         }
     }

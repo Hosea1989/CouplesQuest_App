@@ -199,6 +199,24 @@ struct AuthGateView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
+                
+                Divider()
+                    .padding(.horizontal, 48)
+                    .padding(.vertical, 4)
+                
+                // Sign out button
+                Button {
+                    Task {
+                        try? await supabase.signOut()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Sign Out")
+                    }
+                    .font(.custom("Avenir-Heavy", size: 14))
+                    .foregroundColor(.red.opacity(0.8))
+                }
             }
         }
     }

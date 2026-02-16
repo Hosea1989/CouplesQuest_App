@@ -704,7 +704,7 @@ struct StatsTabContent: View {
                     statType: statType,
                     value: character.stats.value(for: statType),
                     effectiveValue: character.effectiveStats.value(for: statType),
-                    canAllocate: character.unspentStatPoints > 0
+                    canAllocate: character.unspentStatPoints > 0 && statType != .luck
                 )
             }
         }

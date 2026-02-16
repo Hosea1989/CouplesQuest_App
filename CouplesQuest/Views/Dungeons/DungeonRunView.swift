@@ -19,6 +19,13 @@ struct DungeonRunView: View {
     @State private var timerTick = 0 // forces UI refresh
     @State private var collectedCards: [CardDropEngine.CollectResult] = []
     
+    // Animated result states
+    @State private var showResultProgress = false
+    @State private var resultExpProgress: Double = 0
+    @State private var resultDisplayedGold: Int = 0
+    @State private var resultShowStats = false
+    @State private var resultAnimatedStatIndices: Set<Int> = []
+    
     // Timer that fires every second to update countdown
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
@@ -260,6 +267,10 @@ struct DungeonRunView: View {
                         resultHeader(result: result)
                         summaryCard(result: result)
                         
+                        if resultShowStats && !result.currentStats.isEmpty {
+                            dungeonStatsCard(result: result)
+                        }
+                        
                         if result.secretDiscovery {
                             secretDiscoveryCard(result: result)
                         }
@@ -380,21 +391,176 @@ struct DungeonRunView: View {
     
     private func summaryCard(result: DungeonCompletionResult) -> some View {
         VStack(spacing: 16) {
+            // Dungeon Stats
             SummaryRow(icon: "door.left.hand.open", label: "Rooms Cleared", value: "\(result.roomsCleared)/\(result.totalRooms)", color: result.success ? Color("AccentGreen") : .secondary)
             SummaryRow(icon: "heart.fill", label: "HP Remaining", value: "\(result.hpRemaining)/\(result.maxHP)", color: .red)
             
-            Divider()
+            Divider().overlay(Color.white.opacity(0.05))
             
-            SummaryRow(icon: "sparkles", label: "Total EXP", value: "+\(result.totalExp)", color: Color("AccentGold"))
-            SummaryRow(icon: "dollarsign.circle.fill", label: "Total Gold", value: "+\(result.totalGold)", color: Color("AccentGold"))
+            // EXP Progress Bar
+            VStack(spacing: 8) {
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color("AccentGold"))
+                        Text("Lv. \(result.characterLevel)")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                            .foregroundColor(.white)
+                    }
+                    Spacer()
+                    Text("+\(result.totalExp) EXP")
+                        .font(.custom("Avenir-Heavy", size: 13))
+                        .foregroundColor(Color("AccentGold").opacity(0.9))
+                }
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.white.opacity(0.1))
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color("AccentGold"), Color("AccentGold").opacity(0.7)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(0, geo.size.width * resultExpProgress))
+                    }
+                }
+                .frame(height: 10)
+            }
+            
+            Divider().overlay(Color.white.opacity(0.05))
+            
+            // Gold Counter
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color("AccentGold"))
+                    
+                    Text("Gold")
+                        .font(.custom("Avenir-Medium", size: 14))
+                }
+                Spacer()
+                
+                HStack(spacing: 6) {
+                    Text("\(result.goldBefore + resultDisplayedGold)")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(.white)
+                        .contentTransition(.numericText())
+                    
+                    Text("+\(resultDisplayedGold)")
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(Color("AccentGold"))
+                        .contentTransition(.numericText())
+                }
+            }
             
             if result.isCoopRun && result.bondExpEarned > 0 {
-                Divider()
+                Divider().overlay(Color.white.opacity(0.05))
                 SummaryRow(icon: "heart.circle.fill", label: "Bond EXP", value: "+\(result.bondExpEarned)", color: Color("AccentPink"))
             }
         }
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 20).fill(Color("CardBackground")))
+        .onAppear {
+            startResultAnimations(result: result)
+        }
+    }
+    
+    // MARK: - Character Stats Section (Dungeon)
+    
+    private func dungeonStatsCard(result: DungeonCompletionResult) -> some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "person.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("CHARACTER STATS")
+                    .font(.custom("Avenir-Heavy", size: 11))
+                    .foregroundColor(.secondary)
+                    .tracking(1.5)
+                Spacer()
+            }
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 10) {
+                ForEach(Array(StatType.allCases.enumerated()), id: \.element) { index, statType in
+                    let statValue = result.currentStats[statType] ?? 0
+                    let isAnimated = resultAnimatedStatIndices.contains(index)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: statType.icon)
+                            .font(.system(size: 13))
+                            .foregroundColor(Color(statType.color))
+                            .frame(width: 18)
+                        
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(statType.shortName)
+                                .font(.custom("Avenir-Heavy", size: 10))
+                                .foregroundColor(.secondary)
+                                .tracking(0.8)
+                            Text("\(statValue)")
+                                .font(.custom("Avenir-Heavy", size: 16))
+                                .foregroundColor(.white)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.03))
+                    )
+                    .opacity(isAnimated ? 1 : 0.3)
+                    .scaleEffect(isAnimated ? 1 : 0.95)
+                }
+            }
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color("CardBackground")))
+    }
+    
+    // MARK: - Dungeon Result Animations
+    
+    private func startResultAnimations(result: DungeonCompletionResult) {
+        // EXP bar fill
+        resultExpProgress = result.expProgressBefore
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeInOut(duration: 1.0)) {
+                resultExpProgress = result.expProgressAfter
+            }
+        }
+        
+        // Gold counter
+        let target = result.totalGold
+        if target > 0 {
+            let steps = min(target, 30)
+            let stepDuration = 0.8 / Double(steps)
+            for i in 1...steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + Double(i) * stepDuration) {
+                    withAnimation(.easeOut(duration: 0.05)) {
+                        resultDisplayedGold = Int(Double(target) * Double(i) / Double(steps))
+                    }
+                }
+            }
+        }
+        
+        // Stagger stat card items
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            resultShowStats = true
+            for index in StatType.allCases.indices {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.08) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        _ = resultAnimatedStatIndices.insert(index)
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Room Log
@@ -727,14 +893,18 @@ struct DungeonRunView: View {
         
         // Brief animation, then resolve
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            let result = DungeonEngine.autoRunDungeon(
+            var result = DungeonEngine.autoRunDungeon(
                 dungeon: dungeon,
                 run: run,
                 party: party,
                 cardPool: ContentManager.shared.activeCardPool
             )
             
-            completionResult = result
+            // Capture character state BEFORE rewards
+            let leadChar = party.first
+            let expProgressBefore = leadChar?.levelProgress ?? 0
+            let goldBefore = leadChar?.gold ?? 0
+            let charLevel = leadChar?.level ?? 1
             
             // Award EXP and gold to party members
             for member in party {
@@ -743,6 +913,26 @@ struct DungeonRunView: View {
                 }
                 member.gold += result.totalGold / max(1, party.count)
             }
+            
+            // Capture character state AFTER rewards
+            let expProgressAfter = leadChar?.levelProgress ?? 0
+            let goldAfter = leadChar?.gold ?? 0
+            var statsSnapshot: [StatType: Int] = [:]
+            if let effectiveStats = leadChar?.effectiveStats {
+                for statType in StatType.allCases {
+                    statsSnapshot[statType] = effectiveStats.value(for: statType)
+                }
+            }
+            
+            // Set snapshot data on result
+            result.characterLevel = charLevel
+            result.expProgressBefore = expProgressBefore
+            result.expProgressAfter = expProgressAfter
+            result.goldBefore = goldBefore
+            result.goldAfter = goldAfter
+            result.currentStats = statsSnapshot
+            
+            completionResult = result
             
             // Insert loot into model context
             for item in result.lootDrops {
@@ -800,6 +990,41 @@ struct DungeonRunView: View {
                 let dropped = GameEngine.rollExpeditionKeyDrop(difficulty: dungeon.difficulty)
                 if dropped {
                     ExpeditionKeyStore.add(1)
+                }
+                
+                // Update party challenge progress (dungeons type)
+                if let leader = party.first {
+                    let bonds = (try? modelContext.fetch(FetchDescriptor<Bond>())) ?? []
+                    gameEngine.updateChallengeProgress(
+                        type: .dungeons,
+                        characterID: leader.id,
+                        character: leader,
+                        bond: bonds.first,
+                        context: modelContext
+                    )
+                }
+                
+                // Complete the "Try Your First Dungeon" breadcrumb quest
+                party.first?.completeBreadcrumb("tryDungeon")
+                
+                // Post to party feed
+                if let leader = party.first {
+                    let bonds = (try? modelContext.fetch(FetchDescriptor<Bond>())) ?? []
+                    if let partyID = bonds.first?.supabasePartyID,
+                       let actorID = SupabaseService.shared.currentUserID {
+                        let dungeonName = dungeon.name
+                        let expVal = result.totalExp
+                        let goldVal = result.totalGold
+                        Task {
+                            try? await SupabaseService.shared.postPartyFeedEvent(
+                                partyID: partyID,
+                                actorID: actorID,
+                                eventType: "dungeon_loot",
+                                message: "\(leader.name) cleared '\(dungeonName)' (+\(expVal) EXP, +\(goldVal) Gold)",
+                                metadata: ["dungeon": dungeonName, "exp": "\(expVal)", "gold": "\(goldVal)"]
+                            )
+                        }
+                    }
                 }
             }
             

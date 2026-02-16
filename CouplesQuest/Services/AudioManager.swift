@@ -63,6 +63,9 @@ final class AudioManager: ObservableObject {
         case expeditionStageComplete = "sfx_expedition_stage_complete"
         case expeditionTreasure      = "sfx_expedition_treasure"
         
+        // Partner
+        case partnerPaired       = "sfx_partner_paired"
+        
         // Feedback
         case success         = "sfx_success"
         case error           = "sfx_error"
@@ -110,6 +113,8 @@ final class AudioManager: ObservableObject {
             case .expeditionDepart:        return 1304  // alarm-ish start (departure horn)
             case .expeditionStageComplete: return 1394  // pleasant ding (stage complete)
             case .expeditionTreasure:      return 1335  // celebratory snap (treasure chest)
+            // Partner
+            case .partnerPaired:    return 1335  // photo shutter (celebratory snap)
             // Feedback
             case .success:          return 1394  // SMS tone (pleasant ding)
             case .error:            return 1073  // descending alert tone

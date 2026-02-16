@@ -106,27 +106,38 @@ struct DungeonListView: View {
             .onReceive(timer) { _ in
                 timerTick += 1
             }
-            .sheet(isPresented: $showDungeonDetail) {
+            .fullScreenCover(isPresented: $showDungeonDetail) {
                 if let dungeon = selectedDungeon {
-                    DungeonDetailView(
-                        dungeon: dungeon,
-                        character: character,
-                        hasActiveRun: hasActiveRun,
-                        hasActiveTraining: gameEngine.isTrainingInProgress,
-                        onStartSolo: { party in
-                            startDungeon(dungeon, party: party, isCoop: false)
-                        },
-                        onStartCoop: { _ in
-                            // Present lobby instead of immediately starting
-                            showDungeonDetail = false
-                            lobbyDungeon = dungeon
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                showLobby = true
+                    NavigationStack {
+                        DungeonDetailView(
+                            dungeon: dungeon,
+                            character: character,
+                            hasActiveRun: hasActiveRun,
+                            hasActiveTraining: gameEngine.isTrainingInProgress,
+                            onStartSolo: { party in
+                                startDungeon(dungeon, party: party, isCoop: false)
+                            },
+                            onStartCoop: { _ in
+                                // Present lobby instead of immediately starting
+                                showDungeonDetail = false
+                                lobbyDungeon = dungeon
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    showLobby = true
+                                }
+                            }
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button {
+                                    showDungeonDetail = false
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                        .font(.title2)
+                                }
                             }
                         }
-                    )
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                    }
                 }
             }
             .fullScreenCover(isPresented: $showDungeonRun) {
@@ -160,6 +171,11 @@ struct DungeonListView: View {
     }
     
     private func startDungeon(_ dungeon: Dungeon, party: [PlayerCharacter], isCoop: Bool) {
+        // Deduct HP cost from lead character before entering
+        if let lead = party.first {
+            lead.takeDamage(dungeon.hpCost)
+        }
+        
         let run = DungeonRun(dungeon: dungeon, partyMembers: party, isCoop: isCoop)
         modelContext.insert(run)
         activeDungeon = dungeon
@@ -503,7 +519,7 @@ struct DungeonCard: View {
     }
     
     private var meetsHP: Bool {
-        (character?.currentHP ?? 0) >= dungeon.minHPRequired
+        (character?.currentHP ?? 0) >= dungeon.hpCost
     }
     
     private var canEnter: Bool {
@@ -574,52 +590,48 @@ struct DungeonCard: View {
                         .foregroundColor(meetsLevel ? .primary : .secondary)
                         .lineLimit(1)
                     
-                    // Rewards + requirements row
-                    HStack(spacing: 8) {
+                    // Rewards row
+                    HStack(spacing: 10) {
                         HStack(spacing: 3) {
                             Image(systemName: "sparkles")
+                                .font(.system(size: 10))
                             Text("+\(dungeon.baseExpReward)")
                         }
                         .font(.custom("Avenir-Heavy", size: 11))
                         .foregroundColor(Color("AccentGold"))
+                        .lineLimit(1)
+                        .fixedSize()
                         
                         HStack(spacing: 3) {
                             Image(systemName: "dollarsign.circle")
+                                .font(.system(size: 10))
                             Text("+\(dungeon.baseGoldReward)")
                         }
                         .font(.custom("Avenir-Medium", size: 11))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                         
-                        // HP threshold
                         HStack(spacing: 3) {
                             Image(systemName: "heart.fill")
-                            Text("\(dungeon.minHPRequired)+")
+                                .font(.system(size: 10))
+                            Text("-\(dungeon.hpCost) HP")
                         }
-                        .font(.custom("Avenir-Heavy", size: 10))
+                        .font(.custom("Avenir-Heavy", size: 11))
                         .foregroundColor(meetsHP ? Color("AccentGreen") : Color("DifficultyHard"))
+                        .lineLimit(1)
+                        .fixedSize()
                         
                         if dungeon.maxPartySize > 1 {
                             HStack(spacing: 3) {
                                 Image(systemName: "person.2.fill")
+                                    .font(.system(size: 10))
                                 Text("Co-op")
                             }
-                            .font(.custom("Avenir-Medium", size: 10))
+                            .font(.custom("Avenir-Medium", size: 11))
                             .foregroundColor(Color("AccentPurple"))
-                        }
-                    }
-                    
-                    // Stat requirements (compact)
-                    if !dungeon.statRequirements.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(dungeon.statRequirements, id: \.stat) { req in
-                                let met = (character?.effectiveStats.value(for: req.stat) ?? 0) >= req.minimum
-                                HStack(spacing: 2) {
-                                    Text(req.stat.shortName)
-                                    Text("\(req.minimum)")
-                                }
-                                .font(.custom("Avenir-Medium", size: 9))
-                                .foregroundColor(met ? Color("AccentGreen") : Color("DifficultyHard"))
-                            }
+                            .lineLimit(1)
+                            .fixedSize()
                         }
                     }
                 }
@@ -687,13 +699,18 @@ struct DungeonDetailView: View {
     let onStartCoop: ([PlayerCharacter]) -> Void
     
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var gameEngine: GameEngine
     
     private var meetsLevel: Bool {
         (character?.level ?? 0) >= dungeon.levelRequirement
     }
     
+    private var meetsHP: Bool {
+        (character?.currentHP ?? 0) >= dungeon.hpCost
+    }
+    
     private var canStart: Bool {
-        meetsLevel && !hasActiveRun && !hasActiveTraining
+        meetsLevel && meetsHP && !hasActiveRun && !hasActiveTraining
     }
     
     private var canCoop: Bool {
@@ -769,6 +786,8 @@ struct DungeonDetailView: View {
                             DetailStatRow(icon: "sparkles", label: "EXP Reward", value: "+\(dungeon.baseExpReward)")
                             DetailStatRow(icon: "dollarsign.circle", label: "Gold Reward", value: "+\(dungeon.baseGoldReward)")
                             DetailStatRow(icon: "gift.fill", label: "Loot Tier", value: "Tier \(dungeon.lootTier)")
+                            DetailStatRow(icon: "heart.fill", label: "HP Cost", value: "-\(dungeon.hpCost)",
+                                         valueColor: meetsHP ? Color("AccentGreen") : .red)
                             if dungeon.maxPartySize >= 2 {
                                 DetailStatRow(icon: "person.2.fill", label: "Party Size", value: "Up to \(dungeon.maxPartySize)",
                                              valueColor: Color("AccentPurple"))
@@ -895,6 +914,26 @@ struct DungeonDetailView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
+                    // HP status + Use Potion button
+                    if let character = character {
+                        HStack(spacing: 12) {
+                            // Current HP display
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill")
+                                    .foregroundColor(meetsHP ? Color("AccentGreen") : .red)
+                                Text("\(character.currentHP) / \(character.maxHP) HP")
+                                    .font(.custom("Avenir-Heavy", size: 14))
+                                    .foregroundColor(meetsHP ? .primary : .red)
+                            }
+                            
+                            Spacer()
+                            
+                            // Use Potion button (inherits gameEngine from environment)
+                            UseHPPotionButton(character: character)
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                    
                     // Run Dungeon button (solo)
                     Button(action: {
                         if let character = character {
@@ -905,7 +944,9 @@ struct DungeonDetailView: View {
                             Image(systemName: canStart ? "play.fill" : (hasActiveRun || hasActiveTraining ? "hourglass" : "lock.fill"))
                             Text(canStart ? "Run Dungeon (\(dungeon.durationFormatted))" :
                                     (hasActiveRun ? "Dungeon In Progress" :
-                                        (hasActiveTraining ? "Training In Progress" : "Level \(dungeon.levelRequirement) Required")))
+                                        (hasActiveTraining ? "Training In Progress" :
+                                            (!meetsLevel ? "Level \(dungeon.levelRequirement) Required" :
+                                                "Not Enough HP (\(dungeon.hpCost) needed)"))))
                         }
                         .font(.custom("Avenir-Heavy", size: 18))
                         .foregroundColor(canStart ? .black : .secondary)
@@ -1056,6 +1097,59 @@ struct DungeonTip: View {
             Text(text)
                 .font(.custom("Avenir-Medium", size: 13))
                 .foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - Use HP Potion Button
+
+struct UseHPPotionButton: View {
+    let character: PlayerCharacter
+    @EnvironmentObject var gameEngine: GameEngine
+    @Environment(\.modelContext) private var modelContext
+    @Query private var consumables: [Consumable]
+    
+    private var hpPotions: [Consumable] {
+        consumables.filter {
+            $0.consumableType == .hpPotion &&
+            $0.characterID == character.id &&
+            $0.isUsable
+        }
+    }
+    
+    private var bestPotion: Consumable? {
+        hpPotions.first
+    }
+    
+    private var isFullHP: Bool {
+        character.currentHP >= character.maxHP
+    }
+    
+    var body: some View {
+        if let potion = bestPotion, !isFullHP {
+            Button {
+                if gameEngine.useConsumable(potion, on: character, context: modelContext) {
+                    ToastManager.shared.showSuccess("Used \(potion.name)", subtitle: "+\(potion.effectValue) HP")
+                    AudioManager.shared.play(.claimReward)
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "cross.vial.fill")
+                        .font(.system(size: 12))
+                    Text("Use Potion")
+                        .font(.custom("Avenir-Heavy", size: 12))
+                    Text("(\(hpPotions.count))")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .foregroundColor(Color("AccentGreen"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color("AccentGreen").opacity(0.15))
+                )
+            }
         }
     }
 }

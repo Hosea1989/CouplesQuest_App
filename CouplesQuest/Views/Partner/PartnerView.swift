@@ -11,24 +11,33 @@ struct PartnerView: View {
     
     @ObservedObject private var supabase = SupabaseService.shared
     
-    @State private var showPairingSheet = false
+    @State private var showCreatePartySheet = false
+    @State private var showJoinPartySheet = false
+    @State private var showInviteSheet = false
     @State private var showCloudPairingSheet = false
     @State private var showAssignTaskSheet = false
     @State private var showLeaderboardSheet = false
     @State private var showNudgeConfirm = false
     @State private var showKudosConfirm = false
     @State private var showChallengeConfirm = false
+    @State private var showPartyChallengeSheet = false
     @State private var showInteractionSuccess = false
     @State private var interactionSuccessMessage = ""
-    @State private var showDutyCelebration = false
-    @State private var claimedDutyTask: GameTask? = nil
-    @State private var claimedDutyBondEXP: Int = 0
-    @State private var myCodeCopied = false
+    
+    
     @State private var ownProfileChannel: RealtimeChannelV2?
+    @State private var interactionChannel: RealtimeChannelV2?
+    @State private var partyFeedChannel: RealtimeChannelV2?
     @State private var pollingTimer: Timer?
+    @State private var incomingRequests: [PartnerRequest] = []
+    @State private var requestSenderProfiles: [UUID: Profile] = [:]
+    @State private var partyFeedEvents: [PartyFeedEvent] = []
+    @State private var memberNames: [UUID: String] = [:]
+    @State private var showAllActivity = false
     @Query(filter: #Predicate<GameTask> { task in
         task.pendingPartnerConfirmation == true
     }) private var allPendingTasks: [GameTask]
+    @Query(sort: \PartyChallenge.createdAt, order: .reverse) private var allPartyChallenges: [PartyChallenge]
     
     /// Number of tasks pending confirmation from us (partner's completed tasks)
     private var pendingConfirmationCount: Int {
@@ -48,6 +57,34 @@ struct PartnerView: View {
         character?.hasPartner ?? false
     }
     
+    /// The currently active, non-expired party challenge (if any)
+    private var activeChallenge: PartyChallenge? {
+        allPartyChallenges.first(where: { $0.isActive && !$0.isExpired })
+    }
+    
+    /// Unified activity items merging local interactions and remote party feed events
+    private var unifiedActivityItems: [PartyActivityItem] {
+        var items: [PartyActivityItem] = []
+        let myID = SupabaseService.shared.currentUserID
+        
+        // Remote party feed events
+        for event in partyFeedEvents {
+            let name = memberNames[event.actorID] ?? "Ally"
+            items.append(PartyActivityItem(feedEvent: event, actorName: name))
+        }
+        
+        // Local interactions
+        let feedIDs = Set(items.map(\.id))
+        for interaction in interactions {
+            guard !feedIDs.contains(interaction.id) else { continue }
+            let isFromMe = interaction.fromCharacterID == myID
+            let name = isFromMe ? "You" : (memberNames[interaction.fromCharacterID] ?? "Ally")
+            items.append(PartyActivityItem(interaction: interaction, actorName: name))
+        }
+        
+        return items.sorted { $0.timestamp > $1.timestamp }
+    }
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -64,9 +101,6 @@ struct PartnerView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Always show my partner code at the top
-                        myPartnerCodeCard
-                        
                         if isPartnerLinked, let character = character, let bond = bond {
                             // Partner Connected - Full Dashboard
                             PartnerDashboardView(
@@ -78,8 +112,15 @@ struct PartnerView: View {
                                 onSendChallenge: { showChallengeConfirm = true },
                                 onViewLeaderboard: { showLeaderboardSheet = true },
                                 onUnlinkPartner: { unlinkPartner() },
-                                onInviteMember: { showPairingSheet = true }
+                                onInviteMember: { showInviteSheet = true },
+                                activeChallenge: activeChallenge,
+                                onSetChallenge: { showPartyChallengeSheet = true }
                             )
+                            
+                            // Incoming party requests (visible when party has room)
+                            if !incomingRequests.isEmpty && bond.canAddMember {
+                                incomingRequestsSection
+                            }
                             
                             // Pending Confirmations
                             if pendingConfirmationCount > 0 {
@@ -125,19 +166,24 @@ struct PartnerView: View {
                                 .buttonStyle(.plain)
                             }
                             
-                            // Recent Interactions
-                            if !interactions.isEmpty {
-                                recentInteractionsCard
-                            }
+                            // Party Activity Feed (Tavern Board)
+                            PartyTavernBoardCard(
+                                items: unifiedActivityItems,
+                                onSeeAll: { showAllActivity = true }
+                            )
                             
-                            // Duty Board Preview
-                            dutyBoardPreview
                             
                         } else {
-                            // Not Connected View — QR pairing
+                            // Not Connected View — Create or Join a party
                             PartnerNotConnectedView(
-                                onPair: { showPairingSheet = true }
+                                onCreateParty: { showCreatePartySheet = true },
+                                onJoinParty: { showJoinPartySheet = true }
                             )
+                            
+                            // Incoming party requests
+                            if !incomingRequests.isEmpty {
+                                incomingRequestsSection
+                            }
                             
                             // Partner Features Info
                             PartnerFeaturesCard()
@@ -151,6 +197,9 @@ struct PartnerView: View {
             .task {
                 // Refresh profile to ensure partner code is loaded
                 await SupabaseService.shared.fetchProfile()
+                
+                // Load incoming party requests
+                await loadIncomingRequests()
                 
                 // Check if our profile now has a partner_id (e.g. request was accepted while we were away)
                 await checkAndLinkPartnerIfNeeded()
@@ -166,6 +215,54 @@ struct PartnerView: View {
                 
                 // Start polling while not connected (fallback for realtime issues)
                 startPollingIfNeeded()
+                
+                // Cache the party ID for fire-and-forget feed posts from other screens
+                if isPartnerLinked, let bond = bond {
+                    SupabaseService.shared.cachedPartyID = bond.supabasePartyID
+                }
+                
+                // Subscribe to incoming interactions (kudos, nudges, challenges)
+                if isPartnerLinked && interactionChannel == nil {
+                    interactionChannel = await SupabaseService.shared.subscribeToInteractions { cloudInteraction in
+                        handleIncomingInteraction(cloudInteraction)
+                    }
+                }
+                
+                // Also fetch any interactions we missed while offline
+                if isPartnerLinked {
+                    await fetchMissedInteractions()
+                }
+                
+                // Load party feed and subscribe to realtime events
+                if isPartnerLinked, let partyID = bond?.supabasePartyID {
+                    await loadPartyFeed(partyID: partyID)
+                    await loadMemberNames()
+                    
+                    if partyFeedChannel == nil {
+                        partyFeedChannel = await SupabaseService.shared.subscribeToPartyFeed(partyID: partyID) { newEvent in
+                            handleIncomingFeedEvent(newEvent)
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                // Re-check every time the view appears (e.g. after dismissing QR sheet or tab switch)
+                Task {
+                    await checkAndLinkPartnerIfNeeded()
+                    await loadIncomingRequests()
+                    
+                    // Refresh partner/party member data so dashboard stats are up to date
+                    if isPartnerLinked, let character = character {
+                        await gameEngine.refreshPartnerData(character: character)
+                    }
+                    
+                    // Re-subscribe to interactions if linked but no channel
+                    if isPartnerLinked && interactionChannel == nil {
+                        interactionChannel = await SupabaseService.shared.subscribeToInteractions { cloudInteraction in
+                            handleIncomingInteraction(cloudInteraction)
+                        }
+                    }
+                }
             }
             .onDisappear {
                 stopPolling()
@@ -178,10 +275,25 @@ struct PartnerView: View {
                         Task { await SupabaseService.shared.unsubscribeChannel(channel) }
                         ownProfileChannel = nil
                     }
+                    // Start listening for incoming interactions now that we're linked
+                    if interactionChannel == nil {
+                        Task {
+                            interactionChannel = await SupabaseService.shared.subscribeToInteractions { cloudInteraction in
+                                handleIncomingInteraction(cloudInteraction)
+                            }
+                            await fetchMissedInteractions()
+                        }
+                    }
                 }
             }
-            .sheet(isPresented: $showPairingSheet) {
-                QRPairingView()
+            .sheet(isPresented: $showCreatePartySheet) {
+                JoinPartySheet(mode: .create)
+            }
+            .sheet(isPresented: $showJoinPartySheet) {
+                CreatePartySheet()
+            }
+            .sheet(isPresented: $showInviteSheet) {
+                JoinPartySheet(mode: .invite)
             }
             .sheet(isPresented: $showCloudPairingSheet) {
                 CloudPairingView()
@@ -193,6 +305,23 @@ struct PartnerView: View {
             }
             .sheet(isPresented: $showLeaderboardSheet) {
                 CouplesLeaderboardView()
+            }
+            .sheet(isPresented: $showAllActivity) {
+                PartyActivityFullView(
+                    partyID: bond?.supabasePartyID,
+                    localInteractions: Array(interactions),
+                    partyFeedEvents: partyFeedEvents,
+                    memberNames: memberNames
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showPartyChallengeSheet) {
+                if let character = character, let bond = bond {
+                    CreatePartyChallengeView(character: character, bond: bond)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
             }
             .alert("Send Nudge", isPresented: $showNudgeConfirm) {
                 Button("Send") { sendNudge() }
@@ -217,303 +346,487 @@ struct PartnerView: View {
             } message: {
                 Text(interactionSuccessMessage)
             }
-            .overlay {
-                if showDutyCelebration, let task = claimedDutyTask {
-                    RewardCelebrationOverlay(
-                        icon: "rectangle.on.rectangle.angled",
-                        iconColor: Color("AccentPurple"),
-                        title: "Duty Claimed!",
-                        subtitle: task.title,
-                        rewards: [
-                            (icon: "heart.fill", label: "Bond EXP", value: "+\(claimedDutyBondEXP)", color: Color("AccentPink")),
-                            (icon: "sparkles", label: "EXP on completion", value: "+\(task.scaledExpReward(characterLevel: character?.level ?? 1))", color: Color("AccentGold"))
-                        ],
-                        onDismiss: {
-                            withAnimation { showDutyCelebration = false; claimedDutyTask = nil }
-                        }
-                    )
-                    .transition(.opacity)
-                }
-            }
+            
         }
-    }
-    
-    // MARK: - My Party Code Card
-    
-    private var myPartnerCodeCard: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.text.rectangle.fill")
-                .font(.title3)
-                .foregroundColor(Color("AccentGold"))
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("My Party Code")
-                    .font(.custom("Avenir-Medium", size: 12))
-                    .foregroundColor(.secondary)
-                
-                if let myCode = supabase.currentProfile?.partnerCode {
-                    Text(myCode)
-                        .font(.custom("Avenir-Heavy", size: 22))
-                        .tracking(4)
-                        .foregroundColor(Color("AccentGold"))
-                } else if supabase.isAuthenticated {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                        Text("Loading...")
-                            .font(.custom("Avenir-Medium", size: 14))
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    Text("Sign in to get your code")
-                        .font(.custom("Avenir-Medium", size: 14))
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            if let myCode = supabase.currentProfile?.partnerCode {
-                Button(action: {
-                    UIPasteboard.general.string = myCode
-                    withAnimation { myCodeCopied = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation { myCodeCopied = false }
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: myCodeCopied ? "checkmark" : "doc.on.doc")
-                            .font(.caption)
-                        Text(myCodeCopied ? "Copied!" : "Copy")
-                            .font(.custom("Avenir-Heavy", size: 13))
-                    }
-                    .foregroundColor(myCodeCopied ? Color("AccentGreen") : Color("AccentGold"))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(Color("AccentGold").opacity(0.12))
-                    )
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("CardBackground"))
-        )
-    }
-    
-    // MARK: - Recent Interactions Card
-    
-    private var recentInteractionsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent Activity")
-                .font(.custom("Avenir-Heavy", size: 16))
-            
-            ForEach(Array(interactions.prefix(5)), id: \.id) { interaction in
-                HStack(spacing: 12) {
-                    Image(systemName: interaction.type.icon)
-                        .foregroundColor(Color(interaction.type.color))
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(interaction.type.rawValue)
-                            .font(.custom("Avenir-Heavy", size: 14))
-                        
-                        if let message = interaction.message {
-                            Text(message)
-                                .font(.custom("Avenir-Medium", size: 12))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Text(interaction.createdAt.timeAgoDisplay())
-                        .font(.custom("Avenir-Medium", size: 11))
-                        .foregroundColor(.secondary)
-                }
-                
-                if interaction.id != interactions.prefix(5).last?.id {
-                    Divider()
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("CardBackground"))
-        )
-    }
-    
-    // MARK: - Duty Board Preview
-    
-    @Query(filter: #Predicate<GameTask> { task in
-        task.isOnDutyBoard == true
-    }, sort: \GameTask.createdAt, order: .reverse) private var dutyBoardTasks: [GameTask]
-    
-    private var pendingDutyBoardTasks: [GameTask] {
-        dutyBoardTasks.filter { $0.status != .completed }
-    }
-    
-    private var dutyBoardPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "rectangle.on.rectangle")
-                    .foregroundColor(Color("AccentPurple"))
-                Text("Duty Board")
-                    .font(.custom("Avenir-Heavy", size: 16))
-                Spacer()
-                Text("\(pendingDutyBoardTasks.count) tasks")
-                    .font(.custom("Avenir-Medium", size: 13))
-                    .foregroundColor(.secondary)
-            }
-            
-            if pendingDutyBoardTasks.isEmpty {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 6) {
-                        Image(systemName: "tray")
-                            .font(.title2)
-                            .foregroundColor(.secondary)
-                        Text("No tasks on the board")
-                            .font(.custom("Avenir-Medium", size: 13))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 16)
-                    Spacer()
-                }
-            } else {
-                ForEach(Array(pendingDutyBoardTasks.prefix(3)), id: \.id) { task in
-                    HStack(spacing: 12) {
-                        Image(systemName: task.category.icon)
-                            .foregroundColor(Color(task.category.color))
-                            .frame(width: 24)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(task.title)
-                                .font(.custom("Avenir-Heavy", size: 14))
-                            
-                            HStack(spacing: 8) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "sparkles")
-                                        .font(.caption2)
-                                    Text("+\(task.scaledExpReward(characterLevel: character?.level ?? 1)) EXP")
-                                        .font(.custom("Avenir-Medium", size: 11))
-                                }
-                                .foregroundColor(Color("AccentGold"))
-                                
-                                Text(task.category.rawValue)
-                                    .font(.custom("Avenir-Medium", size: 11))
-                                    .foregroundColor(Color(task.category.color))
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        // Claim button
-                        Button(action: { claimDutyBoardTask(task) }) {
-                            Text("Claim")
-                                .font(.custom("Avenir-Heavy", size: 12))
-                                .foregroundColor(Color("AccentGold"))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(Color("AccentGold").opacity(0.15))
-                                )
-                        }
-                    }
-                    
-                    if task.id != pendingDutyBoardTasks.prefix(3).last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("CardBackground"))
-        )
     }
     
     // MARK: - Actions
     
     private func sendNudge() {
         guard let character = character, let bond = bond else { return }
-        let interaction = gameEngine.sendNudge(from: character, bond: bond, message: nil)
+        guard let interaction = gameEngine.sendNudge(from: character, bond: bond, message: nil) else {
+            ToastManager.shared.showInfo(
+                "Daily Limit Reached",
+                subtitle: "You can send \(Bond.maxInteractionsPerType) nudges per day",
+                icon: "clock.fill"
+            )
+            return
+        }
         modelContext.insert(interaction)
+        let remaining = bond.nudgesRemainingToday
         interactionSuccessMessage = "Nudge sent to \(character.partnerName ?? "your ally")!"
         showInteractionSuccess = true
         ToastManager.shared.showInfo(
             "Nudge Sent!",
-            subtitle: character.partnerName.map { "Sent to \($0)" },
+            subtitle: remaining > 0 ? "\(remaining) remaining today" : "No more nudges today",
             icon: "bell.badge.fill"
         )
-        // Push notification to ally
-        Task { await PushNotificationService.shared.notifyPartnerNudge(fromName: character.name) }
+        // Sync to Supabase + push notification
+        Task {
+            try? await SupabaseService.shared.sendInteraction(type: "nudge", message: InteractionType.nudge.defaultMessage)
+            await PushNotificationService.shared.notifyPartnerNudge(fromName: character.name)
+        }
     }
     
     private func sendKudos() {
         guard let character = character, let bond = bond else { return }
-        let interaction = gameEngine.sendKudos(from: character, bond: bond, message: nil)
+        guard let interaction = gameEngine.sendKudos(from: character, bond: bond, message: nil) else {
+            ToastManager.shared.showInfo(
+                "Daily Limit Reached",
+                subtitle: "You can send \(Bond.maxInteractionsPerType) kudos per day",
+                icon: "clock.fill"
+            )
+            return
+        }
         modelContext.insert(interaction)
+        let remaining = bond.kudosRemainingToday
         interactionSuccessMessage = "Kudos sent! +\(GameEngine.bondEXPForKudos) Bond EXP"
         showInteractionSuccess = true
         ToastManager.shared.showReward(
             "Kudos Sent!",
-            subtitle: "+\(GameEngine.bondEXPForKudos) Bond EXP",
+            subtitle: remaining > 0 ? "+\(GameEngine.bondEXPForKudos) Bond EXP · \(remaining) remaining today" : "+\(GameEngine.bondEXPForKudos) Bond EXP · No more today",
             icon: "hands.clap.fill"
         )
-        // Push notification to partner
-        Task { await PushNotificationService.shared.notifyPartnerKudos(fromName: character.name, bondEXP: GameEngine.bondEXPForKudos) }
+        // Sync to Supabase + push notification
+        Task {
+            try? await SupabaseService.shared.sendInteraction(type: "kudos", message: InteractionType.kudos.defaultMessage)
+            await PushNotificationService.shared.notifyPartnerKudos(fromName: character.name, bondEXP: GameEngine.bondEXPForKudos)
+        }
     }
     
     private func sendChallenge() {
         guard let character = character, let bond = bond else { return }
-        let interaction = gameEngine.sendChallenge(from: character, bond: bond, message: nil)
+        guard let interaction = gameEngine.sendChallenge(from: character, bond: bond, message: nil) else {
+            ToastManager.shared.showInfo(
+                "Daily Limit Reached",
+                subtitle: "You can send \(Bond.maxInteractionsPerType) challenges per day",
+                icon: "clock.fill"
+            )
+            return
+        }
         modelContext.insert(interaction)
+        let remaining = bond.challengesRemainingToday
         interactionSuccessMessage = "Challenge sent to \(character.partnerName ?? "your ally")!"
         showInteractionSuccess = true
         ToastManager.shared.showInfo(
             "Challenge Sent!",
-            subtitle: character.partnerName.map { "Sent to \($0)" },
+            subtitle: remaining > 0 ? "\(remaining) remaining today" : "No more challenges today",
             icon: "flag.fill"
         )
-        // Push notification to partner
-        Task { await PushNotificationService.shared.notifyPartnerChallenge(fromName: character.name) }
+        // Sync to Supabase + push notification
+        Task {
+            try? await SupabaseService.shared.sendInteraction(type: "challenge", message: InteractionType.challenge.defaultMessage)
+            await PushNotificationService.shared.notifyPartnerChallenge(fromName: character.name)
+        }
     }
     
-    private func claimDutyBoardTask(_ task: GameTask) {
-        guard let character = character, let bond = bond else { return }
+    
+    
+    // MARK: - Incoming Interactions (Kudos / Nudges / Challenges)
+    
+    /// Handle a realtime incoming interaction from a party member.
+    private func handleIncomingInteraction(_ cloud: CloudInteraction) {
+        guard let character = character else { return }
+        // Don't re-insert if we sent it ourselves
+        guard cloud.fromUserID != SupabaseService.shared.currentUserID else { return }
         
-        // Calculate bond EXP before claiming for display
-        var bondEXP = GameEngine.bondEXPForDutyBoardTask
-        if bond.unlockedPerks.contains(.bondEXPBoost) {
-            bondEXP = Int(Double(bondEXP) * 1.1)
+        // Check if we already have this interaction locally (avoid duplicates)
+        let existingIDs = interactions.map(\.id)
+        guard !existingIDs.contains(cloud.id) else { return }
+        
+        // Map cloud type string to local InteractionType
+        let interactionType: InteractionType
+        switch cloud.type.lowercased() {
+        case "nudge": interactionType = .nudge
+        case "kudos": interactionType = .kudos
+        case "challenge": interactionType = .challenge
+        case "task_assigned": interactionType = .taskAssigned
+        default: interactionType = .nudge // fallback
         }
         
-        gameEngine.claimDutyBoardTask(task, character: character, bond: bond)
+        // Find the sender name from party members
+        let senderName = character.partyMembers.first(where: { $0.id == cloud.fromUserID })?.name ?? "Your ally"
         
-        ToastManager.shared.showSuccess(
-            "Duty Claimed!",
-            subtitle: "+\(bondEXP) Bond EXP"
+        // Create local PartnerInteraction
+        let localInteraction = PartnerInteraction(
+            type: interactionType,
+            message: cloud.message ?? interactionType.defaultMessage,
+            fromCharacterID: cloud.fromUserID,
+            toCharacterID: character.id
         )
+        localInteraction.id = cloud.id  // use the same ID to prevent duplicates
+        localInteraction.createdAt = cloud.createdAt
+        modelContext.insert(localInteraction)
         
-        claimedDutyTask = task
-        claimedDutyBondEXP = bondEXP
-        withAnimation { showDutyCelebration = true }
+        // Show an enhanced toast to the receiving user
+        switch interactionType {
+        case .kudos:
+            ToastManager.shared.showKudos(
+                from: senderName,
+                message: cloud.message
+            )
+        case .nudge:
+            ToastManager.shared.showNudge(
+                from: senderName,
+                message: cloud.message
+            )
+        case .challenge:
+            ToastManager.shared.showChallenge(
+                from: senderName,
+                message: cloud.message
+            )
+        default:
+            ToastManager.shared.showInfo(
+                "\(interactionType.rawValue) from \(senderName)",
+                subtitle: cloud.message,
+                icon: interactionType.icon
+            )
+        }
+        
+        // Award Bond EXP for receiving
+        if let bond = bond {
+            bond.gainBondEXP(1)
+        }
+    }
+    
+    /// Fetch interactions we may have missed while the app was closed.
+    private func fetchMissedInteractions() async {
+        guard let character = character else { return }
+        do {
+            let cloudInteractions = try await SupabaseService.shared.fetchInteractions(limit: 20)
+            let existingIDs = Set(interactions.map(\.id))
+            let myID = SupabaseService.shared.currentUserID
+            
+            for cloud in cloudInteractions {
+                // Only process interactions sent TO us (not ones we sent)
+                guard cloud.toUserID == myID else { continue }
+                // Skip already-imported ones
+                guard !existingIDs.contains(cloud.id) else { continue }
+                
+                let interactionType: InteractionType
+                switch cloud.type.lowercased() {
+                case "nudge": interactionType = .nudge
+                case "kudos": interactionType = .kudos
+                case "challenge": interactionType = .challenge
+                case "task_assigned": interactionType = .taskAssigned
+                default: continue
+                }
+                
+                let localInteraction = PartnerInteraction(
+                    type: interactionType,
+                    message: cloud.message ?? interactionType.defaultMessage,
+                    fromCharacterID: cloud.fromUserID,
+                    toCharacterID: character.id
+                )
+                localInteraction.id = cloud.id
+                localInteraction.createdAt = cloud.createdAt
+                localInteraction.isRead = cloud.isRead
+                modelContext.insert(localInteraction)
+            }
+        } catch {
+            print("⚠️ Failed to fetch missed interactions: \(error)")
+        }
+    }
+    
+    // MARK: - Party Feed
+    
+    /// Load the party feed from Supabase.
+    private func loadPartyFeed(partyID: UUID) async {
+        do {
+            partyFeedEvents = try await SupabaseService.shared.fetchPartyFeed(partyID: partyID, limit: 50)
+        } catch {
+            print("⚠️ Failed to load party feed: \(error)")
+        }
+    }
+    
+    /// Load member names for display in the activity feed.
+    private func loadMemberNames() async {
+        guard let character = character else { return }
+        
+        // Add self
+        if let myID = SupabaseService.shared.currentUserID {
+            memberNames[myID] = character.name
+        }
+        
+        // Add party members
+        for member in character.partyMembers {
+            memberNames[member.id] = member.name
+        }
+        
+        // Fetch any names we're missing from the feed events
+        let knownIDs = Set(memberNames.keys)
+        let missingIDs = Set(partyFeedEvents.map(\.actorID)).subtracting(knownIDs)
+        
+        for actorID in missingIDs {
+            do {
+                let profiles: [ProfileName] = try await SupabaseService.shared.client
+                    .from("profiles")
+                    .select("id, character_name")
+                    .eq("id", value: actorID.uuidString)
+                    .execute()
+                    .value
+                if let profile = profiles.first {
+                    memberNames[actorID] = profile.characterName ?? "Ally"
+                }
+            } catch {
+                print("⚠️ Failed to fetch name for \(actorID): \(error)")
+            }
+        }
+    }
+    
+    /// Handle a new party feed event arriving via realtime subscription.
+    private func handleIncomingFeedEvent(_ event: PartyFeedEvent) {
+        // Don't add if it's our own event (we already see our own actions)
+        guard event.actorID != SupabaseService.shared.currentUserID else { return }
+        
+        // Avoid duplicates
+        guard !partyFeedEvents.contains(where: { $0.id == event.id }) else { return }
+        
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            partyFeedEvents.insert(event, at: 0)
+        }
+        
+        let actorName = memberNames[event.actorID] ?? "Your ally"
+        
+        // Show a toast for notable events
+        switch event.eventType {
+        case "level_up":
+            ToastManager.shared.showReward(
+                "\(actorName) leveled up!",
+                subtitle: event.message,
+                icon: "arrow.up.circle.fill"
+            )
+        case "dungeon_loot":
+            ToastManager.shared.showReward(
+                "\(actorName) cleared a dungeon!",
+                subtitle: event.message,
+                icon: "gift.fill"
+            )
+        case "streak_milestone":
+            ToastManager.shared.showReward(
+                "Streak milestone!",
+                subtitle: event.message,
+                icon: "flame.fill"
+            )
+        case "task_completed":
+            ToastManager.shared.showInfo(
+                "\(actorName) completed a quest",
+                subtitle: event.message,
+                icon: "checkmark.circle.fill"
+            )
+        default:
+            break
+        }
     }
     
     private func unlinkPartner() {
-        character?.unlinkPartner()
-        // Keep the bond for history, but could delete if preferred
+        guard let character = character else { return }
+        
+        // 1. Leave the party locally (clears partner fields + party members)
+        character.leaveParty()
+        
+        // 2. Remove self from the Bond's member list
+        if let bond = bond {
+            bond.removeMember(character.id)
+        }
+        
+        // 3. Clear partner_id in Supabase (both sides)
+        Task {
+            try? await SupabaseService.shared.unlinkPartner()
+        }
     }
     
     // MARK: - Partner Detection (for request sender)
+    
+    // MARK: - Incoming Requests
+    
+    private var incomingRequestsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "envelope.badge.fill")
+                    .foregroundColor(Color("AccentPink"))
+                Text("Incoming Party Requests")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+                Text("\(incomingRequests.count)")
+                    .font(.custom("Avenir-Heavy", size: 14))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color("AccentPink")))
+            }
+            
+            ForEach(incomingRequests) { request in
+                HStack(spacing: 12) {
+                    // Avatar
+                    ZStack {
+                        Circle()
+                            .fill(Color("AccentPurple").opacity(0.2))
+                            .frame(width: 44, height: 44)
+                        if let profile = requestSenderProfiles[request.fromUserID],
+                           let avatarName = profile.avatarName {
+                            Image(avatarName)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(Color("AccentPurple"))
+                        }
+                    }
+                    
+                    // Name + Level
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let profile = requestSenderProfiles[request.fromUserID] {
+                            Text(profile.characterName ?? "Adventurer")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                            if let level = profile.level {
+                                Text("Level \(level)")
+                                    .font(.custom("Avenir-Medium", size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text("Adventurer")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Accept button
+                    Button(action: { acceptIncomingRequest(request) }) {
+                        Text("Accept")
+                            .font(.custom("Avenir-Heavy", size: 12))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Color("AccentGold"))
+                            .clipShape(Capsule())
+                    }
+                    
+                    // Decline button
+                    Button(action: { rejectIncomingRequest(request) }) {
+                        Image(systemName: "xmark")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(7)
+                            .background(Circle().fill(Color("CardBackground")))
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color("CardBackground").opacity(0.6))
+                )
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
+    }
+    
+    private func loadIncomingRequests() async {
+        do {
+            incomingRequests = try await supabase.fetchIncomingRequests()
+            for request in incomingRequests {
+                let profiles: [Profile] = try await supabase.client
+                    .from("profiles")
+                    .select()
+                    .eq("id", value: request.fromUserID.uuidString)
+                    .execute()
+                    .value
+                if let profile = profiles.first {
+                    requestSenderProfiles[request.fromUserID] = profile
+                }
+            }
+        } catch {
+            print("Failed to load incoming requests: \(error)")
+        }
+    }
+    
+    private func acceptIncomingRequest(_ request: PartnerRequest) {
+        Task {
+            do {
+                try await supabase.acceptPartnerRequest(request.id)
+                
+                // Link partner locally after cloud acceptance
+                await linkAcceptedPartnerLocally(partnerUserID: request.fromUserID)
+                
+                // Remove from list
+                await MainActor.run {
+                    incomingRequests.removeAll { $0.id == request.id }
+                }
+            } catch {
+                print("Failed to accept request: \(error)")
+            }
+        }
+    }
+    
+    private func rejectIncomingRequest(_ request: PartnerRequest) {
+        Task {
+            do {
+                try await supabase.rejectPartnerRequest(request.id)
+                await MainActor.run {
+                    incomingRequests.removeAll { $0.id == request.id }
+                }
+            } catch {
+                print("Failed to reject request: \(error)")
+            }
+        }
+    }
+    
+    /// After accepting a request, sync partner data into local SwiftData character + Bond.
+    /// Handles both initial pairing (solo → 2) and adding new members to existing party (2 → 3 → 4).
+    @MainActor
+    private func linkAcceptedPartnerLocally(partnerUserID: UUID) async {
+        guard let character = character else { return }
+        
+        do {
+            if let partnerProfile = try await supabase.fetchProfile(byID: partnerUserID) {
+                let pairingData = PairingData(
+                    characterID: partnerUserID.uuidString,
+                    name: partnerProfile.characterName ?? "Adventurer",
+                    level: partnerProfile.level ?? 1,
+                    characterClass: partnerProfile.characterClass,
+                    partyID: nil,
+                    avatarName: partnerProfile.avatarName
+                )
+                character.linkPartner(data: pairingData)
+                
+                // Create a Bond if one doesn't exist, or add to existing party
+                if bonds.isEmpty {
+                    let newBond = Bond(memberIDs: [character.id, partnerUserID])
+                    modelContext.insert(newBond)
+                } else if let existingBond = bonds.first {
+                    existingBond.addMember(partnerUserID)
+                }
+                
+                try? modelContext.save()
+                AudioManager.shared.play(.partnerPaired)
+                
+                // Sync updated party to Supabase so all members see the new roster
+                if let bond = bonds.first {
+                    try? await SupabaseService.shared.syncBondToParty(bond, playerID: character.id)
+                }
+            }
+        } catch {
+            print("Failed to fetch partner profile for local link: \(error)")
+        }
+    }
     
     /// Check if our Supabase profile now has a partner_id and link locally if so.
     /// This is the key fix: when our request is accepted by the other person,
@@ -583,14 +896,8 @@ struct PartnerView: View {
 // MARK: - Partner Not Connected View
 
 struct PartnerNotConnectedView: View {
-    let onPair: () -> Void
-    
-    @ObservedObject private var supabase = SupabaseService.shared
-    @State private var showManualEntry = false
-    @State private var partnerCode = ""
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var showRequestSent = false
+    let onCreateParty: () -> Void
+    let onJoinParty: () -> Void
     
     var body: some View {
         VStack(spacing: 20) {
@@ -638,97 +945,87 @@ struct PartnerNotConnectedView: View {
                     .multilineTextAlignment(.center)
             }
             
-            // QR Pairing Button
-            Button(action: onPair) {
-                HStack {
-                    Image(systemName: "qrcode")
-                    Text("Pair with QR Code")
-                }
-                .font(.custom("Avenir-Heavy", size: 16))
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [Color("AccentPink"), Color("AccentPurple")],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .clipShape(Capsule())
-            }
-            
-            // Divider with "or"
-            HStack {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.3))
-                    .frame(height: 1)
-                Text("or")
-                    .font(.custom("Avenir-Medium", size: 13))
-                    .foregroundColor(.secondary)
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.3))
-                    .frame(height: 1)
-            }
-            
-            // Manual Code Entry
+            // Two-card layout: Create / Join
             VStack(spacing: 12) {
-                Text("Enter Ally's Code")
-                    .font(.custom("Avenir-Heavy", size: 15))
-                
-                HStack(spacing: 10) {
-                    Image(systemName: "person.2.fill")
-                        .foregroundColor(Color("AccentPurple"))
-                        .frame(width: 20)
-                    
-                    TextField("e.g. ABC123", text: $partnerCode)
-                        .font(.custom("Avenir-Heavy", size: 18))
-                        .autocapitalization(.allCharacters)
-                        .disableAutocorrection(true)
-                        .onChange(of: partnerCode) { _, newValue in
-                            partnerCode = String(newValue.prefix(6)).uppercased()
+                // Create a Party card
+                Button(action: onCreateParty) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color("AccentGold").opacity(0.15))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "person.3.fill")
+                                .font(.title3)
+                                .foregroundColor(Color("AccentGold"))
                         }
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.secondary.opacity(0.08))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color("AccentPurple").opacity(0.3), lineWidth: 1)
-                )
-                
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.custom("Avenir-Medium", size: 13))
-                        .foregroundColor(.red)
-                }
-                
-                Button(action: sendPartnerRequest) {
-                    HStack(spacing: 8) {
-                        if isLoading {
-                            ProgressView().tint(.black)
-                        } else {
-                            Image(systemName: "paperplane.fill")
-                            Text("Send Party Invite")
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Create a Party")
+                                .font(.custom("Avenir-Heavy", size: 16))
+                                .foregroundColor(.primary)
+                            Text("Scan or enter an ally's code to invite them")
+                                .font(.custom("Avenir-Medium", size: 12))
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
                         }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(Color("AccentGold"))
                     }
-                    .font(.custom("Avenir-Heavy", size: 15))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .padding(16)
                     .background(
-                        LinearGradient(
-                            colors: [Color("AccentGold"), Color("AccentOrange")],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color("CardBackground"))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color("AccentGold").opacity(0.25), lineWidth: 1)
+                            )
                     )
-                    .clipShape(Capsule())
                 }
-                .disabled(partnerCode.count < 6 || isLoading)
-                .opacity(partnerCode.count < 6 ? 0.5 : 1)
+                .buttonStyle(.plain)
+                
+                // Join a Party card
+                Button(action: onJoinParty) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color("AccentPurple").opacity(0.15))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "person.badge.plus")
+                                .font(.title3)
+                                .foregroundColor(Color("AccentPurple"))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Join a Party")
+                                .font(.custom("Avenir-Heavy", size: 16))
+                                .foregroundColor(.primary)
+                            Text("Show your code so a party leader can invite you")
+                                .font(.custom("Avenir-Medium", size: 12))
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(Color("AccentPurple"))
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color("CardBackground"))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color("AccentPurple").opacity(0.25), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(24)
@@ -737,26 +1034,6 @@ struct PartnerNotConnectedView: View {
                 .fill(Color("CardBackground"))
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 4)
         )
-        .alert("Invite Sent!", isPresented: $showRequestSent) {
-            Button("OK") {}
-        } message: {
-            Text("Your party invite has been sent. They'll need to accept it on their device.")
-        }
-    }
-    
-    private func sendPartnerRequest() {
-        errorMessage = nil
-        isLoading = true
-        Task {
-            do {
-                try await supabase.sendPartnerRequest(toCode: partnerCode)
-                showRequestSent = true
-                partnerCode = ""
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isLoading = false
-        }
     }
 }
 
@@ -1070,11 +1347,18 @@ struct CloudPairingView: View {
         Task {
             do {
                 try await supabase.sendPartnerRequest(toCode: partnerCode)
-                showRequestSent = true
+                await MainActor.run {
+                    character?.completeBreadcrumb("inviteFriend")
+                    showRequestSent = true
+                }
             } catch {
-                errorMessage = error.localizedDescription
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
             }
-            isLoading = false
+            await MainActor.run {
+                isLoading = false
+            }
         }
     }
     

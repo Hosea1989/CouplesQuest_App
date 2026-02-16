@@ -141,6 +141,11 @@ final class AFKMission {
         return min(0.10 + (Double(luck) * 0.01), 0.50) // cap at 50%
     }
     
+    /// HP cost to start this training session (1 HP per minute of duration)
+    var hpCost: Int {
+        max(10, durationSeconds / 60)
+    }
+    
     /// Duration formatted as string
     var durationFormatted: String {
         let hours = durationSeconds / 3600
@@ -425,6 +430,17 @@ enum MissionRarity: String, Codable, CaseIterable {
         case .rare: return 2.0
         case .epic: return 3.0
         case .legendary: return 5.0
+        }
+    }
+    
+    /// Numeric order for sorting (lower = easier / earlier in progression)
+    var sortOrder: Int {
+        switch self {
+        case .common: return 0
+        case .uncommon: return 1
+        case .rare: return 2
+        case .epic: return 3
+        case .legendary: return 4
         }
     }
 }

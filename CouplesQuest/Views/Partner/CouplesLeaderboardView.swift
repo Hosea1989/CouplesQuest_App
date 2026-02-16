@@ -10,6 +10,8 @@ struct PartyLeaderboardView: View {
     @Query private var bonds: [Bond]
     
     @State private var selectedPeriod: LeaderboardPeriod = .thisWeek
+    @State private var cloudPartnerTasks: [CloudTaskSummary] = []
+    @State private var isLoadingPartner = false
     
     private var character: PlayerCharacter? { characters.first }
     private var bond: Bond? { bonds.first }
@@ -62,6 +64,41 @@ struct PartyLeaderboardView: View {
                         .foregroundColor(Color("AccentGold"))
                 }
             }
+            .task {
+                await fetchPartnerTasks()
+            }
+            .onChange(of: selectedPeriod) { _, _ in
+                Task { await fetchPartnerTasks() }
+            }
+        }
+    }
+    
+    // MARK: - Cloud Fetch
+    
+    /// Fetch the partner's completed tasks from Supabase for the selected period.
+    private func fetchPartnerTasks() async {
+        guard let partnerID = character?.partnerCharacterID else { return }
+        isLoadingPartner = true
+        defer { isLoadingPartner = false }
+        
+        let since: Date? = {
+            switch selectedPeriod {
+            case .today:
+                return Calendar.current.startOfDay(for: Date())
+            case .thisWeek:
+                return Calendar.current.date(byAdding: .day, value: -7, to: Date())
+            case .allTime:
+                return nil
+            }
+        }()
+        
+        do {
+            cloudPartnerTasks = try await SupabaseService.shared.fetchPartnerCompletedTasks(
+                partnerID: partnerID,
+                since: since
+            )
+        } catch {
+            print("❌ Failed to fetch partner tasks for leaderboard: \(error)")
         }
     }
     
@@ -298,7 +335,7 @@ struct PartyLeaderboardView: View {
             
             ForEach(TaskCategory.allCases, id: \.self) { category in
                 let myCount = myCompletedTasks.filter { $0.category == category }.count
-                let partnerCount = partnerCompletedTasks.filter { $0.category == category }.count
+                let partnerCount = partnerCompletedTasks.filter { $0.taskCategory == category }.count
                 let total = max(myCount + partnerCount, 1)
                 
                 VStack(spacing: 6) {
@@ -386,14 +423,14 @@ struct PartyLeaderboardView: View {
             
             ForEach(categoryAwards, id: \.title) { award in
                 let myCount = myCompletedTasks.filter { $0.category == award.category }.count
-                let pCount = partnerCompletedTasks.filter { $0.category == award.category }.count
+                let pCount = partnerCompletedTasks.filter { $0.taskCategory == award.category }.count
                 let winner = myCount >= pCount ? (character?.name ?? "You") : (character?.partnerName ?? "Ally")
                 awardRow(icon: award.icon, title: award.title, winner: winner, color: Color(award.category.color))
             }
             
             // Jack of All Trades — most categories with completions
             let myCategoryCount = Set(myCompletedTasks.map { $0.category }).count
-            let partnerCategoryCount = Set(partnerCompletedTasks.map { $0.category }).count
+            let partnerCategoryCount = Set(partnerCompletedTasks.map { $0.taskCategory }).count
             let jackWinner = myCategoryCount >= partnerCategoryCount
                 ? (character?.name ?? "You")
                 : (character?.partnerName ?? "Ally")
@@ -460,9 +497,9 @@ struct PartyLeaderboardView: View {
         return filteredTasks.filter { $0.completedBy == characterID }
     }
     
-    private var partnerCompletedTasks: [GameTask] {
-        guard let partnerID = character?.partnerCharacterID else { return [] }
-        return filteredTasks.filter { $0.completedBy == partnerID }
+    /// Partner's completed tasks fetched from Supabase (already filtered by period).
+    private var partnerCompletedTasks: [CloudTaskSummary] {
+        cloudPartnerTasks
     }
     
     private var myTotalEXP: Int {

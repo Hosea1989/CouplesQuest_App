@@ -2,6 +2,31 @@ import Foundation
 import UserNotifications
 import OneSignalFramework
 
+// MARK: - Deep Link Router
+
+/// Routes the app to specific screens when a notification is tapped.
+/// Observed by ContentView to perform navigation.
+@MainActor
+final class DeepLinkRouter: ObservableObject {
+    static let shared = DeepLinkRouter()
+    
+    /// The pending destination to navigate to. ContentView observes this and resets it after navigating.
+    @Published var pendingDestination: DeepLinkDestination?
+    
+    private init() {}
+}
+
+/// Possible deep link destinations from notification taps.
+enum DeepLinkDestination: Equatable {
+    case characterLevelUp        // Character tab → level up
+    case dungeons                // Adventures tab → Dungeons
+    case training                // Adventures tab → Training
+    case expeditions             // Adventures tab → Expeditions
+    case home                    // Home tab
+    case tasks                   // Tasks tab
+    case party                   // Party tab
+}
+
 /// Centralized push notification service for Swords & Chores.
 /// Handles both personal (local) and partner (cross-device) notifications.
 @MainActor
@@ -12,6 +37,9 @@ final class PushNotificationService {
     static let shared = PushNotificationService()
     
     private let center = UNUserNotificationCenter.current()
+    
+    /// UserInfo key used to store the deep link destination in notifications
+    static let deepLinkKey = "deepLink"
     
     private init() {}
     
@@ -42,6 +70,7 @@ final class PushNotificationService {
         content.body = "Your hero has returned from \(missionName). Claim your rewards!"
         content.sound = .default
         content.categoryIdentifier = "MISSION_COMPLETE"
+        content.userInfo = [Self.deepLinkKey: "training"]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(
@@ -69,6 +98,7 @@ final class PushNotificationService {
         content.body = "Claim your rewards from \(dungeonName)."
         content.sound = .default
         content.categoryIdentifier = "DUNGEON_COMPLETE"
+        content.userInfo = [Self.deepLinkKey: "dungeons"]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(
@@ -91,6 +121,7 @@ final class PushNotificationService {
         content.body = "Your party reached \(stageName) in \(expeditionName). Open to see results and claim rewards!"
         content.sound = .default
         content.categoryIdentifier = "EXPEDITION_STAGE"
+        content.userInfo = [Self.deepLinkKey: "expeditions"]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(
@@ -119,6 +150,7 @@ final class PushNotificationService {
         content.body = "You have enough EXP to reach Level \(currentLevel + 1). Open the app to level up!"
         content.sound = .default
         content.categoryIdentifier = "LEVEL_UP_READY"
+        content.userInfo = [Self.deepLinkKey: "characterLevelUp"]
         
         // Fire in 1 second (immediate-ish, required for time interval triggers)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -141,6 +173,7 @@ final class PushNotificationService {
         content.body = "Complete a task before midnight to keep your \(streakDays)-day streak!"
         content.sound = .default
         content.categoryIdentifier = "STREAK_RISK"
+        content.userInfo = [Self.deepLinkKey: "tasks"]
         
         // Every day at 8 PM
         var dateComponents = DateComponents()
@@ -171,6 +204,7 @@ final class PushNotificationService {
         content.body = "\(habitName) is due in 15 minutes."
         content.sound = .default
         content.categoryIdentifier = "HABIT_DEADLINE"
+        content.userInfo = [Self.deepLinkKey: "tasks"]
         
         let interval = fireDate.timeIntervalSinceNow
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
@@ -257,6 +291,7 @@ final class PushNotificationService {
         content.body = "Your party members completed \(partyActivityCount) task\(partyActivityCount == 1 ? "" : "s") today. Check in to see what they've been up to!"
         content.sound = .default
         content.categoryIdentifier = "EVENING_SUMMARY"
+        content.userInfo = [Self.deepLinkKey: "party"]
         
         // 7 PM today (or tomorrow if past 7 PM)
         var dateComponents = DateComponents()
@@ -284,6 +319,7 @@ final class PushNotificationService {
         content.body = "Open the app to claim today's login reward."
         content.sound = .default
         content.categoryIdentifier = "DAILY_LOGIN"
+        content.userInfo = [Self.deepLinkKey: "home"]
         
         // Tomorrow at 9 AM
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
@@ -339,6 +375,7 @@ final class PushNotificationService {
         content.body = "A new challenge awaits. Rally your partner and fight!"
         content.sound = .default
         content.categoryIdentifier = "RAID_BOSS"
+        content.userInfo = [Self.deepLinkKey: "dungeons"]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         let request = UNNotificationRequest(

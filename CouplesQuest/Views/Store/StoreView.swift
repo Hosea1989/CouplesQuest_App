@@ -106,6 +106,7 @@ struct StoreView: View {
             generateDailyStock()
             generateDailyDeal()
             shopkeeperMessage = ShopkeeperDialogue.random(from: ShopkeeperDialogue.welcomeGreetings, name: character?.name)
+            character?.completeBreadcrumb("checkStore")
         }
         .onChange(of: selectedTab) { _, newTab in
             shopkeeperItemTip = nil

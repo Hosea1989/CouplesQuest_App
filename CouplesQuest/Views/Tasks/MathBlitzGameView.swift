@@ -107,8 +107,12 @@ private struct MathProblem {
                 op = "+"
                 answer = a + b
             } else if roll == 1 {
+                // Ensure larger number comes first so answer is never negative
+                let big = max(a, b)
+                let small = min(a, b)
                 op = "−"
-                answer = a - b
+                answer = big - small
+                return makeProblem(a: big, op: op, b: small, answer: answer)
             } else {
                 let x = Int.random(in: 2...12)
                 let y = Int.random(in: 2...9)
@@ -123,10 +127,13 @@ private struct MathProblem {
                 op = "+"
                 answer = a + b
             } else if roll == 1 {
-                a = Int.random(in: 30...99)
-                b = Int.random(in: 10...40)
+                // Ensure larger number comes first so answer is never negative
+                let x = Int.random(in: 30...99)
+                let y = Int.random(in: 10...40)
+                let big = max(x, y)
+                let small = min(x, y)
                 op = "−"
-                answer = a - b
+                return makeProblem(a: big, op: op, b: small, answer: big - small)
             } else if roll == 2 {
                 a = Int.random(in: 6...15)
                 b = Int.random(in: 6...12)
@@ -149,11 +156,20 @@ private struct MathProblem {
         choices.insert(answer)
         
         // Generate 3 wrong answers that are close to the correct answer
+        var attempts = 0
         while choices.count < 4 {
+            attempts += 1
             let offset = Int.random(in: 1...max(5, abs(answer / 3) + 1))
             let wrong = Bool.random() ? answer + offset : answer - offset
             if wrong != answer && wrong >= 0 {
                 choices.insert(wrong)
+            }
+            // Safety: if too many attempts, widen the search to avoid infinite loop
+            if attempts > 50 {
+                let fallback = answer + choices.count + Int.random(in: 1...10)
+                if fallback != answer {
+                    choices.insert(fallback)
+                }
             }
         }
         

@@ -15,6 +15,8 @@ struct MissionsView: View {
     @State private var lastMissionResult: MissionCompletionResult?
     @State private var missionStartTrigger = 0
     @State private var claimTrigger = 0
+    @State private var selectedMission: AFKMission?
+    @State private var showMissionDetail = false
     
     private var character: PlayerCharacter? {
         characters.first
@@ -53,20 +55,114 @@ struct MissionsView: View {
             }
         }
         
-        // Filter to show only training for the player's class line + universal (nil classRequirement)
+        // Filter to show only training for the player's class line (exclude old universal ones)
         let classLineRaw = character?.characterClass?.classLine.rawValue
         let filtered = base.filter { mission in
-            guard let req = mission.classRequirement else { return true } // universal
+            guard let req = mission.classRequirement else {
+                // Only allow rank-up missions with nil classRequirement through
+                return mission.isRankUpTraining
+            }
             return req == classLineRaw
         }
         
-        // Sort: rank-up training at top, then by level requirement
+        // Sort: by level requirement, then by rarity (progression)
         return filtered.sorted { lhs, rhs in
-            if lhs.isRankUpTraining != rhs.isRankUpTraining {
-                return lhs.isRankUpTraining // rank-up first
+            if lhs.levelRequirement != rhs.levelRequirement {
+                return lhs.levelRequirement < rhs.levelRequirement
             }
-            return lhs.levelRequirement < rhs.levelRequirement
+            return lhs.rarity.sortOrder < rhs.rarity.sortOrder
         }
+    }
+    
+    /// Training tier definition for section headers
+    private struct TrainingTier: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let icon: String
+        let missions: [AFKMission]
+    }
+    
+    /// Group displayed missions into progression tiers for section headers
+    private var groupedTraining: [TrainingTier] {
+        let allMissions = displayedMissions
+        var tiers: [TrainingTier] = []
+        
+        // Class Evolution (rank-up) at top when available
+        let rankUps = allMissions.filter { $0.isRankUpTraining }
+        if !rankUps.isEmpty {
+            tiers.append(TrainingTier(
+                id: "evolution",
+                title: "Class Evolution",
+                subtitle: "Lv. 20+ — Evolve into an advanced class",
+                icon: "sparkles",
+                missions: rankUps
+            ))
+        }
+        
+        let regular = allMissions.filter { !$0.isRankUpTraining }
+        
+        // Tier I: Novice (Lv 1-2)
+        let novice = regular.filter { $0.levelRequirement <= 2 }
+        if !novice.isEmpty {
+            tiers.append(TrainingTier(
+                id: "novice",
+                title: "Tier I — Novice",
+                subtitle: "Lv. 1+ — Foundational exercises",
+                icon: "figure.walk",
+                missions: novice
+            ))
+        }
+        
+        // Tier II: Apprentice (Lv 3-7)
+        let apprentice = regular.filter { $0.levelRequirement >= 3 && $0.levelRequirement <= 7 }
+        if !apprentice.isEmpty {
+            tiers.append(TrainingTier(
+                id: "apprentice",
+                title: "Tier II — Apprentice",
+                subtitle: "Lv. 3+ — Focused skill building",
+                icon: "figure.run",
+                missions: apprentice
+            ))
+        }
+        
+        // Tier III: Journeyman (Lv 8-14)
+        let journeyman = regular.filter { $0.levelRequirement >= 8 && $0.levelRequirement <= 14 }
+        if !journeyman.isEmpty {
+            tiers.append(TrainingTier(
+                id: "journeyman",
+                title: "Tier III — Journeyman",
+                subtitle: "Lv. 8+ — Intermediate challenges",
+                icon: "figure.martial.arts",
+                missions: journeyman
+            ))
+        }
+        
+        // Tier IV: Expert (Lv 15-24)
+        let expert = regular.filter { $0.levelRequirement >= 15 && $0.levelRequirement <= 24 }
+        if !expert.isEmpty {
+            tiers.append(TrainingTier(
+                id: "expert",
+                title: "Tier IV — Expert",
+                subtitle: "Lv. 15+ — Advanced endurance training",
+                icon: "flame.fill",
+                missions: expert
+            ))
+        }
+        
+        // Tier V: Master (Lv 25+)
+        let master = regular.filter { $0.levelRequirement >= 25 }
+        if !master.isEmpty {
+            tiers.append(TrainingTier(
+                id: "master",
+                title: "Tier V — Master",
+                subtitle: "Lv. 25+ — Elite training for legends",
+                icon: "crown.fill",
+                missions: master
+            ))
+        }
+        
+        return tiers
     }
     
     var body: some View {
@@ -107,33 +203,54 @@ struct MissionsView: View {
                             )
                         }
                         
-                        // Available Training Sessions
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Available Training")
-                                .font(.custom("Avenir-Heavy", size: 20))
-                                .padding(.horizontal)
-                            
-                            VStack(spacing: 12) {
-                                ForEach(displayedMissions, id: \.id) { mission in
-                                    NavigationLink(destination: TrainingDetailView(
-                                        mission: mission,
-                                        character: character,
-                                        hasActiveDungeonRun: hasActiveDungeonRun,
-                                        onStart: { startMission(mission) }
-                                    )
-                                    .environmentObject(gameEngine)
-                                    ) {
-                                        MissionCardContent(
-                                            mission: mission,
-                                            character: character,
-                                            isActive: gameEngine.activeMission?.missionID == mission.id
+                        // Available Training Sessions — grouped by tier
+                        ForEach(groupedTraining) { tier in
+                            VStack(alignment: .leading, spacing: 12) {
+                                // Tier Section Header
+                                HStack(spacing: 8) {
+                                    Image(systemName: tier.icon)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(
+                                            tier.id == "evolution" ? Color("AccentPurple") :
+                                            tier.id == "master" ? Color("RarityRare") :
+                                            Color("AccentGold")
                                         )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(tier.title)
+                                            .font(.custom("Avenir-Heavy", size: 18))
+                                            .foregroundColor(
+                                                tier.id == "evolution" ? Color("AccentPurple") : .primary
+                                            )
+                                        
+                                        Text(tier.subtitle)
+                                            .font(.custom("Avenir-Medium", size: 12))
+                                            .foregroundColor(.secondary)
                                     }
-                                    .buttonStyle(.plain)
-                                    .disabled(gameEngine.activeMission?.missionID == mission.id)
+                                    
+                                    Spacer()
                                 }
+                                .padding(.horizontal)
+                                
+                                // Missions in this tier
+                                VStack(spacing: 10) {
+                                    ForEach(tier.missions, id: \.id) { mission in
+                                        Button {
+                                            selectedMission = mission
+                                            showMissionDetail = true
+                                        } label: {
+                                            MissionCardContent(
+                                                mission: mission,
+                                                character: character,
+                                                isActive: gameEngine.activeMission?.missionID == mission.id
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(gameEngine.activeMission?.missionID == mission.id)
+                                    }
+                                }
+                                .padding(.horizontal)
                             }
-                            .padding(.horizontal)
                         }
                         
                         // Dungeon active warning
@@ -168,6 +285,30 @@ struct MissionsView: View {
                     MissionCompletionView(result: result)
                 }
             }
+            .fullScreenCover(isPresented: $showMissionDetail) {
+                if let mission = selectedMission, let character = character {
+                    NavigationStack {
+                        TrainingDetailView(
+                            mission: mission,
+                            character: character,
+                            hasActiveDungeonRun: hasActiveDungeonRun,
+                            onStart: { startMission(mission) }
+                        )
+                        .environmentObject(gameEngine)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button {
+                                    showMissionDetail = false
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                        .font(.title2)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             .sensoryFeedback(.success, trigger: missionStartTrigger)
             .sensoryFeedback(.success, trigger: claimTrigger)
             .onAppear {
@@ -179,6 +320,7 @@ struct MissionsView: View {
         guard let character = character else { return }
         
         if gameEngine.startMission(mission, character: character, hasActiveDungeonRun: hasActiveDungeonRun) {
+            character.completeBreadcrumb("sendMission")
             missionStartTrigger += 1
             ToastManager.shared.showInfo("Mission Started!", subtitle: mission.name, icon: "figure.walk")
             AudioManager.shared.play(.trainingStart)
@@ -236,6 +378,22 @@ struct MissionsView: View {
                         context: modelContext
                     )
                 }
+                // Post to party feed
+                let bonds = (try? modelContext.fetch(FetchDescriptor<Bond>())) ?? []
+                if let partyID = bonds.first?.supabasePartyID,
+                   let actorID = SupabaseService.shared.currentUserID {
+                    let missionName = mission.name
+                    let expVal = result.expGained
+                    Task {
+                        try? await SupabaseService.shared.postPartyFeedEvent(
+                            partyID: partyID,
+                            actorID: actorID,
+                            eventType: "task_completed",
+                            message: "\(character.name) completed mission '\(missionName)' (+\(expVal) EXP)",
+                            metadata: ["mission_name": missionName, "exp": "\(expVal)"]
+                        )
+                    }
+                }
             } else {
                 ToastManager.shared.showError(
                     "Mission Failed",
@@ -245,8 +403,39 @@ struct MissionsView: View {
         }
     }
     
+    /// Old training names that signal a re-seed is needed (replaced in v2 naming pass)
+    private static let legacyTrainingNames: Set<String> = [
+        "Strength Training", "Sparring Practice", "Shield Wall Drills",
+        "Endurance March", "Battle Conditioning",
+        "Study Magic", "Arcane Research", "Enchantment Practice",
+        "Elemental Attunement", "Deep Meditation",
+        "Target Practice", "Agility Drills", "Stealth Training",
+        "Precision Focus"
+    ]
+    
     private func seedSampleMissionsIfNeeded() {
-        guard missions.isEmpty else { return }
+        // Check if missions need refresh:
+        // - empty
+        // - missing class-specific training
+        // - still has old universal (non-class) trainings that should be removed
+        // - still uses legacy generic names (v1 naming)
+        let hasClassTraining = missions.contains { $0.classRequirement != nil }
+        let hasRankUpTraining = missions.contains { $0.isRankUpTraining }
+        let hasOldUniversal = missions.contains { $0.classRequirement == nil && !$0.isRankUpTraining }
+        let hasLegacyNames = missions.contains { Self.legacyTrainingNames.contains($0.name) }
+        
+        let needsRefresh = missions.isEmpty
+            || (!hasClassTraining && !hasRankUpTraining)
+            || hasOldUniversal
+            || hasLegacyNames
+        
+        guard needsRefresh else { return }
+        
+        // Clear old missions before re-seeding, but preserve any currently active mission
+        let activeMissionID = gameEngine.activeMission?.missionID
+        for mission in missions where mission.id != activeMissionID {
+            modelContext.delete(mission)
+        }
         
         // Prefer server-driven mission definitions from ContentManager
         let cm = ContentManager.shared
@@ -636,8 +825,12 @@ struct TrainingDetailView: View {
         return mission.meetsRequirements(character: character)
     }
     
+    private var meetsHP: Bool {
+        (character?.currentHP ?? 0) >= mission.hpCost
+    }
+    
     private var canStart: Bool {
-        meetsRequirements && gameEngine.activeMission == nil && !hasActiveDungeonRun
+        meetsRequirements && meetsHP && gameEngine.activeMission == nil && !hasActiveDungeonRun
     }
     
     private var successRate: Double {
@@ -760,6 +953,15 @@ struct TrainingDetailView: View {
                 iconColor: .secondary,
                 label: "Duration",
                 value: mission.durationFormatted
+            )
+            
+            // HP Cost
+            TrainingStatRow(
+                icon: "heart.fill",
+                iconColor: meetsHP ? Color("AccentGreen") : .red,
+                label: "HP Cost",
+                value: "-\(mission.hpCost)",
+                valueColor: meetsHP ? Color("AccentGreen") : .red
             )
             
             // EXP
@@ -973,6 +1175,25 @@ struct TrainingDetailView: View {
     
     private var startButton: some View {
         VStack(spacing: 0) {
+            // HP status + Use Potion
+            if let character = character {
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart.fill")
+                            .foregroundColor(meetsHP ? Color("AccentGreen") : .red)
+                        Text("\(character.currentHP) / \(character.maxHP) HP")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                            .foregroundColor(meetsHP ? .primary : .red)
+                    }
+                    
+                    Spacer()
+                    
+                    UseHPPotionButton(character: character)
+                        .environmentObject(gameEngine)
+                }
+                .padding(.bottom, 8)
+            }
+            
             if hasActiveDungeonRun {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -993,6 +1214,16 @@ struct TrainingDetailView: View {
                         .foregroundColor(.orange)
                 }
                 .padding(.bottom, 8)
+            } else if !meetsHP && meetsRequirements {
+                HStack(spacing: 6) {
+                    Image(systemName: "heart.slash.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
+                    Text("Not enough HP (\(mission.hpCost) needed)")
+                        .font(.custom("Avenir-Medium", size: 12))
+                        .foregroundColor(.red)
+                }
+                .padding(.bottom, 8)
             }
             
             Button(action: {
@@ -1001,7 +1232,9 @@ struct TrainingDetailView: View {
             }) {
                 HStack {
                     Image(systemName: canStart ? "play.fill" : "lock.fill")
-                    Text(canStart ? "Start Training" : "Requirements Not Met")
+                    Text(canStart ? "Start Training" :
+                            (!meetsRequirements ? "Requirements Not Met" :
+                                (!meetsHP ? "Not Enough HP" : "Cannot Start")))
                 }
                 .font(.custom("Avenir-Heavy", size: 18))
                 .foregroundColor(canStart ? .black : .secondary)
@@ -1073,6 +1306,8 @@ struct MissionCompletionView: View {
     @State private var showContinue = false
     @State private var showConfetti = false
     @State private var headerGlow = false
+    @State private var showCharacterStats = false
+    @State private var missionAnimatedStatIndices: Set<Int> = []
     
     private var didLevelUp: Bool { result.newLevel > result.previousLevel }
     
@@ -1148,6 +1383,15 @@ struct MissionCompletionView: View {
                             
                             // Rewards Card
                             rewardsCardView
+                            
+                            // Character Stats Card
+                            if showCharacterStats && !result.currentStats.isEmpty {
+                                missionStatsCardView
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
                             
                         } else {
                             failureView
@@ -1379,15 +1623,35 @@ struct MissionCompletionView: View {
     
     private var rewardsCardView: some View {
         VStack(spacing: 16) {
-            // Gold row
+            // Gold row — shows total and earned
             if showGoldRow {
-                rewardItemRow(
-                    icon: "dollarsign.circle.fill",
-                    iconColor: Color("AccentGold"),
-                    label: "Gold Earned",
-                    value: "+\(displayedGold)",
-                    valueColor: Color("AccentGold")
-                )
+                HStack {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(Color("AccentGold").opacity(0.15))
+                                .frame(width: 36, height: 36)
+                            Image(systemName: "dollarsign.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(Color("AccentGold"))
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("GOLD")
+                                .font(.custom("Avenir-Heavy", size: 10))
+                                .foregroundColor(.secondary)
+                                .tracking(1)
+                            Text("\(result.goldBefore + displayedGold)")
+                                .font(.custom("Avenir-Heavy", size: 18))
+                                .foregroundColor(.white)
+                                .contentTransition(.numericText())
+                        }
+                    }
+                    Spacer()
+                    Text("+\(displayedGold)")
+                        .font(.custom("Avenir-Heavy", size: 20))
+                        .foregroundColor(Color("AccentGold"))
+                        .contentTransition(.numericText())
+                }
                 .transition(.asymmetric(insertion: .push(from: .trailing).combined(with: .opacity), removal: .opacity))
             }
             
@@ -1470,6 +1734,90 @@ struct MissionCompletionView: View {
                 .font(.custom("Avenir-Heavy", size: 20))
                 .foregroundColor(valueColor)
         }
+    }
+    
+    // MARK: - Character Stats Card (Mission)
+    
+    private var missionStatsCardView: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "person.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("CHARACTER STATS")
+                    .font(.custom("Avenir-Heavy", size: 11))
+                    .foregroundColor(.secondary)
+                    .tracking(1.5)
+                Spacer()
+            }
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 10) {
+                ForEach(Array(StatType.allCases.enumerated()), id: \.element) { index, statType in
+                    let statValue = result.currentStats[statType] ?? 0
+                    let gained: Int = {
+                        if let sg = result.statGained, sg.stat == statType { return sg.amount }
+                        return 0
+                    }()
+                    let isAnimated = missionAnimatedStatIndices.contains(index)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: statType.icon)
+                            .font(.system(size: 13))
+                            .foregroundColor(Color(statType.color))
+                            .frame(width: 18)
+                        
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(statType.shortName)
+                                .font(.custom("Avenir-Heavy", size: 10))
+                                .foregroundColor(.secondary)
+                                .tracking(0.8)
+                            
+                            HStack(spacing: 4) {
+                                Text("\(statValue)")
+                                    .font(.custom("Avenir-Heavy", size: 16))
+                                    .foregroundColor(.white)
+                                
+                                if gained > 0 {
+                                    Text("+\(gained)")
+                                        .font(.custom("Avenir-Heavy", size: 13))
+                                        .foregroundColor(Color(statType.color))
+                                        .scaleEffect(isAnimated ? 1.0 : 0.3)
+                                        .opacity(isAnimated ? 1 : 0)
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(gained > 0 && isAnimated
+                                  ? Color(statType.color).opacity(0.1)
+                                  : Color.white.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(gained > 0 && isAnimated
+                                    ? Color(statType.color).opacity(0.3)
+                                    : Color.clear, lineWidth: 1)
+                    )
+                    .opacity(isAnimated ? 1 : 0.3)
+                    .scaleEffect(isAnimated ? 1 : 0.95)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
+        )
     }
     
     // MARK: - Failure View
@@ -1633,6 +1981,24 @@ struct MissionCompletionView: View {
             delay += 0.5
         }
         
+        // Character stats card
+        if !result.currentStats.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                    showCharacterStats = true
+                }
+                // Stagger stat animations
+                for index in StatType.allCases.indices {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.08) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            _ = missionAnimatedStatIndices.insert(index)
+                        }
+                    }
+                }
+            }
+            delay += 0.5
+        }
+        
         // Continue button
         DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.3) {
             withAnimation(.easeOut(duration: 0.3)) {
@@ -1737,7 +2103,7 @@ private struct RewardConfettiPieceView: View {
 
 // MARK: - Floating Particles
 
-private struct RewardFloatingParticleData: Identifiable {
+struct RewardFloatingParticleData: Identifiable {
     let id: Int
     let xFraction: CGFloat  // 0.0–1.0 fraction of width
     let startYFraction: CGFloat
@@ -1746,7 +2112,7 @@ private struct RewardFloatingParticleData: Identifiable {
     let duration: Double
 }
 
-private struct RewardFloatingParticlesView: View {
+struct RewardFloatingParticlesView: View {
     @State private var particles: [RewardFloatingParticleData]
     
     init() {
@@ -1775,7 +2141,7 @@ private struct RewardFloatingParticlesView: View {
     }
 }
 
-private struct RewardFloatingParticleItemView: View {
+struct RewardFloatingParticleItemView: View {
     let particle: RewardFloatingParticleData
     let geoSize: CGSize
     @State private var animate = false
@@ -1847,19 +2213,17 @@ struct TipRow: View {
 
 struct SampleMissions {
     static var all: [AFKMission] {
-        warriorTraining + mageTraining + archerTraining + universalTraining
+        warriorTraining + mageTraining + archerTraining
     }
     
     /// Filter training for a specific class line
     static func forClassLine(_ classLine: String) -> [AFKMission] {
-        let classSpecific: [AFKMission]
         switch classLine {
-        case "warrior": classSpecific = warriorTraining
-        case "mage": classSpecific = mageTraining
-        case "archer": classSpecific = archerTraining
-        default: classSpecific = []
+        case "warrior": return warriorTraining
+        case "mage": return mageTraining
+        case "archer": return archerTraining
+        default: return []
         }
-        return classSpecific + universalTraining
     }
     
     // MARK: - Warrior Line (Warrior / Berserker / Paladin)
@@ -1867,8 +2231,8 @@ struct SampleMissions {
     static var warriorTraining: [AFKMission] {
         [
             AFKMission(
-                name: "Strength Training",
-                description: "Lift heavy stones and swing weighted weapons to build raw power.",
+                name: "Iron Foundations",
+                description: "Begin your warrior's path by lifting heavy stones and swinging weighted weapons to build raw power.",
                 missionType: .combat,
                 rarity: .common,
                 durationSeconds: 1800, // 30 min
@@ -1880,8 +2244,8 @@ struct SampleMissions {
                 trainingStat: "Strength"
             ),
             AFKMission(
-                name: "Sparring Practice",
-                description: "Trade blows with a training dummy to sharpen your combat instincts.",
+                name: "Sparring Gauntlet",
+                description: "Test your combat reflexes against the training arena's toughest dummies and sparring partners.",
                 missionType: .combat,
                 rarity: .common,
                 durationSeconds: 3600, // 1 hour
@@ -1894,8 +2258,8 @@ struct SampleMissions {
                 trainingStat: "Strength"
             ),
             AFKMission(
-                name: "Shield Wall Drills",
-                description: "Practice holding the line against repeated impacts. Your defense will grow.",
+                name: "Bulwark Trials",
+                description: "Endure relentless shield impacts to forge an unbreakable defense. Only the steadfast prevail.",
                 missionType: .combat,
                 rarity: .uncommon,
                 durationSeconds: 7200, // 2 hours
@@ -1908,8 +2272,8 @@ struct SampleMissions {
                 trainingStat: "Defense"
             ),
             AFKMission(
-                name: "Endurance March",
-                description: "A grueling long-distance march in full armor. Builds both strength and willpower.",
+                name: "Ironclad March",
+                description: "A grueling long-distance march in full armor across hostile terrain. Only the strongest endure.",
                 missionType: .combat,
                 rarity: .uncommon,
                 durationSeconds: 14400, // 4 hours
@@ -1922,8 +2286,8 @@ struct SampleMissions {
                 trainingStat: "Strength"
             ),
             AFKMission(
-                name: "Battle Conditioning",
-                description: "An intense combat regimen that pushes your body to its absolute limit.",
+                name: "Crucible of War",
+                description: "An extreme combat regimen that separates warriors from legends. Push your body to its absolute limit.",
                 missionType: .combat,
                 rarity: .rare,
                 durationSeconds: 28800, // 8 hours
@@ -1946,8 +2310,8 @@ struct SampleMissions {
     static var mageTraining: [AFKMission] {
         [
             AFKMission(
-                name: "Study Magic",
-                description: "Pore over basic spell tomes to deepen your arcane understanding.",
+                name: "Cantrip Studies",
+                description: "Learn the fundamental incantations every mage must master before wielding true power.",
                 missionType: .research,
                 rarity: .common,
                 durationSeconds: 1800, // 30 min
@@ -1959,8 +2323,8 @@ struct SampleMissions {
                 trainingStat: "Wisdom"
             ),
             AFKMission(
-                name: "Arcane Research",
-                description: "Study ancient scrolls and practice rune-drawing to refine your magical knowledge.",
+                name: "Rune Scribing",
+                description: "Study ancient scrolls and practice drawing runes of power to deepen your arcane knowledge.",
                 missionType: .research,
                 rarity: .common,
                 durationSeconds: 3600, // 1 hour
@@ -1973,8 +2337,8 @@ struct SampleMissions {
                 trainingStat: "Wisdom"
             ),
             AFKMission(
-                name: "Enchantment Practice",
-                description: "Practice weaving enchantments into objects. Strengthens your force of personality.",
+                name: "Enchantment Weaving",
+                description: "Practice weaving enchantments into objects, strengthening your force of will and personality.",
                 missionType: .research,
                 rarity: .uncommon,
                 durationSeconds: 7200, // 2 hours
@@ -1987,8 +2351,8 @@ struct SampleMissions {
                 trainingStat: "Charisma"
             ),
             AFKMission(
-                name: "Elemental Attunement",
-                description: "Meditate on the primal forces of nature to attune your mind to deeper magic.",
+                name: "Elemental Communion",
+                description: "Meditate on the primal forces of nature to attune your mind to deeper, more volatile magic.",
                 missionType: .research,
                 rarity: .uncommon,
                 durationSeconds: 14400, // 4 hours
@@ -2001,8 +2365,8 @@ struct SampleMissions {
                 trainingStat: "Wisdom"
             ),
             AFKMission(
-                name: "Deep Meditation",
-                description: "Enter a trance-like state of intense focus, pushing the boundaries of your intellect.",
+                name: "Astral Sanctum",
+                description: "Enter a trance at the boundary of realms, pushing your intellect beyond mortal limits.",
                 missionType: .research,
                 rarity: .rare,
                 durationSeconds: 28800, // 8 hours
@@ -2025,8 +2389,8 @@ struct SampleMissions {
     static var archerTraining: [AFKMission] {
         [
             AFKMission(
-                name: "Target Practice",
-                description: "Fire arrows at targets from increasing distances to sharpen your aim.",
+                name: "Steady Aim",
+                description: "Fire arrows at targets from increasing distances to sharpen your aim and focus.",
                 missionType: .stealth,
                 rarity: .common,
                 durationSeconds: 1800, // 30 min
@@ -2038,8 +2402,8 @@ struct SampleMissions {
                 trainingStat: "Dexterity"
             ),
             AFKMission(
-                name: "Agility Drills",
-                description: "Sprint, dodge, and roll through an obstacle course to build speed and reflexes.",
+                name: "Windrunner Drills",
+                description: "Sprint, dodge, and roll through an obstacle course designed to push your reflexes to the limit.",
                 missionType: .stealth,
                 rarity: .common,
                 durationSeconds: 3600, // 1 hour
@@ -2052,8 +2416,8 @@ struct SampleMissions {
                 trainingStat: "Dexterity"
             ),
             AFKMission(
-                name: "Stealth Training",
-                description: "Move unseen through dense terrain. Sharpens both agility and awareness.",
+                name: "Shadowstep Training",
+                description: "Move unseen through dense terrain, sharpening both agility and battlefield awareness.",
                 missionType: .stealth,
                 rarity: .uncommon,
                 durationSeconds: 7200, // 2 hours
@@ -2066,22 +2430,8 @@ struct SampleMissions {
                 trainingStat: "Dexterity"
             ),
             AFKMission(
-                name: "Wilderness Survival",
-                description: "Spend time in the wild relying on instinct and resourcefulness.",
-                missionType: .exploration,
-                rarity: .uncommon,
-                durationSeconds: 14400, // 4 hours
-                statRequirements: [StatRequirement(stat: .luck, minimum: 10)],
-                levelRequirement: 15,
-                baseSuccessRate: 0.80,
-                expReward: 150,
-                goldReward: 40,
-                classRequirement: "archer",
-                trainingStat: "Luck"
-            ),
-            AFKMission(
-                name: "Precision Focus",
-                description: "An exhaustive regimen of trick shots and reaction drills. Only the sharpest survive.",
+                name: "Hawk's Eye Trial",
+                description: "An exhaustive regimen of trick shots and reaction drills. Only the elite marksmen survive.",
                 missionType: .stealth,
                 rarity: .rare,
                 durationSeconds: 28800, // 8 hours
@@ -2095,37 +2445,6 @@ struct SampleMissions {
                 goldReward: 80,
                 classRequirement: "archer",
                 trainingStat: "Dexterity"
-            )
-        ]
-    }
-    
-    // MARK: - Universal Training (any class)
-    
-    static var universalTraining: [AFKMission] {
-        [
-            AFKMission(
-                name: "Basic Conditioning",
-                description: "A general fitness routine. Good for any aspiring adventurer.",
-                missionType: .exploration,
-                rarity: .common,
-                durationSeconds: 1800, // 30 min
-                levelRequirement: 1,
-                baseSuccessRate: 0.95,
-                expReward: 15,
-                goldReward: 5,
-                trainingStat: "Dexterity"
-            ),
-            AFKMission(
-                name: "Luck Meditation",
-                description: "Clear your mind and open yourself to fortune's favor.",
-                missionType: .gathering,
-                rarity: .uncommon,
-                durationSeconds: 3600, // 1 hour
-                levelRequirement: 5,
-                baseSuccessRate: 0.85,
-                expReward: 30,
-                goldReward: 10,
-                trainingStat: "Luck"
             )
         ]
     }

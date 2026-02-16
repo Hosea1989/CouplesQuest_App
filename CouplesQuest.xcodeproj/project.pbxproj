@@ -50,6 +50,7 @@
 		AA11BB22CC33DD44EE55FF66 /* Bond.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF661122 /* Bond.swift */; };
 		CC33DD44EE55FF6611223344 /* QRPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF661122334455CC /* QRPairingView.swift */; };
 		EE55FF66112233445566AABB /* PartnerDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF66112233445566AABBCCDD /* PartnerDashboardView.swift */; };
+		EE55FF67112233445566AABC /* PlayerInspectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF66112233445566AABBCCDE /* PlayerInspectView.swift */; };
 		1122334455667788AABBCCDD /* AssignTaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2233445566778899AABBCCEE /* AssignTaskView.swift */; };
 		334455667788AABBCCDDEEFF /* CouplesLeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4455667788AABBCCDDEEFF11 /* CouplesLeaderboardView.swift */; };
 		A8B9C0D1E2F3A4B5C6D7E8F9 /* PartyFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C0D1E2F3A4B5C6D7E8F901 /* PartyFeedView.swift */; };
@@ -84,6 +85,10 @@
 		M00D0001A0B0C0D0E0F00001 /* MoodEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = M00D0002A0B0C0D0E0F00001 /* MoodEntry.swift */; };
 		G0AL0001A0B0C0D0E0F00001 /* Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = G0AL0002A0B0C0D0E0F00001 /* Goal.swift */; };
 		CARD0001A0B0C0D0E0F00001 /* MonsterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARD0002A0B0C0D0E0F00001 /* MonsterCard.swift */; };
+		PCHL0001A0B0C0D0E0F00001 /* PartyChallenge.swift in Sources */ = {isa = PBXBuildFile; fileRef = PCHL0002A0B0C0D0E0F00001 /* PartyChallenge.swift */; };
+		PCHL0003A0B0C0D0E0F00001 /* CreatePartyChallengeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PCHL0004A0B0C0D0E0F00001 /* CreatePartyChallengeView.swift */; };
+		CPTY0001A0B0C0D0E0F00001 /* CreatePartySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPTY0002A0B0C0D0E0F00001 /* CreatePartySheet.swift */; };
+		JPTY0001A0B0C0D0E0F00001 /* JoinPartySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = JPTY0002A0B0C0D0E0F00001 /* JoinPartySheet.swift */; };
 		CARD0005A0B0C0D0E0F00001 /* MonsterCardCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARD0006A0B0C0D0E0F00001 /* MonsterCardCatalog.swift */; };
 		CARD0003A0B0C0D0E0F00001 /* BestiaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARD0004A0B0C0D0E0F00001 /* BestiaryView.swift */; };
 		A1B2C30001A0B0C0D0E0F001 /* RoutineBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C30002A0B0C0D0E0F001 /* RoutineBundle.swift */; };
@@ -160,6 +165,7 @@
 		BB22CC33DD44EE55FF661122 /* Bond.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bond.swift; sourceTree = "<group>"; };
 		DD44EE55FF661122334455CC /* QRPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPairingView.swift; sourceTree = "<group>"; };
 		FF66112233445566AABBCCDD /* PartnerDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartnerDashboardView.swift; sourceTree = "<group>"; };
+		FF66112233445566AABBCCDE /* PlayerInspectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerInspectView.swift; sourceTree = "<group>"; };
 		2233445566778899AABBCCEE /* AssignTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssignTaskView.swift; sourceTree = "<group>"; };
 		4455667788AABBCCDDEEFF11 /* CouplesLeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouplesLeaderboardView.swift; sourceTree = "<group>"; };
 		B9C0D1E2F3A4B5C6D7E8F901 /* PartyFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartyFeedView.swift; sourceTree = "<group>"; };
@@ -194,6 +200,10 @@
 		M00D0002A0B0C0D0E0F00001 /* MoodEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoodEntry.swift; sourceTree = "<group>"; };
 		G0AL0002A0B0C0D0E0F00001 /* Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Goal.swift; sourceTree = "<group>"; };
 		CARD0002A0B0C0D0E0F00001 /* MonsterCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonsterCard.swift; sourceTree = "<group>"; };
+		PCHL0002A0B0C0D0E0F00001 /* PartyChallenge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartyChallenge.swift; sourceTree = "<group>"; };
+		PCHL0004A0B0C0D0E0F00001 /* CreatePartyChallengeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatePartyChallengeView.swift; sourceTree = "<group>"; };
+		CPTY0002A0B0C0D0E0F00001 /* CreatePartySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatePartySheet.swift; sourceTree = "<group>"; };
+		JPTY0002A0B0C0D0E0F00001 /* JoinPartySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinPartySheet.swift; sourceTree = "<group>"; };
 		CARD0006A0B0C0D0E0F00001 /* MonsterCardCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonsterCardCatalog.swift; sourceTree = "<group>"; };
 		CARD0004A0B0C0D0E0F00001 /* BestiaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BestiaryView.swift; sourceTree = "<group>"; };
 		A1B2C30002A0B0C0D0E0F001 /* RoutineBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineBundle.swift; sourceTree = "<group>"; };
@@ -256,6 +266,7 @@
 				M00D0002A0B0C0D0E0F00001 /* MoodEntry.swift */,
 				G0AL0002A0B0C0D0E0F00001 /* Goal.swift */,
 				CARD0002A0B0C0D0E0F00001 /* MonsterCard.swift */,
+				PCHL0002A0B0C0D0E0F00001 /* PartyChallenge.swift */,
 				CARD0006A0B0C0D0E0F00001 /* MonsterCardCatalog.swift */,
 				82C61DFCBF5F21A58490E473 /* PlayerCharacter.swift */,
 				C1A2B3C4D5E6F7A8B9C0D101 /* RaidBoss.swift */,
@@ -303,10 +314,14 @@
 				2233445566778899AABBCCEE /* AssignTaskView.swift */,
 				4455667788AABBCCDDEEFF11 /* CouplesLeaderboardView.swift */,
 				FF66112233445566AABBCCDD /* PartnerDashboardView.swift */,
+				FF66112233445566AABBCCDE /* PlayerInspectView.swift */,
 				B9C0D1E2F3A4B5C6D7E8F901 /* PartyFeedView.swift */,
 				834C7813C08309F1474D0FD8 /* PartnerView.swift */,
 				E1A2B3C4D5E6F7A8B9C0E105 /* PendingConfirmationsView.swift */,
 				DD44EE55FF661122334455CC /* QRPairingView.swift */,
+				PCHL0004A0B0C0D0E0F00001 /* CreatePartyChallengeView.swift */,
+				CPTY0002A0B0C0D0E0F00001 /* CreatePartySheet.swift */,
+				JPTY0002A0B0C0D0E0F00001 /* JoinPartySheet.swift */,
 			);
 			path = Partner;
 			sourceTree = "<group>";
@@ -604,6 +619,10 @@
 				M00D0001A0B0C0D0E0F00001 /* MoodEntry.swift in Sources */,
 				G0AL0001A0B0C0D0E0F00001 /* Goal.swift in Sources */,
 				CARD0001A0B0C0D0E0F00001 /* MonsterCard.swift in Sources */,
+				PCHL0001A0B0C0D0E0F00001 /* PartyChallenge.swift in Sources */,
+				PCHL0003A0B0C0D0E0F00001 /* CreatePartyChallengeView.swift in Sources */,
+				CPTY0001A0B0C0D0E0F00001 /* CreatePartySheet.swift in Sources */,
+				JPTY0001A0B0C0D0E0F00001 /* JoinPartySheet.swift in Sources */,
 				CARD0005A0B0C0D0E0F00001 /* MonsterCardCatalog.swift in Sources */,
 				CARD0003A0B0C0D0E0F00001 /* BestiaryView.swift in Sources */,
 				G0AL0003A0B0C0D0E0F00001 /* GoalsView.swift in Sources */,
@@ -658,6 +677,7 @@
 				AA11BB22CC33DD44EE55FF66 /* Bond.swift in Sources */,
 				CC33DD44EE55FF6611223344 /* QRPairingView.swift in Sources */,
 				EE55FF66112233445566AABB /* PartnerDashboardView.swift in Sources */,
+				EE55FF67112233445566AABC /* PlayerInspectView.swift in Sources */,
 				1122334455667788AABBCCDD /* AssignTaskView.swift in Sources */,
 				334455667788AABBCCDDEEFF /* CouplesLeaderboardView.swift in Sources */,
 				A8B9C0D1E2F3A4B5C6D7E8F9 /* PartyFeedView.swift in Sources */,
@@ -707,7 +727,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.damienhosea.DuoCraft;
 				PRODUCT_NAME = "Swords & Chores";
 				SDKROOT = iphoneos;
@@ -789,7 +809,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.damienhosea.DuoCraft;
 				PRODUCT_NAME = "Swords & Chores";
 				SDKROOT = iphoneos;

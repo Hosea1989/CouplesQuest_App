@@ -837,13 +837,8 @@ struct TasksView: View {
         task.isDailyDuty = false
         task.isCoopDuty = asCoop
         
-        // Set deadline to end of today (23:59:59) — duties must be done the same day
-        let calendar = Calendar.current
-        if let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: Date()) {
-            task.dueDate = endOfDay
-        }
-        
-        task.startTask() // Starts timer and sets to inProgress
+        // No deadline or timer — duties can be completed at the player's pace
+        task.status = .inProgress
     }
     
     /// Opens the appropriate mini-game for a task.
@@ -1999,164 +1994,595 @@ struct TaskCompletionCelebration: View {
     let result: TaskCompletionResult
     @Environment(\.dismiss) private var dismiss
     
+    // Animation states
+    @State private var showHeader = false
+    @State private var showExpBar = false
+    @State private var expBarProgress: Double
+    @State private var showGoldCounter = false
+    @State private var displayedGold: Int = 0
+    @State private var showRewards = false
+    @State private var showStats = false
+    @State private var animatedStatIndices: Set<Int> = []
+    @State private var showContinue = false
+    @State private var headerGlow = false
+    
+    init(result: TaskCompletionResult) {
+        self.result = result
+        _expBarProgress = State(initialValue: result.expProgressBefore)
+    }
+    
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            
-            // Celebration icon
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color("AccentGold").opacity(0.3), Color.clear],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 100
-                        )
-                    )
-                    .frame(width: 200, height: 200)
-                
-                Image(systemName: result.didLevelUp ? "arrow.up.circle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(Color("AccentGreen"))
-                    .symbolEffect(.bounce)
-            }
-            
-            // Title
-            VStack(spacing: 6) {
-                Text(result.didLevelUp ? "LEVEL UP!" : "Quest Complete!")
-                    .font(.custom("Avenir-Heavy", size: 32))
-                
-                if result.isCoopDuty && result.coopPartnerCompleted {
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.2.fill")
-                            .font(.caption)
-                        Text("Co-op Bonus Active!")
-                            .font(.custom("Avenir-Heavy", size: 14))
-                    }
-                    .foregroundColor(Color("AccentPink"))
-                }
-            }
-            
-            // Rewards
-            VStack(spacing: 16) {
-                RewardRow(icon: "sparkles", label: "EXP Earned", value: "+\(result.expGained)", color: Color("AccentGold"))
-                RewardRow(icon: "dollarsign.circle.fill", label: "Gold Earned", value: "+\(result.goldGained)", color: Color("AccentGold"))
-                
-                ForEach(Array(result.bonusStatGains.enumerated()), id: \.offset) { _, bonus in
-                    RewardRow(
-                        icon: bonus.0.icon,
-                        label: "\(bonus.0.rawValue) Bonus",
-                        value: "+\(bonus.1)",
-                        color: Color(bonus.0.color)
-                    )
-                }
-                
-                // Class Affinity Bonus
-                if result.classAffinityBonusEXP > 0 {
-                    RewardRow(
-                        icon: "sparkle",
-                        label: "Class Affinity Bonus",
-                        value: "+\(result.classAffinityBonusEXP) EXP",
-                        color: Color("AccentPurple")
-                    )
-                }
-                
-                // Verification Tier
-                if result.verificationTier != .quick {
-                    RewardRow(
-                        icon: result.verificationTier.icon,
-                        label: result.verificationTier.rawValue,
-                        value: "\(String(format: "%.0f", result.verificationTier.expMultiplier * 100))% multiplier",
-                        color: Color(result.verificationTier.color)
-                    )
-                }
-                
-                // Routine Bundle Completion
-                if result.routineBundleCompleted {
-                    Divider().padding(.vertical, 4)
-                    RewardRow(
-                        icon: "checkmark.circle.badge.questionmark",
-                        label: "Routine Complete!",
-                        value: "+\(result.routineBonusEXP) EXP",
-                        color: Color("AccentGreen")
-                    )
-                }
-                
-                // Loot Drop
-                if let loot = result.lootDropped {
-                    Divider().padding(.vertical, 4)
-                    RewardRow(
-                        icon: loot.icon,
-                        label: "Loot Found!",
-                        value: loot.displayName,
-                        color: Color(loot.rarityColor)
-                    )
-                }
-                
-                // Co-op bonus breakdown
-                if result.isCoopDuty && result.coopPartnerCompleted {
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    RewardRow(
-                        icon: "person.2.fill",
-                        label: "Co-op EXP Bonus",
-                        value: "+\(result.coopBonusEXP)",
-                        color: Color("AccentPink")
-                    )
-                    RewardRow(
-                        icon: "person.2.fill",
-                        label: "Co-op Gold Bonus",
-                        value: "+\(result.coopBonusGold)",
-                        color: Color("AccentPink")
-                    )
-                    RewardRow(
-                        icon: "heart.fill",
-                        label: "Bond EXP",
-                        value: "+\(result.coopBondEXP)",
-                        color: Color("AccentPink")
-                    )
-                }
-            }
-            .padding(24)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color("CardBackground"))
-            )
-            .padding(.horizontal, 32)
-            
-            // Class-flavored completion message
-            if let classMessage = result.classMessage {
-                Text(classMessage)
-                    .font(.custom("Avenir-MediumOblique", size: 14))
-                    .foregroundColor(Color("SecondaryText"))
-                    .padding(.top, 4)
-            }
-            
-            Spacer()
-            
-            // Continue Button
-            Button(action: { dismiss() }) {
-                Text("Continue")
-                    .font(.custom("Avenir-Heavy", size: 18))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(Color("AccentGold"))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 32)
-        }
-        .background(
+        ZStack {
+            // Background
             LinearGradient(
                 colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .ignoresSafeArea()
+            
+            // Ambient particles
+            RewardFloatingParticlesView()
+                .ignoresSafeArea()
+                .opacity(0.3)
+            
+            // Main content
+            VStack(spacing: 0) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        Spacer().frame(height: 50)
+                        
+                        // Result icon
+                        resultIconView
+                            .opacity(showHeader ? 1 : 0)
+                            .scaleEffect(showHeader ? 1 : 0.3)
+                        
+                        // Title
+                        titleView
+                            .opacity(showHeader ? 1 : 0)
+                            .offset(y: showHeader ? 0 : 20)
+                        
+                        // EXP Progress Bar
+                        expProgressBarView
+                            .opacity(showExpBar ? 1 : 0)
+                            .offset(y: showExpBar ? 0 : 15)
+                        
+                        // Gold Counter
+                        goldCounterView
+                            .opacity(showGoldCounter ? 1 : 0)
+                            .offset(y: showGoldCounter ? 0 : 15)
+                        
+                        // Rewards breakdown
+                        if showRewards {
+                            rewardsCardView
+                                .transition(.asymmetric(
+                                    insertion: .scale(scale: 0.9).combined(with: .opacity),
+                                    removal: .opacity
+                                ))
+                        }
+                        
+                        // Character Stats Card
+                        if showStats {
+                            characterStatsCardView
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                                    removal: .opacity
+                                ))
+                        }
+                        
+                        // Class message
+                        if let classMessage = result.classMessage, showRewards {
+                            Text(classMessage)
+                                .font(.custom("Avenir-MediumOblique", size: 14))
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                        
+                        Spacer().frame(height: 20)
+                    }
+                    .padding(.horizontal, 24)
+                }
+                
+                // Continue button — pinned at bottom
+                if showContinue {
+                    continueButtonView
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 40)
+                }
+            }
+        }
+        .onAppear {
+            startAnimationSequence()
+        }
+    }
+    
+    // MARK: - Result Icon
+    
+    private var resultIconView: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color("AccentGreen").opacity(headerGlow ? 0.4 : 0.15), Color.clear],
+                        center: .center,
+                        startRadius: 20,
+                        endRadius: 80
+                    )
+                )
+                .frame(width: 160, height: 160)
+                .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: headerGlow)
+            
+            Image(systemName: result.canLevelUp ? "arrow.up.circle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color("AccentGreen"), Color("AccentGreen").opacity(0.7)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: Color("AccentGreen").opacity(0.5), radius: 20)
+        }
+    }
+    
+    // MARK: - Title
+    
+    private var titleView: some View {
+        VStack(spacing: 6) {
+            Text(result.canLevelUp ? "LEVEL UP READY!" : "Quest Complete!")
+                .font(.custom("Avenir-Heavy", size: 28))
+                .foregroundColor(.white)
+            
+            if result.isCoopDuty && result.coopPartnerCompleted {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.2.fill")
+                        .font(.caption)
+                    Text("Co-op Bonus Active!")
+                        .font(.custom("Avenir-Heavy", size: 14))
+                }
+                .foregroundColor(Color("AccentPink"))
+            }
+            
+            Text("+\(result.expGained) EXP  •  +\(result.goldGained) Gold")
+                .font(.custom("Avenir-Medium", size: 14))
+                .foregroundColor(Color("AccentGold").opacity(0.8))
+        }
+    }
+    
+    // MARK: - EXP Progress Bar
+    
+    private var expProgressBarView: some View {
+        VStack(spacing: 8) {
+            HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color("AccentGold"))
+                    Text("Lv. \(result.characterLevel)")
+                        .font(.custom("Avenir-Heavy", size: 16))
+                        .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                if result.canLevelUp {
+                    Text("READY TO LEVEL UP!")
+                        .font(.custom("Avenir-Heavy", size: 12))
+                        .foregroundColor(Color("AccentGold"))
+                } else {
+                    Text("EXP  \(Int(expBarProgress * 100))%")
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(Color("AccentGold").opacity(0.9))
+                }
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.1))
+                    
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color("AccentGold"), Color("AccentGold").opacity(0.7)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, geo.size.width * expBarProgress))
+                    
+                    if expBarProgress > 0.01 {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.clear, .white.opacity(0.25), .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(0, geo.size.width * expBarProgress))
+                    }
+                }
+            }
+            .frame(height: 14)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("AccentGold").opacity(0.2), lineWidth: 1)
+                )
         )
+    }
+    
+    // MARK: - Gold Counter
+    
+    private var goldCounterView: some View {
+        HStack {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color("AccentGold").opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(Color("AccentGold"))
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GOLD")
+                        .font(.custom("Avenir-Heavy", size: 11))
+                        .foregroundColor(.secondary)
+                        .tracking(1.2)
+                    Text("\(result.goldBefore + displayedGold)")
+                        .font(.custom("Avenir-Heavy", size: 22))
+                        .foregroundColor(.white)
+                        .contentTransition(.numericText())
+                }
+            }
+            
+            Spacer()
+            
+            Text("+\(displayedGold)")
+                .font(.custom("Avenir-Heavy", size: 20))
+                .foregroundColor(Color("AccentGold"))
+                .contentTransition(.numericText())
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("AccentGold").opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Rewards Card
+    
+    private var rewardsCardView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "gift.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("REWARDS")
+                    .font(.custom("Avenir-Heavy", size: 11))
+                    .foregroundColor(.secondary)
+                    .tracking(1.5)
+                Spacer()
+            }
+            
+            // Class Affinity Bonus
+            if result.classAffinityBonusEXP > 0 {
+                rewardItemRow(
+                    icon: "sparkle",
+                    iconColor: Color("AccentPurple"),
+                    label: "Class Affinity",
+                    value: "+\(result.classAffinityBonusEXP) EXP",
+                    valueColor: Color("AccentPurple")
+                )
+            }
+            
+            // Verification Tier
+            if result.verificationTier != .quick {
+                rewardItemRow(
+                    icon: result.verificationTier.icon,
+                    iconColor: Color(result.verificationTier.color),
+                    label: result.verificationTier.rawValue,
+                    value: "\(String(format: "%.0f", result.verificationTier.expMultiplier * 100))%",
+                    valueColor: Color(result.verificationTier.color)
+                )
+            }
+            
+            // Routine Bundle
+            if result.routineBundleCompleted {
+                rewardItemRow(
+                    icon: "checkmark.circle.badge.questionmark",
+                    iconColor: Color("AccentGreen"),
+                    label: "Routine Complete!",
+                    value: "+\(result.routineBonusEXP) EXP",
+                    valueColor: Color("AccentGreen")
+                )
+            }
+            
+            // Loot Drop
+            if let loot = result.lootDropped {
+                rewardItemRow(
+                    icon: loot.icon,
+                    iconColor: Color(loot.rarityColor),
+                    label: "Loot Found!",
+                    value: loot.displayName,
+                    valueColor: Color(loot.rarityColor)
+                )
+            }
+            
+            // Co-op bonuses
+            if result.isCoopDuty && result.coopPartnerCompleted {
+                Divider().overlay(Color.white.opacity(0.05))
+                
+                rewardItemRow(
+                    icon: "person.2.fill",
+                    iconColor: Color("AccentPink"),
+                    label: "Co-op Bonus",
+                    value: "+\(result.coopBonusEXP) EXP / +\(result.coopBonusGold) G",
+                    valueColor: Color("AccentPink")
+                )
+                rewardItemRow(
+                    icon: "heart.fill",
+                    iconColor: Color("AccentPink"),
+                    label: "Bond EXP",
+                    value: "+\(result.coopBondEXP)",
+                    valueColor: Color("AccentPink")
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Character Stats Card
+    
+    private var characterStatsCardView: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "person.fill")
+                    .foregroundColor(Color("AccentGold"))
+                Text("CHARACTER STATS")
+                    .font(.custom("Avenir-Heavy", size: 11))
+                    .foregroundColor(.secondary)
+                    .tracking(1.5)
+                Spacer()
+            }
+            
+            // Stat grid: 2 columns × 3 rows
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 10) {
+                ForEach(Array(StatType.allCases.enumerated()), id: \.element) { index, statType in
+                    let statValue = result.currentStats[statType] ?? 0
+                    let gained = result.bonusStatGains.filter { $0.0 == statType }.reduce(0) { $0 + $1.1 }
+                    let isAnimated = animatedStatIndices.contains(index)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: statType.icon)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(statType.color))
+                            .frame(width: 20)
+                        
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(statType.shortName)
+                                .font(.custom("Avenir-Heavy", size: 10))
+                                .foregroundColor(.secondary)
+                                .tracking(0.8)
+                            
+                            HStack(spacing: 4) {
+                                Text("\(statValue)")
+                                    .font(.custom("Avenir-Heavy", size: 18))
+                                    .foregroundColor(.white)
+                                
+                                if gained > 0 {
+                                    Text("+\(gained)")
+                                        .font(.custom("Avenir-Heavy", size: 14))
+                                        .foregroundColor(Color(statType.color))
+                                        .scaleEffect(isAnimated ? 1.0 : 0.3)
+                                        .opacity(isAnimated ? 1 : 0)
+                                }
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(gained > 0 && isAnimated
+                                  ? Color(statType.color).opacity(0.1)
+                                  : Color.white.opacity(0.03))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(gained > 0 && isAnimated
+                                    ? Color(statType.color).opacity(0.3)
+                                    : Color.clear, lineWidth: 1)
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
+        )
+    }
+    
+    // MARK: - Shared Row
+    
+    private func rewardItemRow(icon: String, iconColor: Color, label: String, value: String, valueColor: Color) -> some View {
+        HStack {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(iconColor.opacity(0.15))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: icon)
+                        .font(.system(size: 15))
+                        .foregroundColor(iconColor)
+                }
+                Text(label)
+                    .font(.custom("Avenir-Medium", size: 14))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            Spacer()
+            Text(value)
+                .font(.custom("Avenir-Heavy", size: 16))
+                .foregroundColor(valueColor)
+        }
+    }
+    
+    // MARK: - Continue Button
+    
+    private var continueButtonView: some View {
+        Button(action: { dismiss() }) {
+            HStack(spacing: 8) {
+                Text("Continue")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 16, weight: .bold))
+            }
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(
+                LinearGradient(
+                    colors: [Color("AccentGold"), Color("AccentGold").opacity(0.8)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: Color("AccentGold").opacity(0.3), radius: 10, y: 5)
+        }
+    }
+    
+    // MARK: - Animation Sequence
+    
+    private func startAnimationSequence() {
+        var delay: Double = 0
+        
+        // Header + icon
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                showHeader = true
+            }
+            headerGlow = true
+            AudioManager.shared.play(.claimReward)
+        }
+        delay += 0.5
+        
+        // EXP bar appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                showExpBar = true
+            }
+        }
+        delay += 0.3
+        
+        // EXP bar fills
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.easeInOut(duration: 0.8)) {
+                expBarProgress = result.expProgressAfter
+            }
+        }
+        delay += 1.0
+        
+        // Gold counter
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                showGoldCounter = true
+            }
+            animateGoldCounter()
+            AudioManager.shared.play(.lootDrop)
+        }
+        delay += 0.7
+        
+        // Rewards card
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                showRewards = true
+            }
+        }
+        delay += 0.4
+        
+        // Character stats card
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                showStats = true
+            }
+            // Stagger stat animations for stats that changed
+            animateStatChanges()
+        }
+        delay += 0.6
+        
+        // Continue button
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                showContinue = true
+            }
+        }
+    }
+    
+    // MARK: - Gold Counter Animation
+    
+    private func animateGoldCounter() {
+        let target = result.goldGained
+        guard target > 0 else {
+            displayedGold = 0
+            return
+        }
+        let steps = min(target, 30)
+        let stepDuration = 0.6 / Double(steps)
+        
+        for i in 1...steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * stepDuration) {
+                withAnimation(.easeOut(duration: 0.05)) {
+                    displayedGold = Int(Double(target) * Double(i) / Double(steps))
+                }
+            }
+        }
+    }
+    
+    // MARK: - Stat Change Animation
+    
+    private func animateStatChanges() {
+        let changedStatTypes = Set(result.bonusStatGains.map { $0.0 })
+        for (index, statType) in StatType.allCases.enumerated() {
+            if changedStatTypes.contains(statType) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.12) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                        _ = animatedStatIndices.insert(index)
+                    }
+                }
+            } else {
+                _ = animatedStatIndices.insert(index)
+            }
+        }
     }
 }
 

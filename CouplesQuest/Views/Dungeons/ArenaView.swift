@@ -65,24 +65,94 @@ struct ArenaView: View {
     // MARK: - Arena Header
     
     private var arenaHeader: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color("AccentGold").opacity(0.15))
-                    .frame(width: 80, height: 80)
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 36))
-                    .foregroundColor(Color("AccentGold"))
+        ZStack {
+            // Radial warm glow behind the arena crest
+            RadialGradient(
+                colors: [
+                    Color("AccentGold").opacity(0.18),
+                    Color("AccentOrange").opacity(0.08),
+                    Color.clear
+                ],
+                center: .center,
+                startRadius: 10,
+                endRadius: 180
+            )
+            .frame(height: 260)
+            .blur(radius: 20)
+            
+            VStack(spacing: 14) {
+                // Arena crest with concentric rings
+                ZStack {
+                    // Outer decorative ring
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color("AccentGold").opacity(0.25), Color("AccentOrange").opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                        .frame(width: 120, height: 120)
+                    
+                    // Inner glow ring
+                    Circle()
+                        .stroke(Color("AccentGold").opacity(0.15), lineWidth: 1)
+                        .frame(width: 100, height: 100)
+                    
+                    // Filled center
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [Color("AccentGold").opacity(0.2), Color("AccentOrange").opacity(0.08)],
+                                center: .center,
+                                startRadius: 5,
+                                endRadius: 45
+                            )
+                        )
+                        .frame(width: 90, height: 90)
+                    
+                    // Trophy icon
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color("AccentGold"), Color("AccentOrange")],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Crossed swords behind the trophy
+                    HStack(spacing: 56) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color("AccentGold").opacity(0.4))
+                            .rotationEffect(.degrees(-30))
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color("AccentGold").opacity(0.4))
+                            .rotationEffect(.degrees(30))
+                    }
+                    .offset(y: 28)
+                }
+                
+                Text("The Arena")
+                    .font(.custom("Avenir-Heavy", size: 26))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color("AccentGold"), Color("AccentOrange")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                
+                Text("Face infinite waves of escalating combat. How far can you go?")
+                    .font(.custom("Avenir-Medium", size: 14))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
             }
-            
-            Text("The Arena")
-                .font(.custom("Avenir-Heavy", size: 24))
-            
-            Text("Face infinite waves of escalating combat. How far can you go?")
-                .font(.custom("Avenir-Medium", size: 14))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
         }
         .padding(.horizontal)
     }
@@ -509,6 +579,23 @@ struct ArenaRunView: View {
                 endPoint: .bottom
             )
             .ignoresSafeArea()
+            
+            // Subtle warm arena glow at top
+            VStack {
+                RadialGradient(
+                    colors: [
+                        Color("AccentGold").opacity(0.1),
+                        Color("AccentOrange").opacity(0.05),
+                        Color.clear
+                    ],
+                    center: .top,
+                    startRadius: 20,
+                    endRadius: 300
+                )
+                .frame(height: 350)
+                .ignoresSafeArea()
+                Spacer()
+            }
             
             switch phase {
             case .waiting:
