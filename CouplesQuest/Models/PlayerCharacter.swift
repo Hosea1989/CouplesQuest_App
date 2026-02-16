@@ -1234,6 +1234,9 @@ final class PlayerCharacter {
     /// Apply passive HP regeneration based on elapsed time since last update.
     /// Call this on app launch, screen transitions, and before HP checks.
     func applyPassiveRegen() {
+        // Restore from UserDefaults backup if SwiftData lost the values
+        restoreHPFromBackupIfNeeded()
+        
         let now = Date()
         let elapsed = now.timeIntervalSince(lastHPUpdateAt)
         guard elapsed > 0 else { return }
@@ -1245,6 +1248,28 @@ final class PlayerCharacter {
             let cap = maxHP
             currentHP = min(cap, currentHP + regenAmount)
             lastHPUpdateAt = now
+            backupHPToUserDefaults()
+        }
+    }
+    
+    /// Backup HP state to UserDefaults so it survives if SwiftData fails to persist.
+    func backupHPToUserDefaults() {
+        UserDefaults.standard.set(currentHP, forKey: "backup_currentHP")
+        UserDefaults.standard.set(lastHPUpdateAt, forKey: "backup_lastHPUpdateAt")
+    }
+    
+    /// Restore HP from UserDefaults if SwiftData appears to have a stale value.
+    /// Detects staleness by comparing lastHPUpdateAt against the backup timestamp.
+    private func restoreHPFromBackupIfNeeded() {
+        guard let backupDate = UserDefaults.standard.object(forKey: "backup_lastHPUpdateAt") as? Date else { return }
+        // If the backup is more recent than what SwiftData has, use it
+        if backupDate > lastHPUpdateAt {
+            let backupHP = UserDefaults.standard.integer(forKey: "backup_currentHP")
+            if backupHP > 0 {
+                currentHP = backupHP
+                lastHPUpdateAt = backupDate
+                print("🔧 HP restored from backup: \(backupHP) HP (SwiftData had stale date)")
+            }
         }
     }
     
@@ -1265,6 +1290,8 @@ final class PlayerCharacter {
     /// Heal by a fixed amount (e.g. from a potion), capped at maxHP
     func heal(amount: Int) {
         currentHP = min(maxHP, currentHP + amount)
+        lastHPUpdateAt = Date()
+        backupHPToUserDefaults()
     }
     
     /// Take damage, flooring at 0. Returns actual damage dealt.
@@ -1276,6 +1303,9 @@ final class PlayerCharacter {
         if currentHP <= 0 {
             currentHP = 1
         }
+        // Reset regen timer so passive regen counts from now, not before damage
+        lastHPUpdateAt = Date()
+        backupHPToUserDefaults()
         return actual
     }
     

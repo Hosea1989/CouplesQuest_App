@@ -234,6 +234,7 @@ struct HomeView: View {
                         iconColor: Color("AccentGold"),
                         title: quest.isBonusQuest ? "Bonus Claimed!" : "Quest Complete!",
                         subtitle: quest.title,
+                        character: character,
                         rewards: [
                             (icon: "sparkles", label: "EXP Earned", value: "+\(quest.expReward)", color: Color("AccentGold")),
                             (icon: "dollarsign.circle.fill", label: "Gold Earned", value: "+\(quest.goldReward)", color: Color("AccentGold"))

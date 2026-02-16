@@ -2618,43 +2618,98 @@ struct RewardCelebrationOverlay: View {
     let iconColor: Color
     let title: String
     var subtitle: String? = nil
+    var character: PlayerCharacter? = nil
     let rewards: [(icon: String, label: String, value: String, color: Color)]
     let onDismiss: () -> Void
     
     @State private var appeared = false
+    @State private var showIcon = false
+    @State private var showTitle = false
+    @State private var showStats = false
+    @State private var showRewards = false
+    @State private var showButton = false
+    @State private var glowPulse = false
+    @State private var iconBounce = false
     
     var body: some View {
         ZStack {
-            // Dimmed background — tap to dismiss
-            Color.black.opacity(appeared ? 0.5 : 0)
+            // Dimmed background
+            Color.black.opacity(appeared ? 0.6 : 0)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
             
+            // Floating sparkle particles behind the card
+            if showIcon {
+                ForEach(0..<16, id: \.self) { index in
+                    Image(systemName: index % 3 == 0 ? "sparkle" : (index % 3 == 1 ? "star.fill" : "circle.fill"))
+                        .font(.system(size: CGFloat.random(in: index % 3 == 2 ? 4...6 : 8...16)))
+                        .foregroundColor(
+                            (index % 2 == 0 ? iconColor : Color("AccentOrange"))
+                                .opacity(Double.random(in: 0.3...0.7))
+                        )
+                        .offset(
+                            x: CGFloat.random(in: -160...160),
+                            y: CGFloat.random(in: -300...300)
+                        )
+                        .animation(
+                            .easeInOut(duration: Double.random(in: 1.5...3.0))
+                                .repeatForever(autoreverses: true)
+                                .delay(Double.random(in: 0...1.0)),
+                            value: showIcon
+                        )
+                }
+            }
+            
             VStack(spacing: 20) {
-                // Celebration icon with radial glow
+                // Celebration icon with layered glow
                 ZStack {
+                    // Outer pulsing ring
+                    Circle()
+                        .stroke(iconColor.opacity(glowPulse ? 0.3 : 0.05), lineWidth: 2)
+                        .frame(width: 160, height: 160)
+                        .scaleEffect(glowPulse ? 1.15 : 1.0)
+                    
+                    // Radial glow
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [iconColor.opacity(0.3), Color.clear],
+                                colors: [iconColor.opacity(0.35), iconColor.opacity(0.08), Color.clear],
                                 center: .center,
-                                startRadius: 20,
+                                startRadius: 10,
                                 endRadius: 90
                             )
                         )
                         .frame(width: 180, height: 180)
+                        .scaleEffect(glowPulse ? 1.05 : 0.95)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 64))
-                        .foregroundColor(iconColor)
-                        .shadow(color: iconColor.opacity(0.5), radius: 12)
-                        .symbolEffect(.bounce)
+                        .font(.system(size: 64, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [iconColor, Color("AccentOrange")],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: iconColor.opacity(0.6), radius: 16)
+                        .shadow(color: iconColor.opacity(0.3), radius: 30)
+                        .scaleEffect(iconBounce ? 1.0 : 0.4)
+                        .rotationEffect(.degrees(iconBounce ? 0 : -15))
                 }
+                .opacity(showIcon ? 1 : 0)
                 
-                // Title
-                VStack(spacing: 4) {
+                // Title with gradient
+                VStack(spacing: 6) {
                     Text(title)
-                        .font(.custom("Avenir-Heavy", size: 26))
+                        .font(.custom("Avenir-Heavy", size: 28))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [iconColor, Color("AccentOrange")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .shadow(color: iconColor.opacity(0.3), radius: 8)
                     
                     if let subtitle = subtitle {
                         Text(subtitle)
@@ -2662,33 +2717,131 @@ struct RewardCelebrationOverlay: View {
                             .foregroundColor(.secondary)
                     }
                 }
+                .opacity(showTitle ? 1 : 0)
+                .offset(y: showTitle ? 0 : 12)
                 
-                // Rewards card
-                if !rewards.isEmpty {
+                // Character stats section (EXP bar + Gold)
+                if let character {
                     VStack(spacing: 12) {
+                        // Level + EXP bar
+                        VStack(spacing: 6) {
+                            HStack {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color("AccentGold"))
+                                Text("Level \(character.level)")
+                                    .font(.custom("Avenir-Heavy", size: 14))
+                                Spacer()
+                                Text("\(character.currentEXP) / \(character.expToNextLevel) EXP")
+                                    .font(.custom("Avenir-Medium", size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(0.08))
+                                        .frame(height: 8)
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color("AccentGold"), Color("AccentOrange")],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: geo.size.width * character.levelProgress, height: 8)
+                                        .animation(.easeInOut(duration: 0.8).delay(0.3), value: character.levelProgress)
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                        
+                        // Gold display
+                        HStack {
+                            Image(systemName: "dollarsign.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color("AccentGold"))
+                            Text("Gold")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                            Spacer()
+                            Text("\(character.gold)")
+                                .font(.custom("Avenir-Heavy", size: 16))
+                                .foregroundColor(Color("AccentGold"))
+                                .contentTransition(.numericText())
+                                .animation(.easeInOut(duration: 0.6).delay(0.3), value: character.gold)
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.white.opacity(0.04))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                            )
+                    )
+                    .opacity(showStats ? 1 : 0)
+                    .offset(y: showStats ? 0 : 10)
+                }
+                
+                // Rewards card with staggered rows
+                if !rewards.isEmpty {
+                    VStack(spacing: 0) {
                         Text("REWARDS")
                             .font(.custom("Avenir-Heavy", size: 11))
                             .foregroundColor(.secondary)
-                            .tracking(1.5)
+                            .tracking(2)
+                            .padding(.bottom, 14)
                         
-                        ForEach(Array(rewards.enumerated()), id: \.offset) { _, reward in
+                        ForEach(Array(rewards.enumerated()), id: \.offset) { index, reward in
                             HStack {
-                                Image(systemName: reward.icon)
-                                    .foregroundColor(reward.color)
-                                    .frame(width: 22)
+                                ZStack {
+                                    Circle()
+                                        .fill(reward.color.opacity(0.12))
+                                        .frame(width: 32, height: 32)
+                                    Image(systemName: reward.icon)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(reward.color)
+                                }
+                                
                                 Text(reward.label)
                                     .font(.custom("Avenir-Medium", size: 15))
+                                
                                 Spacer()
+                                
                                 Text(reward.value)
-                                    .font(.custom("Avenir-Heavy", size: 17))
-                                    .foregroundColor(reward.color)
+                                    .font(.custom("Avenir-Heavy", size: 18))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [reward.color, reward.color.opacity(0.7)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            }
+                            .padding(.vertical, 8)
+                            .opacity(showRewards ? 1 : 0)
+                            .offset(x: showRewards ? 0 : 30)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.7)
+                                    .delay(Double(index) * 0.12),
+                                value: showRewards
+                            )
+                            
+                            if index < rewards.count - 1 {
+                                Divider().opacity(0.15)
                             }
                         }
                     }
                     .padding(18)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(iconColor.opacity(0.08))
+                            .fill(iconColor.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(iconColor.opacity(0.1), lineWidth: 1)
+                            )
                     )
                 }
                 
@@ -2701,25 +2854,82 @@ struct RewardCelebrationOverlay: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(iconColor)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [iconColor, Color("AccentOrange")],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
                         )
+                        .shadow(color: iconColor.opacity(0.3), radius: 8, y: 4)
                 }
                 .padding(.top, 4)
+                .opacity(showButton ? 1 : 0)
+                .offset(y: showButton ? 0 : 10)
             }
             .padding(24)
             .background(
                 RoundedRectangle(cornerRadius: 24)
                     .fill(Color("CardBackground"))
+                    .shadow(color: iconColor.opacity(0.15), radius: 30, y: 10)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(iconColor.opacity(appeared ? 0.15 : 0), lineWidth: 1)
             )
             .padding(.horizontal, 28)
             .scaleEffect(appeared ? 1 : 0.8)
             .opacity(appeared ? 1 : 0)
         }
         .onAppear {
+            AudioManager.shared.play(.claimReward)
+            
+            // Card entrance
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                 appeared = true
             }
-            AudioManager.shared.play(.claimReward)
+            
+            // Icon pop-in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.5)) {
+                    showIcon = true
+                    iconBounce = true
+                }
+            }
+            
+            // Pulsing glow loop
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    glowPulse = true
+                }
+            }
+            
+            // Title fade-in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeOut(duration: 0.4)) {
+                    showTitle = true
+                }
+            }
+            
+            // Stats section slide-in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    showStats = true
+                }
+            }
+            
+            // Rewards stagger
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                showRewards = true
+            }
+            
+            // Button
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    showButton = true
+                }
+            }
         }
     }
 }
