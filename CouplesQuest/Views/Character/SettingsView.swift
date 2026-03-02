@@ -6,7 +6,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var supabase = SupabaseService.shared
+    private let supabase = SupabaseService.shared
     @ObservedObject private var audioManager = AudioManager.shared
     @ObservedObject private var syncManager = SyncManager.shared
     
@@ -20,7 +20,7 @@ struct SettingsView: View {
     @State private var deleteConfirmText = ""
     @State private var isProcessing = false
     @State private var errorMessage: String?
-    // Export state removed — feature not needed
+    @State private var showSoundTester = false
     
     // Notification preferences
     @AppStorage("notifications_enabled") private var notificationsEnabled = true
@@ -226,7 +226,31 @@ struct SettingsView: View {
                         }
                     }
                 }
+                
+                Divider()
+                
+                Button {
+                    showSoundTester = true
+                } label: {
+                    HStack {
+                        Label {
+                            Text("Test All Sounds")
+                                .font(.custom("Avenir-Medium", size: 14))
+                        } icon: {
+                            Image(systemName: "music.note.list")
+                                .foregroundColor(Color("AccentGold"))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .foregroundColor(.primary)
             }
+        }
+        .sheet(isPresented: $showSoundTester) {
+            SoundTesterSheet()
         }
     }
     
@@ -667,6 +691,130 @@ struct SettingsView: View {
             print("Failed to clear local data: \(error)")
         }
         ActiveMission.clearPersisted()
+    }
+}
+
+// MARK: - Sound Tester Sheet
+
+private struct SoundTesterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var audioManager = AudioManager.shared
+    
+    private let categories: [(String, [AudioManager.SoundEffect])] = [
+        ("UI", [.buttonTap, .tabSwitch]),
+        ("Game Actions", [.dungeonStart, .dungeonComplete, .trainingStart, .trainingComplete]),
+        ("Rewards", [.lootDrop, .claimReward, .equipItem, .levelUp]),
+        ("Forge", [.forgeEnter, .forgeHammer, .forgeAnvilRing, .forgeShatter, .forgeCrumble, .forgeMagicSwirl, .forgeSalvage, .forgeEnhance, .forgeEnhanceFail, .forgeCritical]),
+        ("Cards", [.cardReveal, .cardCollect, .cardPageTurn]),
+        ("Arena", [.arenaWaveHorn, .arenaWaveClear, .arenaMilestone]),
+        ("Raid Boss", [.raidBossImpact, .raidBossRoar, .raidBossVictory]),
+        ("Research", [.researchStart, .researchComplete, .researchNodeUnlock]),
+        ("Expeditions", [.expeditionDepart, .expeditionStageComplete, .expeditionTreasure]),
+        ("Partner", [.partnerPaired, .sendKudos, .sendNudge, .sendChallenge, .receiveKudos, .receiveNudge]),
+        ("Duty Board", [.dutyAccept, .dutyComplete, .dutyBoardShuffle]),
+        ("Tasks", [.taskCreate, .taskDelete]),
+        ("Store & Items", [.storeEnter, .storePurchase, .useConsumable]),
+        ("Quests & Goals", [.dailyQuestClaim, .goalMilestone]),
+        ("Class Selection", [.classSelectWarrior, .classSelectMage, .classSelectArcher]),
+        ("Big Moments", [.splashIntro, .characterCreated, .classEvolution, .rebirth, .achievementUnlock, .streakMilestone]),
+        ("Feedback", [.success, .error, .mismatch]),
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        ForEach(categories, id: \.0) { category, effects in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(category)
+                                    .font(.custom("Avenir-Heavy", size: 13))
+                                    .foregroundColor(Color("AccentGold"))
+                                    .padding(.horizontal, 4)
+                                
+                                VStack(spacing: 0) {
+                                    ForEach(effects, id: \.rawValue) { effect in
+                                        soundRow(effect)
+                                        if effect.rawValue != effects.last?.rawValue {
+                                            Divider().padding(.leading, 44)
+                                        }
+                                    }
+                                }
+                                .background(Color("CardBackground").opacity(0.6))
+                                .cornerRadius(12)
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Sound Tester")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(Color("AccentGold"))
+                }
+            }
+        }
+    }
+    
+    private func soundRow(_ effect: AudioManager.SoundEffect) -> some View {
+        Button {
+            audioManager.previewSound(effect)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(Color("AccentGold"))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName(for: effect))
+                        .font(.custom("Avenir-Medium", size: 14))
+                        .foregroundColor(.primary)
+                    
+                    Text(effect.rawValue + ".wav")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if audioManager.hasCustomSound(effect) {
+                    Text("Custom")
+                        .font(.custom("Avenir-Heavy", size: 10))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.15))
+                        .cornerRadius(6)
+                } else {
+                    Text("Fallback")
+                        .font(.custom("Avenir-Heavy", size: 10))
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(6)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+    }
+    
+    private func displayName(for effect: AudioManager.SoundEffect) -> String {
+        effect.rawValue
+            .replacingOccurrences(of: "sfx_", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
     }
 }
 

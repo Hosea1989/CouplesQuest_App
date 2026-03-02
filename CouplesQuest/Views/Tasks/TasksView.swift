@@ -761,7 +761,7 @@ struct TasksView: View {
             characterID: character.id,
             context: modelContext
         )
-        AudioManager.shared.play(.tabSwitch)
+        AudioManager.shared.play(.dutyBoardShuffle)
     }
     
     /// Identifies which mini-game (if any) a task corresponds to.
@@ -839,6 +839,7 @@ struct TasksView: View {
         
         // No deadline or timer — duties can be completed at the player's pace
         task.status = .inProgress
+        AudioManager.shared.play(.dutyAccept)
     }
     
     /// Opens the appropriate mini-game for a task.
@@ -1047,7 +1048,9 @@ struct TasksView: View {
         let result = gameEngine.completeTask(task, character: character, bond: bond, context: modelContext)
         lastCompletionResult = result
         showCompletionCelebration = true
-        
+
+        AudioManager.shared.play(.dutyComplete)
+
         // Toast: task complete
         ToastManager.shared.showSuccess(
             "Quest Complete!",
@@ -1131,6 +1134,7 @@ struct TasksView: View {
     
     private func deleteTask(_ task: GameTask) {
         modelContext.delete(task)
+        AudioManager.shared.play(.taskDelete)
         deleteTrigger += 1
     }
 }

@@ -421,6 +421,7 @@ struct GoalDetailView: View {
         goal.claimMilestone(milestone)
         character.gainEXP(milestone.expReward)
         character.gold += milestone.goldReward
+        AudioManager.shared.play(.goalMilestone)
         ToastManager.shared.showReward(
             "+\(milestone.expReward) EXP",
             subtitle: "\(milestone.label) milestone claimed!"

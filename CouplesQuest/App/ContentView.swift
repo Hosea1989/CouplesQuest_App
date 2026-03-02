@@ -15,6 +15,12 @@ struct ContentView: View {
     @State private var showDailyLoginReward = false
     @State private var retentionChecked = false
     
+    /// Tracks which tabs have loaded their real content. Only the selected tab
+    /// loads on startup; others load lazily on first selection. This prevents
+    /// all 5 complex views from initializing simultaneously on device.
+    @State private var loadedTabs: Set<Tab> = []
+    
+    
     private var character: PlayerCharacter? {
         characters.first
     }
@@ -44,42 +50,44 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Main app TabView
             TabView(selection: $selectedTab) {
-                HomeView()
-                    .tabItem {
-                        Label(Tab.home.rawValue, systemImage: Tab.home.icon)
-                    }
-                    .tag(Tab.home)
+                Group {
+                    if loadedTabs.contains(.home) { HomeView() } else { Color("BackgroundTop") }
+                }
+                .tabItem { Label(Tab.home.rawValue, systemImage: Tab.home.icon) }
+                .tag(Tab.home)
                 
-                TasksView()
-                    .tabItem {
-                        Label(Tab.tasks.rawValue, systemImage: Tab.tasks.icon)
-                    }
-                    .tag(Tab.tasks)
+                Group {
+                    if loadedTabs.contains(.tasks) { TasksView() } else { Color("BackgroundTop") }
+                }
+                .tabItem { Label(Tab.tasks.rawValue, systemImage: Tab.tasks.icon) }
+                .tag(Tab.tasks)
                 
-                AdventuresHubView()
-                    .tabItem {
-                        Label(Tab.adventures.rawValue, systemImage: Tab.adventures.icon)
-                    }
-                    .tag(Tab.adventures)
+                Group {
+                    if loadedTabs.contains(.adventures) { AdventuresHubView() } else { Color("BackgroundTop") }
+                }
+                .tabItem { Label(Tab.adventures.rawValue, systemImage: Tab.adventures.icon) }
+                .tag(Tab.adventures)
                 
-                PartnerView()
-                    .tabItem {
-                        Label(Tab.partner.rawValue, systemImage: Tab.partner.icon)
-                    }
-                    .tag(Tab.partner)
+                Group {
+                    if loadedTabs.contains(.partner) { PartnerView() } else { Color("BackgroundTop") }
+                }
+                .tabItem { Label(Tab.partner.rawValue, systemImage: Tab.partner.icon) }
+                .tag(Tab.partner)
                 
-                CharacterView()
-                    .tabItem {
-                        Label(Tab.character.rawValue, systemImage: Tab.character.icon)
-                    }
-                    .tag(Tab.character)
+                Group {
+                    if loadedTabs.contains(.character) { CharacterView() } else { Color("BackgroundTop") }
+                }
+                .tabItem { Label(Tab.character.rawValue, systemImage: Tab.character.icon) }
+                .tag(Tab.character)
             }
             .tint(Color("AccentGold"))
             .modifier(TabBarOnlyStyleModifier())
             .sensoryFeedback(.selection, trigger: selectedTab)
-            .onChange(of: selectedTab) { _, _ in
+            .onChange(of: selectedTab) { _, newTab in
+                if !loadedTabs.contains(newTab) {
+                    loadedTabs.insert(newTab)
+                }
                 AudioManager.shared.play(.tabSwitch)
             }
             .overlay {
@@ -95,7 +103,6 @@ struct ContentView: View {
                         onDismiss: {
                             gameEngine.showLevelUpCelebration = false
                             gameEngine.pendingLevelUpRewards = []
-                            // Navigate to character tab if stat points pending
                             if character.unspentStatPoints > 0 {
                                 selectedTab = .character
                             }
@@ -124,10 +131,7 @@ struct ContentView: View {
                     .zIndex(99)
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: gameEngine.showLevelUpCelebration)
-            .animation(.easeInOut(duration: 0.3), value: gameEngine.showAchievementCelebration)
             
-            // MARK: - Onboarding Overlay (fullscreen, blocks main app)
             if showOnboarding, let character = character {
                 OnboardingView(
                     character: character,
@@ -135,7 +139,6 @@ struct ContentView: View {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             showOnboarding = false
                         }
-                        // After onboarding, check if daily login should show
                         checkDailyLoginReward()
                     }
                 )
@@ -143,7 +146,6 @@ struct ContentView: View {
                 .zIndex(300)
             }
             
-            // MARK: - Welcome Back Overlay
             if showWelcomeBack, let character = character {
                 WelcomeBackView(
                     character: character,
@@ -151,7 +153,6 @@ struct ContentView: View {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             showWelcomeBack = false
                         }
-                        // After welcome back, check daily login
                         checkDailyLoginReward()
                     }
                 )
@@ -159,7 +160,6 @@ struct ContentView: View {
                 .zIndex(250)
             }
             
-            // MARK: - Daily Login Reward Overlay
             if showDailyLoginReward, let character = character {
                 DailyLoginRewardView(
                     character: character,
@@ -173,24 +173,25 @@ struct ContentView: View {
                 .zIndex(240)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: showOnboarding)
-        .animation(.easeInOut(duration: 0.3), value: showWelcomeBack)
-        .animation(.easeInOut(duration: 0.3), value: showDailyLoginReward)
-        .onAppear {
-            // Validate the persisted training mission belongs to the current
-            // character. After a database reset the old character's mission
-            // would otherwise keep running forever.
+        .task {
+            // #region agent log
+            _debugLog("ContentView .task START", hyp: "H-A")
+            // #endregion
             if let character = character {
                 gameEngine.validateActiveMission(for: character.id)
-                // Apply passive HP regen based on time since last update
                 character.applyPassiveRegen()
             } else if gameEngine.activeMission != nil {
-                // No character at all — clear the orphaned mission
                 gameEngine.activeMission = nil
                 ActiveMission.clearPersisted()
             }
             
-            // Run retention checks once on appear
+            try? await Task.sleep(for: .milliseconds(150))
+            // #region agent log
+            _debugLog("ContentView .task: inserting .home tab", hyp: "H-A")
+            // #endregion
+            loadedTabs.insert(.home)
+            
+            try? await Task.sleep(for: .milliseconds(500))
             if !retentionChecked {
                 retentionChecked = true
                 checkRetentionFlows()
@@ -204,7 +205,6 @@ struct ContentView: View {
                 ActiveMission.clearPersisted()
             }
         }
-        // MARK: - Deep Link Navigation
         .onChange(of: deepLinkRouter.pendingDestination) { _, destination in
             guard let destination else { return }
             handleDeepLink(destination)

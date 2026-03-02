@@ -65,6 +65,45 @@ final class AudioManager: ObservableObject {
         
         // Partner
         case partnerPaired       = "sfx_partner_paired"
+        case sendKudos           = "sfx_send_kudos"
+        case sendNudge           = "sfx_send_nudge"
+        case sendChallenge       = "sfx_send_challenge"
+        case receiveKudos        = "sfx_receive_kudos"
+        case receiveNudge        = "sfx_receive_nudge"
+        
+        // Duty Board
+        case dutyAccept          = "sfx_duty_accept"
+        case dutyComplete        = "sfx_duty_complete"
+        case dutyBoardShuffle    = "sfx_duty_board_shuffle"
+        
+        // Task Management
+        case taskCreate          = "sfx_task_create"
+        case taskDelete          = "sfx_task_delete"
+        
+        // Store & Consumables
+        case storeEnter          = "sfx_store_enter"
+        case storePurchase       = "sfx_store_purchase"
+        case useConsumable       = "sfx_use_consumable"
+        
+        // Forge
+        case forgeEnter          = "sfx_forge_enter"
+        
+        // Quests & Goals
+        case dailyQuestClaim     = "sfx_daily_quest_claim"
+        case goalMilestone       = "sfx_goal_milestone"
+        
+        // Class Selection
+        case classSelectWarrior  = "sfx_class_warrior"
+        case classSelectMage     = "sfx_class_mage"
+        case classSelectArcher   = "sfx_class_archer"
+        
+        // Big Moments
+        case splashIntro         = "sfx_splash_intro"
+        case characterCreated    = "sfx_character_created"
+        case classEvolution      = "sfx_class_evolution"
+        case rebirth             = "sfx_rebirth"
+        case achievementUnlock   = "sfx_achievement_unlock"
+        case streakMilestone     = "sfx_streak_milestone"
         
         // Feedback
         case success         = "sfx_success"
@@ -115,6 +154,38 @@ final class AudioManager: ObservableObject {
             case .expeditionTreasure:      return 1335  // celebratory snap (treasure chest)
             // Partner
             case .partnerPaired:    return 1335  // photo shutter (celebratory snap)
+            case .sendKudos:        return 1394  // pleasant ding (encouragement)
+            case .sendNudge:        return 1016  // anticipate bell (poke)
+            case .sendChallenge:    return 1304  // alarm-ish start (challenge thrown)
+            case .receiveKudos:     return 1025  // new mail chime (incoming cheer)
+            case .receiveNudge:     return 1016  // anticipate bell (incoming poke)
+            // Duty Board
+            case .dutyAccept:       return 1394  // pleasant ding (quest accepted)
+            case .dutyComplete:     return 1025  // chime (duty finished)
+            case .dutyBoardShuffle: return 1306  // short knock (shuffle)
+            // Task Management
+            case .taskCreate:       return 1394  // pleasant ding (task created)
+            case .taskDelete:       return 1073  // descending alert (discard)
+            // Store & Consumables
+            case .storeEnter:       return 1025  // chime (door bell)
+            case .storePurchase:    return 1395  // payment success ding (purchase)
+            case .useConsumable:    return 1032  // bloom tone (potion drink)
+            // Forge
+            case .forgeEnter:       return 1306  // low knock (heavy door)
+            // Quests & Goals
+            case .dailyQuestClaim:  return 1395  // payment success ding (claim)
+            case .goalMilestone:    return 1335  // celebratory snap (milestone)
+            // Class Selection
+            case .classSelectWarrior: return 1306  // heavy knock (sword unsheathe)
+            case .classSelectMage:    return 1032  // bloom tone (arcane surge)
+            case .classSelectArcher:  return 1394  // swift ding (arrow nock)
+            // Big Moments
+            case .splashIntro:      return 1032  // bloom tone (app open)
+            case .characterCreated: return 1335  // celebratory snap (hero born)
+            case .classEvolution:   return 1032  // bloom tone (transformation)
+            case .rebirth:          return 1032  // bloom tone (ascension)
+            case .achievementUnlock: return 1335 // celebratory snap (trophy)
+            case .streakMilestone:  return 1335  // celebratory snap (streak fire)
             // Feedback
             case .success:          return 1394  // SMS tone (pleasant ding)
             case .error:            return 1073  // descending alert tone
@@ -293,6 +364,9 @@ final class AudioManager: ObservableObject {
         case forest       = "forest"
         case fireCrackling = "fire_crackling"
         case nightSounds  = "night_sounds"
+        case city         = "city"
+        case river        = "river"
+        case townSquare   = "town_square"
         
         var id: String { rawValue }
         
@@ -304,6 +378,9 @@ final class AudioManager: ObservableObject {
             case .forest:        return "Forest"
             case .fireCrackling: return "Fire Crackling"
             case .nightSounds:   return "Night Sounds"
+            case .city:          return "City"
+            case .river:         return "River"
+            case .townSquare:    return "Town Square"
             }
         }
         
@@ -315,6 +392,9 @@ final class AudioManager: ObservableObject {
             case .forest:        return "tree.fill"
             case .fireCrackling: return "flame.fill"
             case .nightSounds:   return "moon.stars.fill"
+            case .city:          return "building.2.fill"
+            case .river:         return "drop.triangle.fill"
+            case .townSquare:    return "storefront.fill"
             }
         }
         
@@ -431,6 +511,37 @@ final class AudioManager: ObservableObject {
         default:
             AudioServicesPlaySystemSound(bell.systemSoundID)
         }
+    }
+    
+    /// Play the class-specific selection sound for a starter class line
+    func playClassSelect(_ characterClass: CharacterClass) {
+        switch characterClass.classLine {
+        case .warrior: play(.classSelectWarrior)
+        case .mage:    play(.classSelectMage)
+        case .archer:  play(.classSelectArcher)
+        }
+    }
+
+    /// Preview a sound effect (always plays, even if muted, for testing new audio files)
+    func previewSound(_ effect: SoundEffect) {
+        if let player = players[effect.rawValue] {
+            player.volume = volume
+            player.currentTime = 0
+            player.play()
+        } else {
+            AudioServicesPlaySystemSound(effect.fallbackSystemSound)
+        }
+    }
+    
+    /// Returns true if a custom audio file is loaded for this effect (vs system fallback)
+    func hasCustomSound(_ effect: SoundEffect) -> Bool {
+        return players[effect.rawValue] != nil
+    }
+    
+    /// Reload all sounds from bundle (call after replacing audio files during development)
+    func reloadSounds() {
+        players.removeAll()
+        preloadSounds()
     }
     
     /// Preview a meditation bell sound (always plays, even if muted, for picker feedback)

@@ -2,22 +2,44 @@ import SwiftUI
 import SwiftData
 import OneSignalFramework
 import Supabase
+import os.log
+
+private let startupLog = OSLog(subsystem: "com.damienhosea.DuoCraft", category: "Startup")
+private let appStartTime = CFAbsoluteTimeGetCurrent()
+
+// #region agent log
+private let _debugLogPath = "/Users/damienhosea/Desktop/Project-Goals/CouplesQuest/.cursor/debug.log"
+func _debugLog(_ msg: String, hyp: String = "", file: String = #fileID, line: Int = #line) {
+    let loc = "\(file):\(line)"
+    let ts = Int(Date().timeIntervalSince1970 * 1000)
+    let elapsed = Int((CFAbsoluteTimeGetCurrent() - appStartTime) * 1000)
+    print("[DBG|\(hyp) +\(elapsed)ms] \(loc) — \(msg)")
+    let escaped = msg.replacingOccurrences(of: "\"", with: "'")
+    let json = "{\"timestamp\":\(ts),\"elapsed_ms\":\(elapsed),\"location\":\"\(loc)\",\"message\":\"\(escaped)\",\"hypothesisId\":\"\(hyp)\"}\n"
+    if let d = json.data(using: .utf8) {
+        if FileManager.default.fileExists(atPath: _debugLogPath) {
+            if let fh = FileHandle(forWritingAtPath: _debugLogPath) { fh.seekToEndOfFile(); fh.write(d); fh.closeFile() }
+        } else {
+            let dir = (_debugLogPath as NSString).deletingLastPathComponent
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: _debugLogPath, contents: d)
+        }
+    }
+}
+// #endregion
 
 // MARK: - AppDelegate for OneSignal Initialization + Notification Tap Handling
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Read the OneSignal App ID from Info.plist (set via Secrets.xcconfig)
         let appId = Bundle.main.object(forInfoDictionaryKey: "OneSignalAppId") as? String ?? ""
         
-        // Initialize OneSignal with verbose logging for debug builds
         #if DEBUG
-        OneSignal.Debug.setLogLevel(.LL_VERBOSE)
+        OneSignal.Debug.setLogLevel(.LL_WARN)
         #endif
         
         OneSignal.initialize(appId, withLaunchOptions: launchOptions)
         
-        // Request push permission (will show the system prompt once)
         OneSignal.Notifications.requestPermission({ accepted in
             print("📬 Push permission accepted: \(accepted)")
         }, fallbackToSettings: true)
@@ -85,6 +107,7 @@ struct SwordsAndChoresApp: App {
     let modelContainer: ModelContainer
     
     init() {
+        os_log(.fault, log: startupLog, "⏱ App init START (+%.0fms)", (CFAbsoluteTimeGetCurrent() - appStartTime) * 1000)
         let schema = Schema([
             PlayerCharacter.self,
             Stats.self,
@@ -114,10 +137,12 @@ struct SwordsAndChoresApp: App {
         )
         
         do {
+            let t0 = CFAbsoluteTimeGetCurrent()
             modelContainer = try ModelContainer(
                 for: schema,
                 configurations: [modelConfiguration]
             )
+            os_log(.fault, log: startupLog, "⏱ ModelContainer created OK (+%.0fms, took %.0fms)", (CFAbsoluteTimeGetCurrent() - appStartTime) * 1000, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
         } catch {
             // Schema migration failed — delete old store and retry
             // This only happens during development when model fields change
@@ -155,7 +180,15 @@ struct SwordsAndChoresApp: App {
                     configurations: [modelConfiguration]
                 )
             } catch {
-                fatalError("Could not initialize ModelContainer after reset: \(error)")
+                // Last resort: use an in-memory container so the app doesn't crash.
+                // User will lose local data, but cloud restore will recover it.
+                print("🚨 ModelContainer failed even after reset: \(error). Falling back to in-memory store.")
+                let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                do {
+                    modelContainer = try ModelContainer(for: schema, configurations: [inMemoryConfig])
+                } catch {
+                    fatalError("Could not initialize even an in-memory ModelContainer: \(error)")
+                }
             }
         }
     }
@@ -167,28 +200,47 @@ struct SwordsAndChoresApp: App {
     @State private var partnerTaskChannel: RealtimeChannelV2?
     @State private var partnerProfileChannel: RealtimeChannelV2?
     
+    /// Guards against overlapping onAppBecameActive Tasks
+    @State private var isActiveSyncRunning = false
+    
+    /// Whether pullAndMerge has already run this app session
+    @State private var hasPulledThisSession = false
+    
     var body: some Scene {
         WindowGroup {
             AuthGateView()
                 .environmentObject(gameEngine)
                 .preferredColorScheme(.dark)
                 .onAppear {
-                    // Daily reset notification removed — it's noise, not useful (§21)
+                    os_log(.fault, log: startupLog, "⏱ AuthGateView.onAppear (+%.0fms)", (CFAbsoluteTimeGetCurrent() - appStartTime) * 1000)
                     PushNotificationService.shared.cancelDailyReset()
                     
-                    // Load server-driven content (public read — no auth required)
+                    // #region agent log
+                    _debugLog("onAppear: about to call loadContent()", hyp: "A")
+                    // #endregion
                     Task {
                         await ContentManager.shared.loadContent()
+                        // #region agent log
+                        _debugLog("onAppear: loadContent() returned", hyp: "A")
+                        // #endregion
                     }
                 }
         }
         .modelContainer(modelContainer)
         .onChange(of: scenePhase) { _, newPhase in
+            // #region agent log
+            _debugLog("scenePhase changed to \(newPhase)", hyp: "H-E")
+            // #endregion
             switch newPhase {
             case .active:
+                // #region agent log
+                _debugLog("scenePhase .active — calling onAppBecameActive", hyp: "H-E")
+                // #endregion
                 onAppBecameActive()
-            case .background, .inactive:
+            case .background:
                 syncCharacterToCloud()
+            case .inactive:
+                break
             @unknown default:
                 break
             }
@@ -196,36 +248,51 @@ struct SwordsAndChoresApp: App {
     }
     
     /// Called when the app returns to the foreground.
-    /// Cancels re-engagement notifications, fetches incoming partner tasks,
-    /// refreshes partner data, and triggers cloud sync.
+    /// Heavy sync work is broken into small chunks with explicit yields
+    /// so the main run loop can process UI frames between operations.
     private func onAppBecameActive() {
-        // Cancel any pending re-engagement notifications — user is back!
+        // #region agent log
+        _debugLog("onAppBecameActive ENTER, isActiveSyncRunning=\(isActiveSyncRunning)", hyp: "H-A")
+        // #endregion
+        guard !isActiveSyncRunning else { return }
+        isActiveSyncRunning = true
+        
         PushNotificationService.shared.cancelReengagementNotifications()
         
-        let context = modelContainer.mainContext
-        let descriptor = FetchDescriptor<PlayerCharacter>()
-        guard let character = try? context.fetch(descriptor).first else { return }
-        guard SupabaseService.shared.isAuthenticated else { return }
-        
-        // NOTE: Do NOT update lastActiveAt here — it must stay as the last
-        // streak-checked date so updateStreak() can detect day boundaries.
-        // updateStreak() sets lastActiveAt after the streak logic runs.
-        
         Task {
-            // 0. Pull from cloud and merge with local on launch
-            await SyncManager.shared.pullAndMerge(context: context)
+            defer { isActiveSyncRunning = false }
             
-            // 0.5. One-time bulk upload for existing users who haven't synced yet
+            // #region agent log
+            _debugLog("onAppBecameActive: starting 5s sleep", hyp: "H-A")
+            // #endregion
+            try? await Task.sleep(for: .seconds(5))
+            await Task.yield()
+            // #region agent log
+            _debugLog("onAppBecameActive: 5s sleep done, starting sync work", hyp: "H-A")
+            // #endregion
+            
+            let context = modelContainer.mainContext
+            let descriptor = FetchDescriptor<PlayerCharacter>()
+            guard let character = try? context.fetch(descriptor).first else { return }
+            guard SupabaseService.shared.isAuthenticated else { return }
+            
+            // Pull from cloud only ONCE per app session (not on every foreground)
+            if !hasPulledThisSession {
+                hasPulledThisSession = true
+                await SyncManager.shared.pullAndMerge(context: context)
+                try? await Task.sleep(for: .milliseconds(500))
+                await Task.yield()
+            }
+            
+            // One-time bulk upload for existing users who haven't synced yet
             if !SyncManager.shared.hasCompletedInitialSync {
-                let taskDescriptor = FetchDescriptor<GameTask>()
-                let goalDescriptor = FetchDescriptor<Goal>()
-                let moodDescriptor = FetchDescriptor<MoodEntry>()
-                let bondDescriptor = FetchDescriptor<Bond>()
-                
-                let tasks = (try? context.fetch(taskDescriptor)) ?? []
-                let goals = (try? context.fetch(goalDescriptor)) ?? []
-                let moods = (try? context.fetch(moodDescriptor)) ?? []
-                let bonds = (try? context.fetch(bondDescriptor)) ?? []
+                let tasks = (try? context.fetch(FetchDescriptor<GameTask>())) ?? []
+                await Task.yield()
+                let goals = (try? context.fetch(FetchDescriptor<Goal>())) ?? []
+                await Task.yield()
+                let moods = (try? context.fetch(FetchDescriptor<MoodEntry>())) ?? []
+                let bonds = (try? context.fetch(FetchDescriptor<Bond>())) ?? []
+                await Task.yield()
                 
                 await SyncManager.shared.performInitialSync(
                     character: character,
@@ -234,12 +301,15 @@ struct SwordsAndChoresApp: App {
                     moodEntries: moods,
                     bonds: bonds
                 )
+                try? await Task.sleep(for: .milliseconds(300))
+                await Task.yield()
             }
             
-            // 1. Re-fetch own profile to detect partner_id changes (e.g. accepted request)
+            // Profile + partner linking (lightweight network calls)
             await SupabaseService.shared.fetchProfile()
+            await Task.yield()
+            
             if !character.hasPartner, let partnerID = SupabaseService.shared.currentProfile?.partnerID {
-                // Our request was accepted while app was in background — link locally
                 if let partnerProfile = try? await SupabaseService.shared.fetchProfile(byID: partnerID) {
                     let pairingData = PairingData(
                         characterID: partnerID.uuidString,
@@ -260,17 +330,17 @@ struct SwordsAndChoresApp: App {
                         existingBond.addMember(partnerID)
                     }
                     try? context.save()
-                    print("✅ Partner linked on app foreground (partner: \(partnerProfile.characterName ?? "unknown"))")
                 }
             }
             
-            // 2. Fetch incoming partner tasks from cloud → create local GameTasks
+            await Task.yield()
             await gameEngine.fetchIncomingPartnerTasks(context: context)
-            
-            // 3. Refresh cached partner profile data (level, stats, class)
+            await Task.yield()
             await gameEngine.refreshPartnerData(character: character)
+            await Task.yield()
             
-            // 4. Set up Realtime subscriptions if not already active
+            // Realtime subscriptions last (WebSocket connect can be slow)
+            try? await Task.sleep(for: .seconds(1))
             await setupRealtimeSubscriptions(context: context)
         }
     }

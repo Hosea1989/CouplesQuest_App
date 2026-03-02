@@ -107,6 +107,7 @@ struct StoreView: View {
             generateDailyDeal()
             shopkeeperMessage = ShopkeeperDialogue.random(from: ShopkeeperDialogue.welcomeGreetings, name: character?.name)
             character?.completeBreadcrumb("checkStore")
+            AudioManager.shared.play(.storeEnter)
         }
         .onChange(of: selectedTab) { _, newTab in
             shopkeeperItemTip = nil
@@ -306,6 +307,7 @@ struct StoreView: View {
     private func buyEquipment(_ item: Equipment) {
         guard let character = character else { return }
         if gameEngine.buyEquipment(item, character: character, context: modelContext) {
+            AudioManager.shared.play(.storePurchase)
             purchasedEquipmentIDs.insert(item.id)
             purchaseTrigger += 1
             showBuyConfirm = false
@@ -315,6 +317,7 @@ struct StoreView: View {
     private func buyConsumable(_ template: ConsumableTemplate) {
         guard let character = character else { return }
         if gameEngine.buyConsumable(template, character: character, context: modelContext) {
+            AudioManager.shared.play(.storePurchase)
             purchaseTrigger += 1
             showConsumableBuyConfirm = false
             ToastManager.shared.showSuccess("Purchased: \(template.name)", subtitle: "-\(template.goldCost) Gold")
@@ -349,6 +352,7 @@ struct StoreView: View {
         modelContext.insert(purchased)
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
         try? modelContext.save()
+        AudioManager.shared.play(.storePurchase)
         purchasedDealID = item.id
         purchaseTrigger += 1
         shopkeeperItemTip = "Wise choice! That deal won't come around again."
@@ -358,6 +362,7 @@ struct StoreView: View {
     private func buyMilestoneItem(_ item: MilestoneItem) {
         guard let character = character else { return }
         if gameEngine.buyMilestoneGear(item, character: character, context: modelContext) {
+            AudioManager.shared.play(.storePurchase)
             purchasedMilestoneIDs.insert(item.id)
             purchaseTrigger += 1
             shopkeeperItemTip = "A fine milestone piece! You've earned it, adventurer."
@@ -374,6 +379,7 @@ struct StoreView: View {
         modelContext.insert(purchased)
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
         try? modelContext.save()
+        AudioManager.shared.play(.storePurchase)
         purchasedSetPieceIDs.insert(piece.id)
         purchaseTrigger += 1
         
@@ -394,6 +400,7 @@ struct StoreView: View {
     private func buyBundle(_ bundle: BundleDeal) {
         guard let character = character else { return }
         if gameEngine.buyBundle(bundle, character: character, context: modelContext) {
+            AudioManager.shared.play(.storePurchase)
             purchasedBundleIDs.insert(bundle.id)
             purchaseTrigger += 1
             shopkeeperItemTip = "Great bundle! You saved a nice chunk of gold on that one."

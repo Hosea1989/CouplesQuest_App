@@ -176,6 +176,7 @@ struct InventoryView: View {
     private func useConsumable(_ consumable: Consumable) {
         guard let char = character else { return }
         if gameEngine.useConsumable(consumable, on: char, context: modelContext) {
+            AudioManager.shared.play(.useConsumable)
             ToastManager.shared.showSuccess("Used \(consumable.name)", subtitle: consumable.effectSummary)
         }
     }

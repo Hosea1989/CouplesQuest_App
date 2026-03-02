@@ -614,6 +614,7 @@ struct CreateTaskView: View {
         }
         
         modelContext.insert(task)
+        AudioManager.shared.play(.taskCreate)
         
         // --- Partner-specific logic ---
         

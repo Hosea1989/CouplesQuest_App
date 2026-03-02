@@ -63,6 +63,10 @@ struct SplashScreenView: View {
     
     private let messageTimer = Timer.publish(every: 2.2, on: .main, in: .common).autoconnect()
     
+    /// Tracks whether this view is still visible. When false, all
+    /// scheduled animation work stops to prevent zombie state modifications.
+    @State private var isVisible = true
+    
     var body: some View {
         ZStack {
             // Background gradient
@@ -255,7 +259,17 @@ struct SplashScreenView: View {
             }
         }
         .onAppear {
+            // #region agent log
+            _debugLog("SplashScreen.onAppear — starting animations", hyp: "H-B")
+            // #endregion
+            AudioManager.shared.play(.splashIntro)
             startAnimations()
+        }
+        .onDisappear {
+            // #region agent log
+            _debugLog("SplashScreen.onDisappear — setting isVisible=false", hyp: "H-B")
+            // #endregion
+            isVisible = false
         }
     }
     
@@ -340,7 +354,8 @@ struct SplashScreenView: View {
         }
         
         // 2. Impact flash — brief gold flash across screen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) { [self] in
+            guard isVisible else { return }
             withAnimation(.easeOut(duration: 0.06)) {
                 impactFlash = 0.2
             }
@@ -350,7 +365,8 @@ struct SplashScreenView: View {
         }
         
         // 3. Shockwave ring expands outward
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
+            guard isVisible else { return }
             shockwaveOpacity = 0.6
             withAnimation(.easeOut(duration: 0.8)) {
                 shockwaveScale = 3.5
@@ -361,7 +377,8 @@ struct SplashScreenView: View {
         }
         
         // 4. Sparkle burst scatters from center
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [self] in
+            guard isVisible else { return }
             generateSparkles()
         }
         
@@ -370,8 +387,8 @@ struct SplashScreenView: View {
             glowOpacity = 1.0
         }
         
-        // 6. Glow pulse loop
-        withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true).delay(1.0)) {
+        // 6. Glow pulse (single cycle — repeatForever can deadlock on view removal)
+        withAnimation(.easeInOut(duration: 2.2).delay(1.0)) {
             glowPulse = true
         }
         
@@ -392,14 +409,16 @@ struct SplashScreenView: View {
         }
         
         // 10. Shimmer sweep across title
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [self] in
+            guard isVisible else { return }
             withAnimation(.easeInOut(duration: 0.8)) {
                 shimmerOffset = 300
             }
         }
         
-        // Repeat shimmer periodically
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+        // Repeat shimmer periodically (only while visible)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [self] in
+            guard isVisible else { return }
             shimmerLoop()
         }
         
@@ -410,11 +429,13 @@ struct SplashScreenView: View {
     }
     
     private func shimmerLoop() {
+        guard isVisible else { return }
         shimmerOffset = -300
         withAnimation(.easeInOut(duration: 0.8)) {
             shimmerOffset = 300
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [self] in
+            guard isVisible else { return }
             shimmerLoop()
         }
     }

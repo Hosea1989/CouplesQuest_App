@@ -56,7 +56,10 @@ final class SupabaseService: ObservableObject {
             let session = try await client.auth.session
             self.currentUserID = session.user.id
             self.isAuthenticated = true
-            await fetchProfile()
+            // Fetch profile in the background — it's not needed for the
+            // startup decision (auth + character check) and the network
+            // round-trip blocks the splash screen unnecessarily.
+            Task { await fetchProfile() }
         } catch {
             self.isAuthenticated = false
             self.currentUserID = nil

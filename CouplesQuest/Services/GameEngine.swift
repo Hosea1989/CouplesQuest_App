@@ -26,16 +26,10 @@ class GameEngine: ObservableObject {
     @Published var unlockedAchievement: Achievement? = nil
     @Published var dailyQuests: [DailyQuest] = []
     
-    // MARK: - Timers
-    
-    private var missionTimer: Timer?
-    
     // MARK: - Initialization
     
     init() {
-        // Restore persisted active mission (survives app restarts)
         activeMission = ActiveMission.loadPersisted()
-        startMissionTimer()
     }
     
     /// Validate the persisted active mission belongs to the given character.
@@ -47,10 +41,6 @@ class GameEngine: ObservableObject {
             activeMission = nil
             ActiveMission.clearPersisted()
         }
-    }
-    
-    deinit {
-        missionTimer?.invalidate()
     }
     
     // MARK: - EXP Calculations
@@ -354,6 +344,7 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.unlockedAchievement = first
                 self.showAchievementCelebration = true
+                AudioManager.shared.play(.achievementUnlock)
             }
         }
         
@@ -482,6 +473,7 @@ class GameEngine: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.unlockedAchievement = first
                 self.showAchievementCelebration = true
+                AudioManager.shared.play(.achievementUnlock)
             }
         }
         
@@ -777,6 +769,7 @@ class GameEngine: ObservableObject {
             if mission.isRankUpTraining, let targetClass = mission.targetClass {
                 character.characterClass = targetClass
                 rankedUpToClass = targetClass
+                AudioManager.shared.play(.classEvolution)
             }
             
             active.rewardClaimed = true
@@ -787,6 +780,7 @@ class GameEngine: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.unlockedAchievement = first
                     self.showAchievementCelebration = true
+                    AudioManager.shared.play(.achievementUnlock)
                 }
             }
             
@@ -882,14 +876,10 @@ class GameEngine: ObservableObject {
         }
     }
     
-    /// Start timer to check mission completion
-    private func startMissionTimer() {
-        missionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.objectWillChange.send()
-            }
-        }
-    }
+    // Mission countdown is driven by TimelineView in ActiveMissionCard,
+    // NOT by a timer on GameEngine. The old timer called objectWillChange.send()
+    // every second, which forced the entire 3300-line HomeView to re-evaluate
+    // its body every second — causing severe lag on physical devices.
     
     // MARK: - Streak Management
     
@@ -1052,7 +1042,7 @@ class GameEngine: ObservableObject {
         // Check rebirth achievements
         AchievementTracker.checkAll(character: character)
         
-        AudioManager.shared.play(.levelUp)
+        AudioManager.shared.play(.rebirth)
         
         // Sync to cloud
         Task {
@@ -1157,7 +1147,14 @@ class GameEngine: ObservableObject {
         )
         
         if let existing = try? context.fetch(descriptor), !existing.isEmpty {
-            dailyQuests = existing
+            // Only update @Published if the quest list actually changed (by ID set).
+            // Avoids firing objectWillChange when quests are already loaded,
+            // preventing a full HomeView re-render every app launch.
+            let existingIDs = Set(existing.map { $0.id })
+            let currentIDs = Set(dailyQuests.map { $0.id })
+            if existingIDs != currentIDs {
+                dailyQuests = existing
+            }
             return
         }
         

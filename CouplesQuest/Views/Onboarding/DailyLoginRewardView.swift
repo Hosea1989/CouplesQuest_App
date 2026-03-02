@@ -211,6 +211,9 @@ struct DailyLoginRewardView: View {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         AudioManager.shared.play(.claimReward)
+        if [7, 14, 30, 60, 100].contains(character.currentStreak) {
+            AudioManager.shared.play(.streakMilestone)
+        }
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
             claimed = true

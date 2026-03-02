@@ -92,7 +92,7 @@ struct CharacterView: View {
 struct AccountSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var supabase = SupabaseService.shared
+    private let supabase = SupabaseService.shared
     
     @State private var showSignOutConfirm = false
     @State private var showDeleteConfirm = false

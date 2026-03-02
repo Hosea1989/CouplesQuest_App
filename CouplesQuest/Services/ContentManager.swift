@@ -755,6 +755,9 @@ final class ContentManager: ObservableObject {
     /// 3. Re-fetch if version bumped
     /// 4. Fall back to bundled JSON if no cache exists
     func loadContent() async {
+        // #region agent log
+        _debugLog("loadContent: ENTER", hyp: "A")
+        // #endregion
         // Step 1: Load from disk cache
         if let cached = loadFromDiskCache() {
             applyCache(cached)

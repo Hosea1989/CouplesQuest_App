@@ -35,7 +35,7 @@ struct HomeView: View {
     @State private var lastMissionResult: MissionCompletionResult?
     
     // Partner request notifications
-    @ObservedObject private var supabase = SupabaseService.shared
+    private let supabase = SupabaseService.shared
     @State private var incomingPartnerRequests: [PartnerRequest] = []
     @State private var requestSenderProfiles: [UUID: Profile] = [:]
     @State private var showCloudPairingSheet = false
@@ -50,14 +50,22 @@ struct HomeView: View {
     // Card entrance animation
     @State private var cardsVisible: [Bool] = Array(repeating: false, count: 14)
     
+    // Phased rendering: defer the full 3300-line body + animations until after
+    // the view has appeared and the main thread has had a chance to settle.
+    @State private var contentReady = false
+    
+    
     private var character: PlayerCharacter? {
         characters.first
     }
     
     var body: some View {
+        // #region agent log
+        let _ = _debugLog("HomeView.body evaluated, character=\(character != nil), contentReady=\(contentReady)", hyp: "J")
+        // #endregion
         NavigationStack {
             Group {
-                if let character = character {
+                if let character = character, contentReady {
                     ScrollView {
                         VStack(spacing: 24) {
                             // Level Up Banner (always visible immediately, no entrance delay)
@@ -179,6 +187,24 @@ struct HomeView: View {
                         .padding()
                         .onAppear { triggerCardEntrance() }
                     }
+                } else if character != nil {
+                    Color.clear
+                        .overlay {
+                            ProgressView()
+                                .tint(Color("AccentGold"))
+                                .scaleEffect(1.3)
+                        }
+                        .onAppear {
+                            // #region agent log
+                            _debugLog("HomeView spinner.onAppear — will set contentReady in 350ms", hyp: "H-C")
+                            // #endregion
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                // #region agent log
+                                _debugLog("HomeView: setting contentReady=true NOW", hyp: "H-C")
+                                // #endregion
+                                contentReady = true
+                            }
+                        }
                 } else {
                     BeginQuestView(showCharacterCreation: $showCharacterCreation)
                 }
@@ -203,24 +229,37 @@ struct HomeView: View {
                     MissionCompletionView(result: result)
                 }
             }
-            .onAppear {
+            .task {
+                // #region agent log
+                _debugLog("HomeView .task: starting 500ms sleep", hyp: "H-D")
+                // #endregion
+                try? await Task.sleep(for: .milliseconds(500))
+                
                 if let character = character {
+                    // #region agent log
+                    _debugLog("HomeView .task: calling checkAndRefreshDailyQuests", hyp: "H-D")
+                    // #endregion
                     gameEngine.checkAndRefreshDailyQuests(for: character, context: modelContext)
+                    // #region agent log
+                    _debugLog("HomeView .task: dailyQuests done", hyp: "H-D")
+                    // #endregion
+                    
+                    try? await Task.sleep(for: .milliseconds(100))
                     gameEngine.checkRecurringTasks(context: modelContext)
                     
-                    // Set up notifications
+                    try? await Task.sleep(for: .milliseconds(100))
                     let hasHabits = allTasks.contains { $0.isHabit }
                     let hasStreak = character.currentStreak > 0
                     NotificationService.shared.setupRecurringReminders(hasHabits: hasHabits, hasStreak: hasStreak)
                     NotificationService.shared.scheduleAllDueDateReminders(context: modelContext)
                     
-                    // Cache party ID for fire-and-forget party feed posts
                     if let partyID = bonds.first?.supabasePartyID {
                         SupabaseService.shared.cachedPartyID = partyID
                     }
                 }
-            }
-            .task {
+                
+                // Network calls after local work
+                try? await Task.sleep(for: .milliseconds(200))
                 await loadIncomingPartnerRequests()
                 await loadPendingDungeonInvites()
             }
@@ -252,6 +291,9 @@ struct HomeView: View {
     // MARK: - Card Entrance Animation
     
     private func triggerCardEntrance() {
+        // #region agent log
+        _debugLog("triggerCardEntrance: firing 14 animations", hyp: "H-C")
+        // #endregion
         for i in 0..<cardsVisible.count {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(Double(i) * 0.05)) {
                 cardsVisible[i] = true
@@ -766,6 +808,7 @@ struct DailyQuestsCard: View {
     
     private func claimQuest(_ quest: DailyQuest) {
         gameEngine.claimDailyQuestReward(quest, character: character, context: modelContext)
+        AudioManager.shared.play(.dailyQuestClaim)
         ToastManager.shared.showReward(
             "Quest Claimed!",
             subtitle: "+\(quest.expReward) EXP, +\(quest.goldReward) Gold"
@@ -989,89 +1032,95 @@ struct ActiveMissionCard: View {
     @State private var glowPulse: Bool = false
     
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                if let mType = mission.missionType {
-                    Image(mType.thumbnailImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 32, height: 32)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    Image(systemName: "figure.strengthtraining.traditional")
-                        .foregroundColor(Color("AccentGold"))
-                        .symbolEffect(.pulse, options: .repeating)
+        // TimelineView re-renders only THIS card every second for the
+        // countdown timer, instead of the old approach that called
+        // objectWillChange.send() on GameEngine — which forced the
+        // entire 3300-line HomeView to re-evaluate its body every second.
+        TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+            VStack(spacing: 12) {
+                HStack {
+                    if let mType = mission.missionType {
+                        Image(mType.thumbnailImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Image(systemName: "figure.strengthtraining.traditional")
+                            .foregroundColor(Color("AccentGold"))
+                            .symbolEffect(.pulse, options: .repeating)
+                    }
+                    Text(mission.isComplete ? "Training Complete!" : "Active Training")
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(mission.isComplete ? Color("AccentGreen") : .primary)
+                    Spacer()
+                    if mission.isComplete {
+                        Text("Ready!")
+                            .font(.custom("Avenir-Heavy", size: 16))
+                            .foregroundColor(Color("AccentGreen"))
+                    } else {
+                        Text(mission.timeRemainingFormatted)
+                            .font(.system(size: 16, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color("AccentGold"))
+                    }
                 }
-                Text(mission.isComplete ? "Training Complete!" : "Active Training")
-                    .font(.custom("Avenir-Heavy", size: 14))
-                    .foregroundColor(mission.isComplete ? Color("AccentGreen") : .primary)
-                Spacer()
-                if mission.isComplete {
-                    Text("Ready!")
-                        .font(.custom("Avenir-Heavy", size: 16))
-                        .foregroundColor(Color("AccentGreen"))
-                } else {
-                    Text(mission.timeRemainingFormatted)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundColor(Color("AccentGold"))
-                }
-            }
-            
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.secondary.opacity(0.2))
-                    
-                    ZStack {
+                
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color("AccentGold"), Color("AccentOrange")],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .fill(Color.secondary.opacity(0.2))
                         
-                        if !mission.isComplete {
+                        ZStack {
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(
                                     LinearGradient(
-                                        stops: [
-                                            .init(color: .clear, location: shimmerOffset - 0.15),
-                                            .init(color: .white.opacity(0.35), location: shimmerOffset),
-                                            .init(color: .clear, location: shimmerOffset + 0.15)
-                                        ],
+                                        colors: [Color("AccentGold"), Color("AccentOrange")],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
+                            
+                            if !mission.isComplete {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(
+                                        LinearGradient(
+                                            stops: [
+                                                .init(color: .clear, location: shimmerOffset - 0.15),
+                                                .init(color: .white.opacity(0.35), location: shimmerOffset),
+                                                .init(color: .clear, location: shimmerOffset + 0.15)
+                                            ],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                            }
                         }
+                        .frame(width: geometry.size.width * mission.progress)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
-                    .frame(width: geometry.size.width * mission.progress)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-            }
-            .frame(height: 6)
-            
-            if mission.isComplete {
-                Button(action: onClaim) {
-                    HStack {
-                        Image(systemName: "gift.fill")
-                            .symbolEffect(.bounce, options: .repeating.speed(0.5))
-                        Text("Claim Rewards")
-                    }
-                    .font(.custom("Avenir-Heavy", size: 14))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [Color("AccentGold"), Color("AccentOrange")],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                .frame(height: 6)
+                
+                if mission.isComplete {
+                    Button(action: onClaim) {
+                        HStack {
+                            Image(systemName: "gift.fill")
+                                .symbolEffect(.bounce, options: .repeating.speed(0.5))
+                            Text("Claim Rewards")
+                        }
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [Color("AccentGold"), Color("AccentOrange")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                    )
-                    .clipShape(Capsule())
+                        .clipShape(Capsule())
+                    }
                 }
             }
         }
@@ -2369,104 +2418,44 @@ struct AnimatedHomeBackground: View {
                 let w = size.width
                 let h = size.height
                 
-                // Top gold orb (large, drifts right)
-                let gold1Center = CGPoint(
-                    x: w * (0.15 + 0.25 * phase),
-                    y: h * (0.05 + 0.08 * phase)
-                )
+                let gold1Center = CGPoint(x: w * (0.15 + 0.25 * phase), y: h * (0.05 + 0.08 * phase))
                 let gold1Radius = w * 0.7
                 context.drawLayer { ctx in
                     ctx.opacity = 0.35
                     let gradient = Gradient(colors: [Color("AccentGold"), .clear])
-                    ctx.fill(
-                        Path(ellipseIn: CGRect(
-                            x: gold1Center.x - gold1Radius,
-                            y: gold1Center.y - gold1Radius,
-                            width: gold1Radius * 2,
-                            height: gold1Radius * 2
-                        )),
-                        with: .radialGradient(gradient, center: gold1Center, startRadius: 0, endRadius: gold1Radius)
-                    )
+                    ctx.fill(Path(ellipseIn: CGRect(x: gold1Center.x - gold1Radius, y: gold1Center.y - gold1Radius, width: gold1Radius * 2, height: gold1Radius * 2)), with: .radialGradient(gradient, center: gold1Center, startRadius: 0, endRadius: gold1Radius))
                 }
                 
-                // Right purple orb (drifts down)
-                let purpleCenter = CGPoint(
-                    x: w * (0.9 - 0.2 * phase),
-                    y: h * (0.25 + 0.15 * phase)
-                )
+                let purpleCenter = CGPoint(x: w * (0.9 - 0.2 * phase), y: h * (0.25 + 0.15 * phase))
                 let purpleRadius = w * 0.65
                 context.drawLayer { ctx in
                     ctx.opacity = 0.3
                     let gradient = Gradient(colors: [Color("AccentPurple"), .clear])
-                    ctx.fill(
-                        Path(ellipseIn: CGRect(
-                            x: purpleCenter.x - purpleRadius,
-                            y: purpleCenter.y - purpleRadius,
-                            width: purpleRadius * 2,
-                            height: purpleRadius * 2
-                        )),
-                        with: .radialGradient(gradient, center: purpleCenter, startRadius: 0, endRadius: purpleRadius)
-                    )
+                    ctx.fill(Path(ellipseIn: CGRect(x: purpleCenter.x - purpleRadius, y: purpleCenter.y - purpleRadius, width: purpleRadius * 2, height: purpleRadius * 2)), with: .radialGradient(gradient, center: purpleCenter, startRadius: 0, endRadius: purpleRadius))
                 }
                 
-                // Center-left orange orb (drifts up-right)
-                let orangeCenter = CGPoint(
-                    x: w * (0.3 + 0.2 * phase),
-                    y: h * (0.55 - 0.1 * phase)
-                )
+                let orangeCenter = CGPoint(x: w * (0.3 + 0.2 * phase), y: h * (0.55 - 0.1 * phase))
                 let orangeRadius = w * 0.6
                 context.drawLayer { ctx in
                     ctx.opacity = 0.25
                     let gradient = Gradient(colors: [Color("AccentOrange"), .clear])
-                    ctx.fill(
-                        Path(ellipseIn: CGRect(
-                            x: orangeCenter.x - orangeRadius,
-                            y: orangeCenter.y - orangeRadius,
-                            width: orangeRadius * 2,
-                            height: orangeRadius * 2
-                        )),
-                        with: .radialGradient(gradient, center: orangeCenter, startRadius: 0, endRadius: orangeRadius)
-                    )
+                    ctx.fill(Path(ellipseIn: CGRect(x: orangeCenter.x - orangeRadius, y: orangeCenter.y - orangeRadius, width: orangeRadius * 2, height: orangeRadius * 2)), with: .radialGradient(gradient, center: orangeCenter, startRadius: 0, endRadius: orangeRadius))
                 }
                 
-                // Bottom-left gold orb
-                let gold2Center = CGPoint(
-                    x: w * (0.15 + 0.15 * phase),
-                    y: h * (0.8 - 0.1 * phase)
-                )
+                let gold2Center = CGPoint(x: w * (0.15 + 0.15 * phase), y: h * (0.8 - 0.1 * phase))
                 let gold2Radius = w * 0.55
                 context.drawLayer { ctx in
                     ctx.opacity = 0.25
                     let gradient = Gradient(colors: [Color("AccentGold"), .clear])
-                    ctx.fill(
-                        Path(ellipseIn: CGRect(
-                            x: gold2Center.x - gold2Radius,
-                            y: gold2Center.y - gold2Radius,
-                            width: gold2Radius * 2,
-                            height: gold2Radius * 2
-                        )),
-                        with: .radialGradient(gradient, center: gold2Center, startRadius: 0, endRadius: gold2Radius)
-                    )
+                    ctx.fill(Path(ellipseIn: CGRect(x: gold2Center.x - gold2Radius, y: gold2Center.y - gold2Radius, width: gold2Radius * 2, height: gold2Radius * 2)), with: .radialGradient(gradient, center: gold2Center, startRadius: 0, endRadius: gold2Radius))
                 }
                 
-                // Bottom-right purple orb
-                let purple2Center = CGPoint(
-                    x: w * (0.8 - 0.15 * phase),
-                    y: h * (0.85 + 0.05 * phase)
-                )
+                let purple2Center = CGPoint(x: w * (0.8 - 0.15 * phase), y: h * (0.85 + 0.05 * phase))
                 let purple2Radius = w * 0.5
                 context.drawLayer { ctx in
                     ctx.opacity = 0.2
                     let gradient = Gradient(colors: [Color("AccentPurple"), .clear])
-                    ctx.fill(
-                        Path(ellipseIn: CGRect(
-                            x: purple2Center.x - purple2Radius,
-                            y: purple2Center.y - purple2Radius,
-                            width: purple2Radius * 2,
-                            height: purple2Radius * 2
-                        )),
-                        with: .radialGradient(gradient, center: purple2Center, startRadius: 0, endRadius: purple2Radius)
-                    )
+                    ctx.fill(Path(ellipseIn: CGRect(x: purple2Center.x - purple2Radius, y: purple2Center.y - purple2Radius, width: purple2Radius * 2, height: purple2Radius * 2)), with: .radialGradient(gradient, center: purple2Center, startRadius: 0, endRadius: purple2Radius))
                 }
             }
         }

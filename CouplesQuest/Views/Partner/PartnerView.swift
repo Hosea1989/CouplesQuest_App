@@ -9,7 +9,7 @@ struct PartnerView: View {
     @Query private var bonds: [Bond]
     @Query(sort: \PartnerInteraction.createdAt, order: .reverse) private var interactions: [PartnerInteraction]
     
-    @ObservedObject private var supabase = SupabaseService.shared
+    private let supabase = SupabaseService.shared
     
     @State private var showCreatePartySheet = false
     @State private var showJoinPartySheet = false
@@ -363,6 +363,7 @@ struct PartnerView: View {
             return
         }
         modelContext.insert(interaction)
+        AudioManager.shared.play(.sendNudge)
         let remaining = bond.nudgesRemainingToday
         interactionSuccessMessage = "Nudge sent to \(character.partnerName ?? "your ally")!"
         showInteractionSuccess = true
@@ -389,6 +390,7 @@ struct PartnerView: View {
             return
         }
         modelContext.insert(interaction)
+        AudioManager.shared.play(.sendKudos)
         let remaining = bond.kudosRemainingToday
         interactionSuccessMessage = "Kudos sent! +\(GameEngine.bondEXPForKudos) Bond EXP"
         showInteractionSuccess = true
@@ -415,6 +417,7 @@ struct PartnerView: View {
             return
         }
         modelContext.insert(interaction)
+        AudioManager.shared.play(.sendChallenge)
         let remaining = bond.challengesRemainingToday
         interactionSuccessMessage = "Challenge sent to \(character.partnerName ?? "your ally")!"
         showInteractionSuccess = true
@@ -467,6 +470,12 @@ struct PartnerView: View {
         localInteraction.id = cloud.id  // use the same ID to prevent duplicates
         localInteraction.createdAt = cloud.createdAt
         modelContext.insert(localInteraction)
+        
+        switch interactionType {
+        case .kudos:  AudioManager.shared.play(.receiveKudos)
+        case .nudge:  AudioManager.shared.play(.receiveNudge)
+        default: break
+        }
         
         // Show an enhanced toast to the receiving user
         switch interactionType {
@@ -1143,7 +1152,7 @@ extension Date {
 struct CloudPairingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @ObservedObject private var supabase = SupabaseService.shared
+    private let supabase = SupabaseService.shared
     @Query private var characters: [PlayerCharacter]
     @Query private var bonds: [Bond]
     

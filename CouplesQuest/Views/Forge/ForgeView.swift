@@ -188,6 +188,7 @@ struct ForgeView: View {
             }
             forgekeeperMessage = ForgekeeperDialogue.random(from: ForgekeeperDialogue.welcomeGreetings, name: character?.name)
             character?.completeBreadcrumb("visitForge")
+            AudioManager.shared.play(.forgeEnter)
             
             // Auto-convert shards to gold on first visit after update
             if let character = character, character.forgeShards > 0 {

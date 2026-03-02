@@ -178,6 +178,7 @@ struct CharacterCreationView: View {
                                 selectedAvatarIcon = firstIcon.symbol
                             }
                         }
+                        AudioManager.shared.playClassSelect(charClass)
                     }
                 )
             }
@@ -839,6 +840,7 @@ struct CharacterCreationView: View {
         
         do {
             try modelContext.save()
+            AudioManager.shared.play(.characterCreated)
             
             if isOnboarding {
                 // Sync full character snapshot to Supabase so

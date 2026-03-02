@@ -46,6 +46,10 @@ final class SyncManager: ObservableObject {
     /// Maximum backoff delay
     private let maxBackoffDelay: TimeInterval = 60.0
     
+    /// Whether a pullAndMerge is currently in progress (separate from isSyncing
+    /// so flush() and pullAndMerge() don't interfere with each other's guards)
+    private var isPulling = false
+    
     /// Whether initial bulk upload has been completed
     var hasCompletedInitialSync: Bool {
         get { UserDefaults.standard.bool(forKey: "SyncManager_initialSyncComplete") }
@@ -246,6 +250,7 @@ final class SyncManager: ObservableObject {
     func flush() async {
         guard !syncQueue.isEmpty else { return }
         guard SupabaseService.shared.isAuthenticated else { return }
+        guard !isSyncing else { return }
         
         isSyncing = true
         let operations = syncQueue
@@ -410,33 +415,35 @@ final class SyncManager: ObservableObject {
     }
     
     /// Pull data from cloud and merge with local SwiftData on app launch.
+    /// Yields between every step so the main run loop can process UI frames.
     func pullAndMerge(context: ModelContext) async {
         guard SupabaseService.shared.isAuthenticated else { return }
         guard let userID = SupabaseService.shared.currentUserID else { return }
         
+        guard !isPulling else {
+            print("⚠️ SyncManager: pullAndMerge already in progress, skipping")
+            return
+        }
+        isPulling = true
+        defer { isPulling = false }
+        
         do {
             // 1. Pull character snapshot
             if let snapshot = try await SupabaseService.shared.fetchCharacterData() {
+                await Task.yield()
                 let descriptor = FetchDescriptor<PlayerCharacter>()
                 let localCharacters = (try? context.fetch(descriptor)) ?? []
                 
                 if let localChar = localCharacters.first {
-                    // Merge: cloud wins if it has a more recent timestamp
-                    // For now, cloud data supplements local (local is always fresher for active player)
-                    // Only restore from cloud if local is empty/default
                     if localChar.level <= 1 && localChar.tasksCompleted == 0 {
-                        // Local is fresh install — restore from cloud
                         mergeSnapshotIntoCharacter(snapshot, character: localChar)
-                        print("✅ SyncManager: Restored character from cloud snapshot")
                     }
                 } else {
-                    // No local character — create from cloud
                     let restoredChar = PlayerCharacter.fromSnapshot(snapshot)
                     restoredChar.supabaseUserID = userID.uuidString
                     context.insert(restoredChar)
                     AchievementTracker.initializeAchievements(for: restoredChar)
                     
-                    // Pull achievements from cloud
                     let cloudAchievements = try await SupabaseService.shared.fetchAchievements()
                     for cloudAch in cloudAchievements {
                         if let localAch = restoredChar.achievements.first(where: { $0.trackingKey == cloudAch.trackingKey }) {
@@ -449,16 +456,15 @@ final class SyncManager: ObservableObject {
                     }
                     
                     try? context.save()
-                    print("✅ SyncManager: Created character from cloud data")
                 }
             }
+            
+            await Task.yield()
             
             // 2. Pull daily state
             if let dailyState = try await SupabaseService.shared.fetchDailyState() {
                 let descriptor = FetchDescriptor<PlayerCharacter>()
-                let localCharacters = (try? context.fetch(descriptor)) ?? []
-                if let localChar = localCharacters.first {
-                    // Only merge if cloud is more recent
+                if let localChar = (try? context.fetch(descriptor))?.first {
                     if dailyState.lastActiveAt ?? Date.distantPast > localChar.lastActiveAt {
                         localChar.currentStreak = max(localChar.currentStreak, dailyState.currentStreak)
                         localChar.longestStreak = max(localChar.longestStreak, dailyState.longestStreak)
@@ -468,112 +474,119 @@ final class SyncManager: ObservableObject {
                 }
             }
             
-            // 3. Pull tasks (restore missing local tasks from cloud)
+            await Task.yield()
+            
             let charDescriptor = FetchDescriptor<PlayerCharacter>()
             if let localChar = (try? context.fetch(charDescriptor))?.first {
-                let cloudTasks = try await SupabaseService.shared.fetchOwnTasks()
-                if !cloudTasks.isEmpty {
-                    let taskDescriptor = FetchDescriptor<GameTask>()
-                    let localTasks = (try? context.fetch(taskDescriptor)) ?? []
-                    let localIDs = Set(localTasks.map { $0.id })
-                    
-                    var restoredTasks = 0
-                    for ct in cloudTasks {
-                        guard !localIDs.contains(ct.localID) else { continue }
-                        let task = GameTask(
-                            title: ct.title,
-                            description: ct.description,
-                            category: TaskCategory(rawValue: ct.category) ?? .physical,
-                            createdBy: ct.createdBy,
-                            assignedTo: ct.assignedTo,
-                            isRecurring: ct.isRecurring,
-                            recurrencePattern: ct.recurrencePattern.flatMap { RecurrencePattern(rawValue: $0) },
-                            dueDate: ct.dueDate,
-                            isFromPartner: ct.isFromPartner,
-                            verificationType: VerificationType(rawValue: ct.verificationType) ?? .none,
-                            isHabit: ct.isHabit,
-                            goalID: ct.goalID
-                        )
-                        // Restore the original UUID so future syncs match
-                        task.id = ct.localID
-                        task.status = TaskStatus(rawValue: ct.status) ?? .pending
-                        task.completedAt = ct.completedAt
-                        task.isVerified = ct.isVerified
-                        task.habitStreak = ct.habitStreak
-                        task.habitLongestStreak = ct.habitLongestStreak
-                        task.customEXP = ct.customEXP
-                        context.insert(task)
-                        restoredTasks += 1
+                
+                // 3. Pull tasks
+                do {
+                    let cloudTasks = try await SupabaseService.shared.fetchOwnTasks()
+                    await Task.yield()
+                    if !cloudTasks.isEmpty {
+                        let taskDescriptor = FetchDescriptor<GameTask>()
+                        let localTasks = (try? context.fetch(taskDescriptor)) ?? []
+                        let localIDs = Set(localTasks.map { $0.id })
+                        
+                        for ct in cloudTasks {
+                            guard !localIDs.contains(ct.localID) else { continue }
+                            let task = GameTask(
+                                title: ct.title,
+                                description: ct.description,
+                                category: TaskCategory(rawValue: ct.category) ?? .physical,
+                                createdBy: ct.createdBy,
+                                assignedTo: ct.assignedTo,
+                                isRecurring: ct.isRecurring,
+                                recurrencePattern: ct.recurrencePattern.flatMap { RecurrencePattern(rawValue: $0) },
+                                dueDate: ct.dueDate,
+                                isFromPartner: ct.isFromPartner,
+                                verificationType: VerificationType(rawValue: ct.verificationType) ?? .none,
+                                isHabit: ct.isHabit,
+                                goalID: ct.goalID
+                            )
+                            task.id = ct.localID
+                            task.status = TaskStatus(rawValue: ct.status) ?? .pending
+                            task.completedAt = ct.completedAt
+                            task.isVerified = ct.isVerified
+                            task.habitStreak = ct.habitStreak
+                            task.habitLongestStreak = ct.habitLongestStreak
+                            task.customEXP = ct.customEXP
+                            context.insert(task)
+                        }
                     }
-                    if restoredTasks > 0 {
-                        print("✅ SyncManager: Restored \(restoredTasks) tasks from cloud")
-                    }
+                } catch {
+                    print("⚠️ SyncManager: Pull tasks failed: \(error.localizedDescription)")
                 }
                 
-                // 4. Pull goals (restore missing local goals from cloud)
-                let cloudGoals = try await SupabaseService.shared.fetchOwnGoals()
-                if !cloudGoals.isEmpty {
-                    let goalDescriptor = FetchDescriptor<Goal>()
-                    let localGoals = (try? context.fetch(goalDescriptor)) ?? []
-                    let localGoalIDs = Set(localGoals.map { $0.id })
-                    
-                    var restoredGoals = 0
-                    for cg in cloudGoals {
-                        guard !localGoalIDs.contains(cg.localID) else { continue }
-                        let goal = Goal(
-                            title: cg.title,
-                            description: cg.description,
-                            category: TaskCategory(rawValue: cg.category) ?? .physical,
-                            targetDate: cg.targetDate,
-                            createdBy: localChar.id
-                        )
-                        goal.id = cg.localID
-                        goal.status = GoalStatus(rawValue: cg.status) ?? .active
-                        goal.completedAt = cg.completedAt
-                        goal.milestone25Claimed = cg.milestone25Claimed
-                        goal.milestone50Claimed = cg.milestone50Claimed
-                        goal.milestone75Claimed = cg.milestone75Claimed
-                        goal.milestone100Claimed = cg.milestone100Claimed
-                        context.insert(goal)
-                        restoredGoals += 1
+                await Task.yield()
+                
+                // 4. Pull goals
+                do {
+                    let cloudGoals = try await SupabaseService.shared.fetchOwnGoals()
+                    await Task.yield()
+                    if !cloudGoals.isEmpty {
+                        let goalDescriptor = FetchDescriptor<Goal>()
+                        let localGoals = (try? context.fetch(goalDescriptor)) ?? []
+                        let localGoalIDs = Set(localGoals.map { $0.id })
+                        
+                        for cg in cloudGoals {
+                            guard !localGoalIDs.contains(cg.localID) else { continue }
+                            let goal = Goal(
+                                title: cg.title,
+                                description: cg.description,
+                                category: TaskCategory(rawValue: cg.category) ?? .physical,
+                                targetDate: cg.targetDate,
+                                createdBy: localChar.id
+                            )
+                            goal.id = cg.localID
+                            goal.status = GoalStatus(rawValue: cg.status) ?? .active
+                            goal.completedAt = cg.completedAt
+                            goal.milestone25Claimed = cg.milestone25Claimed
+                            goal.milestone50Claimed = cg.milestone50Claimed
+                            goal.milestone75Claimed = cg.milestone75Claimed
+                            goal.milestone100Claimed = cg.milestone100Claimed
+                            context.insert(goal)
+                        }
                     }
-                    if restoredGoals > 0 {
-                        print("✅ SyncManager: Restored \(restoredGoals) goals from cloud")
-                    }
+                } catch {
+                    print("⚠️ SyncManager: Pull goals failed: \(error.localizedDescription)")
                 }
                 
-                // 5. Pull mood entries (restore missing local mood entries from cloud)
-                let cloudMoods = try await SupabaseService.shared.fetchOwnMoodEntries()
-                if !cloudMoods.isEmpty {
-                    let moodDescriptor = FetchDescriptor<MoodEntry>()
-                    let localMoods = (try? context.fetch(moodDescriptor)) ?? []
-                    let localMoodIDs = Set(localMoods.map { $0.id })
-                    
-                    var restoredMoods = 0
-                    for cm in cloudMoods {
-                        guard !localMoodIDs.contains(cm.localID) else { continue }
-                        let entry = MoodEntry(
-                            moodLevel: cm.moodLevel,
-                            journalText: cm.journalText,
-                            ownerID: localChar.id
-                        )
-                        entry.id = cm.localID
-                        entry.date = cm.date
-                        context.insert(entry)
-                        restoredMoods += 1
+                await Task.yield()
+                
+                // 5. Pull mood entries
+                do {
+                    let cloudMoods = try await SupabaseService.shared.fetchOwnMoodEntries()
+                    await Task.yield()
+                    if !cloudMoods.isEmpty {
+                        let moodDescriptor = FetchDescriptor<MoodEntry>()
+                        let localMoods = (try? context.fetch(moodDescriptor)) ?? []
+                        let localMoodIDs = Set(localMoods.map { $0.id })
+                        
+                        for cm in cloudMoods {
+                            guard !localMoodIDs.contains(cm.localID) else { continue }
+                            let entry = MoodEntry(
+                                moodLevel: cm.moodLevel,
+                                journalText: cm.journalText,
+                                ownerID: localChar.id
+                            )
+                            entry.id = cm.localID
+                            entry.date = cm.date
+                            context.insert(entry)
+                        }
                     }
-                    if restoredMoods > 0 {
-                        print("✅ SyncManager: Restored \(restoredMoods) mood entries from cloud")
-                    }
+                } catch {
+                    print("⚠️ SyncManager: Pull mood entries failed: \(error.localizedDescription)")
                 }
                 
-                // 6. Pull bond/party data (restore bond level, EXP, streaks from cloud)
+                await Task.yield()
+                
+                // 6. Pull bond/party data
                 if let cloudParty = try? await SupabaseService.shared.fetchOwnParty() {
                     let bondDescriptor = FetchDescriptor<Bond>()
                     let localBonds = (try? context.fetch(bondDescriptor)) ?? []
                     
                     if let existingBond = localBonds.first {
-                        // Merge: take higher values from cloud
                         existingBond.bondLevel = max(existingBond.bondLevel, cloudParty.bondLevel)
                         existingBond.bondEXP = max(existingBond.bondEXP, cloudParty.bondExp)
                         existingBond.partyStreakDays = max(existingBond.partyStreakDays, cloudParty.partyStreakDays)
@@ -581,34 +594,34 @@ final class SyncManager: ObservableObject {
                             existingBond.supabasePartyID = cloudParty.id
                         }
                     } else if cloudParty.memberIDs.count >= 2 {
-                        // No local bond — create from cloud
                         let newBond = Bond(memberIDs: cloudParty.memberIDs)
                         newBond.bondLevel = cloudParty.bondLevel
                         newBond.bondEXP = cloudParty.bondExp
                         newBond.partyStreakDays = cloudParty.partyStreakDays
                         newBond.supabasePartyID = cloudParty.id
                         context.insert(newBond)
-                        print("✅ SyncManager: Restored bond from cloud (level \(cloudParty.bondLevel))")
                     }
-                    
-                    // 7. Pull daily quests (restore today's quests from cloud if missing locally)
+                }
+                
+                await Task.yield()
+                
+                // 7. Pull daily quests
+                do {
                     let cloudDailyQuests = try await SupabaseService.shared.fetchTodaysDailyQuests()
+                    await Task.yield()
                     if !cloudDailyQuests.isEmpty {
                         let dqDescriptor = FetchDescriptor<DailyQuest>()
                         let localDQs = (try? context.fetch(dqDescriptor)) ?? []
                         let localDQIDs = Set(localDQs.map { $0.id })
                         
-                        var restoredDQs = 0
                         for cq in cloudDailyQuests {
                             if localDQIDs.contains(cq.localID) {
-                                // Update existing with cloud progress (take higher)
                                 if let existing = localDQs.first(where: { $0.id == cq.localID }) {
                                     existing.currentValue = max(existing.currentValue, cq.currentValue)
                                     if cq.isCompleted { existing.isCompleted = true }
                                     if cq.isClaimed { existing.isClaimed = true }
                                 }
                             } else {
-                                // Restore from cloud
                                 let quest = DailyQuest(
                                     title: cq.title,
                                     description: cq.questDescription ?? "",
@@ -626,34 +639,34 @@ final class SyncManager: ObservableObject {
                                 quest.isCompleted = cq.isCompleted
                                 quest.isClaimed = cq.isClaimed
                                 context.insert(quest)
-                                restoredDQs += 1
                             }
                         }
-                        if restoredDQs > 0 {
-                            print("✅ SyncManager: Restored \(restoredDQs) daily quests from cloud")
-                        }
                     }
-                    
-                    // 8. Pull party challenges (restore/sync from cloud)
+                } catch {
+                    print("⚠️ SyncManager: Pull daily quests failed: \(error.localizedDescription)")
+                }
+                
+                await Task.yield()
+                
+                // 8. Pull party challenges
+                do {
                     let partyID = (try? context.fetch(FetchDescriptor<Bond>()))?.first?.supabasePartyID
                     if let partyID {
                         let cloudChallenges = try await SupabaseService.shared.fetchPartyChallenges(partyID: partyID)
+                        await Task.yield()
                         if !cloudChallenges.isEmpty {
                             let challengeDescriptor = FetchDescriptor<PartyChallenge>()
                             let localChallenges = (try? context.fetch(challengeDescriptor)) ?? []
                             let localChallengeIDs = Set(localChallenges.map { $0.id })
                             
-                            var restoredChallenges = 0
                             for cc in cloudChallenges {
                                 if localChallengeIDs.contains(cc.id) {
-                                    // Update existing local challenge with cloud progress
                                     if let existing = localChallenges.first(where: { $0.id == cc.id }) {
                                         existing.memberProgressJSON = cc.memberProgress ?? "[]"
                                         existing.isActive = cc.isActive
                                         existing.partyBonusAwarded = cc.partyBonusAwarded
                                     }
                                 } else {
-                                    // Create new local challenge from cloud
                                     let challenge = PartyChallenge(
                                         challengeType: PartyChallengeType(rawValue: cc.challengeType) ?? .tasks,
                                         targetCount: cc.targetCount,
@@ -672,14 +685,12 @@ final class SyncManager: ObservableObject {
                                     challenge.partyBonusBondEXP = cc.partyBonusBondEXP
                                     challenge.partyBonusAwarded = cc.partyBonusAwarded
                                     context.insert(challenge)
-                                    restoredChallenges += 1
                                 }
-                            }
-                            if restoredChallenges > 0 {
-                                print("✅ SyncManager: Restored \(restoredChallenges) party challenges from cloud")
                             }
                         }
                     }
+                } catch {
+                    print("⚠️ SyncManager: Pull party challenges failed: \(error.localizedDescription)")
                 }
                 
                 try? context.save()

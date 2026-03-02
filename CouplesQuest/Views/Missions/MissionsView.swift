@@ -498,6 +498,8 @@ struct ActiveMissionDetailCard: View {
     @State private var trainingBounce: Bool = false
     
     var body: some View {
+        // TimelineView re-renders only this card every second for the countdown.
+        TimelineView(.periodic(from: .now, by: 1.0)) { _ in
         ZStack {
             // Floating sparkle particles (while training is in progress)
             if !activeMission.isComplete {
@@ -627,6 +629,7 @@ struct ActiveMissionDetailCard: View {
             }
             .padding(20)
         }
+        } // end TimelineView
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color("CardBackground"))

@@ -370,6 +370,7 @@ struct RebirthView: View {
             ForEach(CharacterClass.starters, id: \.self) { starterClass in
                 Button(action: {
                     selectedStarterClass = starterClass
+                    AudioManager.shared.playClassSelect(starterClass)
                 }) {
                     HStack(spacing: 12) {
                         Image(systemName: starterClass.icon)
