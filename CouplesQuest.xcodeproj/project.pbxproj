@@ -58,6 +58,8 @@
 		CC33DD44EE55FF6611223344 /* QRPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF661122334455CC /* QRPairingView.swift */; };
 		CD6FE9F1E0FA5060779358B4 /* CharacterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346828650F7857975FEACA08 /* CharacterView.swift */; };
 		CFBK0001FALLBACK0BUILD001 /* content_fallback.json in Resources */ = {isa = PBXBuildFile; fileRef = CFBK0001FALLBACK0SWIFT001 /* content_fallback.json */; };
+		CONS0001XCASSETS0BUILD001 /* Consumables.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */; };
+		MATS0001XCASSETS0BUILD001 /* Materials.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = MATS0001XCASSETS0FREF0001 /* Materials.xcassets */; };
 		CMGR0001SERVICE0BUILD00001 /* ContentManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMGR0001SERVICE0SWIFT00001 /* ContentManager.swift */; };
 		CPTY0001A0B0C0D0E0F00001 /* CreatePartySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPTY0002A0B0C0D0E0F00001 /* CreatePartySheet.swift */; };
 		D1A2B3C4D5E6F7A8B9C0D1E3 /* DailyQuest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4D5E6F7A8B9C0D1E4 /* DailyQuest.swift */; };
@@ -71,6 +73,7 @@
 		E1A2B3C4D5E6F7A8B9C0E106 /* PendingConfirmationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F7A8B9C0E105 /* PendingConfirmationsView.swift */; };
 		EA0EBDD78DE79ADBF97489E6 /* CharacterCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768D958A733A913A1D32E964 /* CharacterCreationView.swift */; };
 		EAFX0001AFFIXMOD0SWIFT01 /* EquipmentAffix.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFX0001AFFIXMOD0SWIFT02 /* EquipmentAffix.swift */; };
+		EQRK0001QUIRKMOD0SWIFT01 /* EquipmentQuirk.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */; };
 		EC0A1A2B3C4D5E6F7A8B9C01 /* EquipmentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0A1A2B3C4D5E6F7A8B9C02 /* EquipmentCatalog.swift */; };
 		ED1DUNG0001A0B0C0D0E0F001 /* Dungeons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */; };
 		ED1MISS0001A0B0C0D0E0F001 /* Missions.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */; };
@@ -249,8 +252,11 @@
 		E6716587C73288884F8F3C11 /* CouplesQuestApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouplesQuestApp.swift; sourceTree = "<group>"; };
 		E7D8AF35336A6EBE7E4EF3DC /* CreateTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateTaskView.swift; sourceTree = "<group>"; };
 		EAFX0001AFFIXMOD0SWIFT02 /* EquipmentAffix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentAffix.swift; sourceTree = "<group>"; };
+		EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentQuirk.swift; sourceTree = "<group>"; };
 		EC0A1A2B3C4D5E6F7A8B9C02 /* EquipmentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentCatalog.swift; sourceTree = "<group>"; };
+		CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Consumables.xcassets; sourceTree = "<group>"; };
 		ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Dungeons.xcassets; sourceTree = "<group>"; };
+		MATS0001XCASSETS0FREF0001 /* Materials.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Materials.xcassets; sourceTree = "<group>"; };
 		ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Missions.xcassets; sourceTree = "<group>"; };
 		ED1TASK0001A0B0C0D0E0F002 /* EditTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTaskView.swift; sourceTree = "<group>"; };
 		ED1TASK0002A0B0C0D0E0F002 /* TaskAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskAnalyticsView.swift; sourceTree = "<group>"; };
@@ -395,6 +401,7 @@
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* Dungeon.swift */,
 				5E1061D0FB1A3CCF681DFD4D /* Equipment.swift */,
 				EAFX0001AFFIXMOD0SWIFT02 /* EquipmentAffix.swift */,
+				EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */,
 				EXP90002MODEL00SWIFT00001 /* Expedition.swift */,
 				EC0A1A2B3C4D5E6F7A8B9C02 /* EquipmentCatalog.swift */,
 				GS0T0001GEARSETC0SWIFT01 /* GearSetCatalog.swift */,
@@ -471,6 +478,8 @@
 				BB2233445566778899001122 /* Colors.xcassets */,
 				CFBK0001FALLBACK0SWIFT001 /* content_fallback.json */,
 				F1A2B3C4D5E6F7A8B9C0F200 /* Equipment.xcassets */,
+				CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */,
+				MATS0001XCASSETS0FREF0001 /* Materials.xcassets */,
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* Avatars.xcassets */,
 				ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */,
 				ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */,
@@ -906,6 +915,8 @@
 				D1E2F3A4B5C6D7E8F9A0B1C2 /* Avatars.xcassets in Resources */,
 				ED1MISS0001A0B0C0D0E0F001 /* Missions.xcassets in Resources */,
 				ED1DUNG0001A0B0C0D0E0F001 /* Dungeons.xcassets in Resources */,
+				CONS0001XCASSETS0BUILD001 /* Consumables.xcassets in Resources */,
+				MATS0001XCASSETS0BUILD001 /* Materials.xcassets in Resources */,
 				CFBK0001FALLBACK0BUILD001 /* content_fallback.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -959,6 +970,7 @@
 				D2E3F4A5B6C7D8E90001CC07 /* CraftingMaterial.swift in Sources */,
 				0A232E8236626F303ECAAA9B /* Equipment.swift in Sources */,
 				EAFX0001AFFIXMOD0SWIFT01 /* EquipmentAffix.swift in Sources */,
+				EQRK0001QUIRKMOD0SWIFT01 /* EquipmentQuirk.swift in Sources */,
 				EC0A1A2B3C4D5E6F7A8B9C01 /* EquipmentCatalog.swift in Sources */,
 				C1A2B3C4D5E6F7A8B9C0D110 /* ForgeView.swift in Sources */,
 				FR0G0001KEEPVIEW0SWIFT02 /* ForgekeeperView.swift in Sources */,

@@ -114,11 +114,11 @@ INSERT INTO public.content_equipment (id, name, description, slot, base_type, ra
 ('acc_amulet_epic_01', 'Eye of the Storm', 'A sapphire containing a miniature thunderstorm.', 'accessory', 'amulet', 'epic', 'wisdom', 9, 'defense', 5, 22, 'equip-amulet-epic', false, NULL, true, 84),
 ('acc_amulet_legendary_01', 'Heart of the World Tree', 'A seed of pure life force from Yggdrasil.', 'accessory', 'amulet', 'legendary', 'wisdom', 15, 'luck', 9, 38, 'equip-amulet-legendary', false, NULL, true, 85),
 -- Cloaks
-('acc_cloak_common_01', 'Moth-Eaten Travel Cape', 'It keeps some of the rain off.', 'accessory', 'cloak', 'common', 'defense', 1, NULL, 0, 1, 'equip-cloak-common', false, NULL, true, 86),
-('acc_cloak_uncommon_01', 'Twilight Mantle', 'A deep-blue cloak that absorbs light.', 'accessory', 'cloak', 'uncommon', 'dexterity', 3, 'defense', 1, 5, 'equip-cloak-uncommon', false, NULL, true, 87),
-('acc_cloak_rare_01', 'Windweaver''s Shroud', 'The air moves around this cloak.', 'accessory', 'cloak', 'rare', 'dexterity', 5, 'luck', 3, 13, 'equip-cloak-rare', false, NULL, true, 88),
-('acc_cloak_epic_01', 'Cloak of Many Stars', 'The interior shows a different constellation each night.', 'accessory', 'cloak', 'epic', 'wisdom', 8, 'dexterity', 5, 21, 'equip-cloak-epic', false, NULL, true, 89),
-('acc_cloak_legendary_01', 'Mantle of the Unseen', 'Woven from pure possibility.', 'accessory', 'cloak', 'legendary', 'dexterity', 13, 'luck', 10, 36, 'equip-cloak-legendary', false, NULL, true, 90),
+('acc_cloak_common_01', 'Moth-Eaten Travel Cape', 'It keeps some of the rain off.', 'cloak', 'cloak', 'common', 'defense', 1, NULL, 0, 1, 'equip-cloak-common', false, NULL, true, 86),
+('acc_cloak_uncommon_01', 'Twilight Mantle', 'A deep-blue cloak that absorbs light.', 'cloak', 'cloak', 'uncommon', 'dexterity', 3, 'defense', 1, 5, 'equip-cloak-uncommon', false, NULL, true, 87),
+('acc_cloak_rare_01', 'Windweaver''s Shroud', 'The air moves around this cloak.', 'cloak', 'cloak', 'rare', 'dexterity', 5, 'luck', 3, 13, 'equip-cloak-rare', false, NULL, true, 88),
+('acc_cloak_epic_01', 'Cloak of Many Stars', 'The interior shows a different constellation each night.', 'cloak', 'cloak', 'epic', 'wisdom', 8, 'dexterity', 5, 21, 'equip-cloak-epic', false, NULL, true, 89),
+('acc_cloak_legendary_01', 'Mantle of the Unseen', 'Woven from pure possibility.', 'cloak', 'cloak', 'legendary', 'dexterity', 13, 'luck', 10, 36, 'equip-cloak-legendary', false, NULL, true, 90),
 -- Bracelets
 ('acc_bracelet_common_01', 'Woven Friendship Band', 'A colorful thread bracelet.', 'accessory', 'bracelet', 'common', 'charisma', 1, NULL, 0, 1, 'equip-bracelet-common', false, NULL, true, 91),
 ('acc_bracelet_uncommon_01', 'Iron Willpower Cuff', 'A heavy cuff with discipline mantras.', 'accessory', 'bracelet', 'uncommon', 'strength', 3, 'defense', 1, 4, 'equip-bracelet-uncommon', false, NULL, true, 92),
@@ -183,7 +183,7 @@ INSERT INTO public.content_milestone_gear (id, name, description, slot, base_typ
 ('ms_ranger_lv40', 'Hawk''s Talon Bracelet', 'Carved from a great hawk''s claw.', 'accessory', 'bracelet', 'legendary', 'dexterity', 14, 'luck', 6, 40, 'ranger', 1500, NULL, true, 31),
 ('ms_ranger_lv50', 'Skypierce, the Eternal Bow', 'The legendary bow of the first ranger.', 'weapon', 'bow', 'legendary', 'dexterity', 16, 'strength', 8, 50, 'ranger', 2500, NULL, true, 32),
 ('ms_trickster_lv25', 'Fate''s Edge Dagger', 'A dagger guided by destiny.', 'weapon', 'dagger', 'epic', 'luck', 10, 'dexterity', 4, 25, 'trickster', 750, NULL, true, 33),
-('ms_trickster_lv30', 'Phantom Cloak', 'A cloak woven from shadow.', 'armor', 'cloak', 'epic', 'luck', 8, 'dexterity', 5, 30, 'trickster', 900, NULL, true, 34),
+('ms_trickster_lv30', 'Phantom Cloak', 'A cloak woven from shadow.', 'cloak', 'cloak', 'epic', 'luck', 8, 'dexterity', 5, 30, 'trickster', 900, NULL, true, 34),
 ('ms_trickster_lv40', 'Gambler''s Loaded Dice', 'An enchanted charm bending probability.', 'accessory', 'charm', 'legendary', 'luck', 14, 'charisma', 6, 40, 'trickster', 1500, NULL, true, 35),
 ('ms_trickster_lv50', 'Whisper of Chaos', 'A legendary dagger across multiple timelines.', 'weapon', 'dagger', 'legendary', 'luck', 16, 'dexterity', 8, 50, 'trickster', 2500, NULL, true, 36)
 ON CONFLICT (id) DO NOTHING;

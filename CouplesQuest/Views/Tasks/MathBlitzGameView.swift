@@ -32,8 +32,8 @@ struct MathBlitzRewardTier {
                 icon: "sparkles",
                 color: "AccentGreen",
                 gold: 150,
-                consumableName: "Green Tea",
-                consumableIcon: "leaf.fill",
+                consumableName: "Mystic Mushroom",
+                consumableIcon: "sparkle",
                 consumableCount: 2,
                 wisdomBonus: 1
             )
@@ -64,7 +64,7 @@ struct MathBlitzRewardTier {
     
     static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
         ("Lightning Calculator", "< 1 min", 200, "3× Focus Scroll"),
-        ("Quick Thinker", "1–2 min", 150, "2× Green Tea"),
+        ("Quick Thinker", "1–2 min", 150, "2× Mystic Mushroom"),
         ("Steady Mind", "2–3 min", 100, "1× Apple Juice"),
         ("Completed", "> 3 min", 50, "—"),
     ]
@@ -218,6 +218,7 @@ private struct MathTimerView: View {
 
 struct MathBlitzGameView: View {
     let onComplete: (Int) -> Void
+    var onFail: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     
     private let totalProblems = 20
@@ -249,8 +250,9 @@ struct MathBlitzGameView: View {
         Double(currentIndex) / Double(totalProblems)
     }
     
-    init(onComplete: @escaping (Int) -> Void) {
+    init(onComplete: @escaping (Int) -> Void, onFail: (() -> Void)? = nil) {
         self.onComplete = onComplete
+        self.onFail = onFail
         // Generate 20 problems with scaling difficulty
         var generated: [MathProblem] = []
         for i in 0..<20 {
@@ -649,6 +651,7 @@ struct MathBlitzGameView: View {
                     .multilineTextAlignment(.center)
                 
                 Button {
+                    onFail?()
                     dismiss()
                 } label: {
                     Text("Close")

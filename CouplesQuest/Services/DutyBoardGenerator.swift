@@ -68,6 +68,12 @@ struct DutyBoardGenerator {
     /// Maximum number of duties a player can accept per day
     static let maxDutySelectionsPerDay = 1
     
+    /// Maximum active duties a player can have at any time (across all sources)
+    static let maxActiveDuties = 5
+    
+    /// Days before an uncompleted active duty auto-expires
+    static let dutyExpirationDays = 7
+    
     /// Cost in gold for a paid refresh (after the 1 free daily refresh)
     static let paidRefreshCost = 50
     
@@ -374,6 +380,102 @@ struct DutyBoardGenerator {
         guard character.gold >= paidRefreshCost else { return nil }
         character.gold -= paidRefreshCost
         return refreshDutyBoard(characterID: characterID, context: context)
+    }
+    
+    // MARK: - Active Duty Cap
+    
+    /// Count of current active duties (in-progress, not on board, not daily slots, not habits, not partner tasks).
+    @MainActor
+    static func activeDutyCount(context: ModelContext) -> Int {
+        let descriptor = FetchDescriptor<GameTask>(
+            predicate: #Predicate<GameTask> { task in
+                task.isOnDutyBoard == false &&
+                task.isDailyDuty == false &&
+                task.isFromPartner == false &&
+                task.isHabit == false
+            }
+        )
+        let tasks = (try? context.fetch(descriptor)) ?? []
+        return tasks.filter { $0.status != .completed && $0.status != .expired }.count
+    }
+    
+    /// Whether the player has reached the active duty cap.
+    @MainActor
+    static func isAtActiveDutyCap(context: ModelContext) -> Bool {
+        activeDutyCount(context: context) >= maxActiveDuties
+    }
+    
+    // MARK: - 7-Day Duty Expiration
+    
+    /// Remove active duties older than `dutyExpirationDays`. Returns IDs of expired tasks for Supabase cleanup.
+    @MainActor
+    @discardableResult
+    static func expireOldDuties(context: ModelContext) -> [UUID] {
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -dutyExpirationDays, to: Date()) else {
+            return []
+        }
+        
+        let descriptor = FetchDescriptor<GameTask>(
+            predicate: #Predicate<GameTask> { task in
+                task.isOnDutyBoard == false &&
+                task.isDailyDuty == false &&
+                task.isHabit == false
+            }
+        )
+        
+        let allTasks = (try? context.fetch(descriptor)) ?? []
+        let eligible = allTasks.filter { $0.status != .completed && $0.status != .expired }
+        var expiredIDs: [UUID] = []
+        
+        for task in eligible where task.createdAt < cutoff {
+            expiredIDs.append(task.id)
+            context.delete(task)
+        }
+        
+        if !expiredIDs.isEmpty {
+            try? context.save()
+        }
+        return expiredIDs
+    }
+    
+    // MARK: - Duty Scroll Generation
+    
+    /// Generate a random duty from the pool for a Duty Scroll, avoiding duplicates of current active duties.
+    /// Returns nil if the player is at the active duty cap.
+    @MainActor
+    static func generateScrollDuty(characterID: UUID, context: ModelContext) -> GameTask? {
+        guard !isAtActiveDutyCap(context: context) else { return nil }
+        
+        let scrollSeed = Int(Date().timeIntervalSince1970) % 100_000
+        let templates = todaysTemplates(refreshOffset: scrollSeed)
+        
+        // Fetch existing active duty titles to avoid duplicates
+        let descriptor = FetchDescriptor<GameTask>(
+            predicate: #Predicate<GameTask> { task in
+                task.isOnDutyBoard == false &&
+                task.isDailyDuty == false &&
+                task.isHabit == false
+            }
+        )
+        let allExisting = (try? context.fetch(descriptor)) ?? []
+        let existing = allExisting.filter { $0.status != .completed && $0.status != .expired }
+        let existingTitles = Set(existing.map { $0.title })
+        
+        let available = templates.filter { !existingTitles.contains($0.title) }
+        guard let template = available.first ?? templates.first else { return nil }
+        
+        let task = GameTask(
+            title: template.title,
+            description: template.description,
+            category: template.category,
+            createdBy: characterID,
+            isOnDutyBoard: false,
+            isDailyDuty: false
+        )
+        task.status = .inProgress
+        context.insert(task)
+        try? context.save()
+        return task
     }
 }
 

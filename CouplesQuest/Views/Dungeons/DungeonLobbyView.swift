@@ -46,13 +46,15 @@ struct DungeonLobbyView: View {
     
     var body: some View {
         ZStack {
-            // Background
-            LinearGradient(
-                colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Pixel art background
+            Image(dungeon.theme.thumbnailImage)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .ignoresSafeArea()
+            
+            Color("BackgroundTop").opacity(0.8)
+                .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Drag indicator
@@ -107,22 +109,17 @@ struct DungeonLobbyView: View {
     
     private var dungeonHeader: some View {
         VStack(spacing: 12) {
-            // Dungeon icon
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color("AccentPurple").opacity(0.6), Color("AccentPurple").opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 72, height: 72)
-                
-                Image(systemName: dungeon.theme.icon)
-                    .font(.system(size: 32))
-                    .foregroundColor(Color("AccentGold"))
-            }
+            Image(dungeon.theme.thumbnailImage)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("AccentGold").opacity(0.5), lineWidth: 2)
+                )
+                .shadow(color: Color("AccentPurple").opacity(0.4), radius: 8)
             
             Text(dungeon.name)
                 .font(.custom("Avenir-Heavy", size: 22))

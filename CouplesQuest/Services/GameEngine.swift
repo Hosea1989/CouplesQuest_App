@@ -190,6 +190,22 @@ class GameEngine: ObservableObject {
             totalGold += Int(Double(totalGold) * researchBonuses.goldBonus)
         }
         
+        // Consumable buff bonuses (EXP Boost / Gold Boost)
+        if character.expBoostTasksRemaining > 0 {
+            totalEXP += Int(Double(totalEXP) * 0.50)
+        }
+        if character.goldBoostTasksRemaining > 0 {
+            totalGold += Int(Double(totalGold) * 0.50)
+        }
+        
+        // Stat food temporary buff (adds bonus stat value to effective calculations)
+        if character.hasActiveStatFoodBuff, let buffStat = character.statFoodBuffStat {
+            let buffAmount = character.statFoodBuffAmount
+            if buffStat == task.bonusStat {
+                totalEXP += Int(Double(totalEXP) * 0.10 * Double(buffAmount))
+            }
+        }
+        
         // If pending partner confirmation, hold rewards in escrow (don't apply yet)
         if task.pendingPartnerConfirmation {
             return TaskCompletionResult(
@@ -255,6 +271,32 @@ class GameEngine: ObservableObject {
                 lootBonus: lootBonus + luckBonus,
                 context: ctx
             )
+            
+            // Persist non-equipment drops (equipment is already inserted by rollTaskLoot)
+            if let drop = lootDrop {
+                switch drop.type {
+                case .material(let matType, let rarity, let qty):
+                    addMaterial(matType, rarity: rarity, amount: qty, characterID: character.id, context: ctx)
+                case .consumableItem(let consumable):
+                    ctx.insert(consumable)
+                    Task { try? await SupabaseService.shared.syncConsumable(consumable) }
+                case .consumable, .equipment:
+                    break // equipment already handled; legacy consumable string type no-ops
+                }
+            }
+            
+            // Decrement Material Magnet counter if it was active
+            if character.materialMagnetTasksRemaining > 0 {
+                character.materialMagnetTasksRemaining -= 1
+            }
+            
+            // Decrement EXP/Gold boost counters (applied to rewards above)
+            if character.expBoostTasksRemaining > 0 {
+                character.expBoostTasksRemaining -= 1
+            }
+            if character.goldBoostTasksRemaining > 0 {
+                character.goldBoostTasksRemaining -= 1
+            }
         }
         
         // --- ROUTINE BUNDLE CHECK ---
@@ -282,6 +324,10 @@ class GameEngine: ObservableObject {
         
         // Award gold (with rebirth bonus)
         character.gainGold(totalGold)
+        
+        // Grant EXP to all equipped gear
+        let equipEXP = GameEngine.equipmentEXPForTask(verificationTier: tier)
+        let gearLevelUps = grantEquipmentEXP(character: character, amount: equipEXP, context: context)
         
         // --- SNAPSHOT: Capture character state AFTER rewards ---
         let snapshotExpProgressAfter = character.levelProgress
@@ -685,13 +731,18 @@ class GameEngine: ObservableObject {
             let expProgressBefore = character.levelProgress
             let missionGoldBefore = character.gold
             
-            // Calculate rewards
-            let expReward = mission.expReward
-            let goldReward = mission.goldReward
+            // Calculate rewards (scaled by character level)
+            let missionScale = 1.0 + Double(character.level - 1) * 0.05
+            let expReward = Int(Double(mission.expReward) * missionScale)
+            let goldReward = Int(Double(mission.goldReward) * missionScale)
             
             // Apply rewards (with rebirth bonuses)
             character.gainEXP(expReward)
             character.gainGold(goldReward)
+            
+            // Grant EXP to equipped gear
+            let missionEquipEXP = GameEngine.equipmentEXPForMission(rarity: mission.rarity)
+            grantEquipmentEXP(character: character, amount: missionEquipEXP)
             
             // Auto-level-up if eligible (drives the MissionCompletionView animation)
             var levelUpRewards: [LevelUpReward] = []
@@ -764,6 +815,16 @@ class GameEngine: ObservableObject {
                 researchTokensDropped = tokenCount
             }
             
+            // Consumable drop from mission (based on mission rarity)
+            var consumableDroppedName: String? = nil
+            if let consumable = ConsumableDropTable.rollMissionDrop(
+                rarity: mission.rarity,
+                level: character.level,
+                characterID: character.id
+            ) {
+                consumableDroppedName = consumable.name
+            }
+            
             // Rank-up class evolution (if this was a rank-up training course)
             var rankedUpToClass: CharacterClass? = nil
             if mission.isRankUpTraining, let targetClass = mission.targetClass {
@@ -815,6 +876,7 @@ class GameEngine: ObservableObject {
                 statPointsGained: statPointsGained,
                 statGained: statGained,
                 researchTokensDropped: researchTokensDropped,
+                consumableDropped: consumableDroppedName,
                 rankedUpToClass: rankedUpToClass
             )
             missionResult.goldBefore = missionGoldBefore
@@ -823,8 +885,9 @@ class GameEngine: ObservableObject {
             return missionResult
         } else {
             // Mission failed — award consolation rewards (25%) so time isn't wasted
-            let consolationEXP = max(5, mission.expReward / 4)
-            let consolationGold = max(2, mission.goldReward / 4)
+            let failScale = 1.0 + Double(character.level - 1) * 0.05
+            let consolationEXP = max(5, Int(Double(mission.expReward) * failScale) / 4)
+            let consolationGold = max(2, Int(Double(mission.goldReward) * failScale) / 4)
             
             let previousLevel = character.level
             let expProgressBefore = character.levelProgress
@@ -832,6 +895,10 @@ class GameEngine: ObservableObject {
             
             character.gainEXP(consolationEXP)
             character.gainGold(consolationGold)
+            
+            // Consolation equipment EXP (half normal)
+            let failEquipEXP = max(2, GameEngine.equipmentEXPForMission(rarity: mission.rarity) / 2)
+            grantEquipmentEXP(character: character, amount: failEquipEXP)
             
             // Auto-level-up if eligible
             var levelUpRewards: [LevelUpReward] = []
@@ -1396,7 +1463,7 @@ class GameEngine: ObservableObject {
     func completePartnerTask(_ task: GameTask, character: PlayerCharacter, bond: Bond) -> TaskCompletionResult {
         let result = completeTask(task, character: character, bond: bond)
         
-        // Award bond EXP
+        // Award bond EXP (with Party Beacon buff)
         var bondEXP = GameEngine.bondEXPForPartnerTask
         
         // Bond EXP Boost perk (+10%)
@@ -1404,14 +1471,63 @@ class GameEngine: ObservableObject {
             bondEXP = Int(Double(bondEXP) * 1.1)
         }
         
-        bond.gainBondEXP(bondEXP)
+        // Party Beacon consumable buff (+25%)
+        if character.hasActivePartyBeacon {
+            bondEXP = Int(Double(bondEXP) * 1.25)
+        }
+        
+        let didBondLevelUp = bond.gainBondEXP(bondEXP)
         bond.partnerTasksCompleted += 1
+        
+        // Award consumable rewards for bond level-up
+        if didBondLevelUp {
+            awardBondLevelUpConsumables(bond: bond, character: character)
+        }
         
         // Track daily tasks
         character.checkDailyReset()
         character.tasksCompletedToday += 1
         
         return result
+    }
+    
+    /// Award consumable rewards when the bond reaches a new level.
+    /// Inserts consumables into SwiftData via the current model context.
+    func awardBondLevelUpConsumables(bond: Bond, character: PlayerCharacter) {
+        let rewards = ConsumableDropTable.bondLevelUpReward(
+            bondLevel: bond.bondLevel,
+            characterID: character.id
+        )
+        guard !rewards.isEmpty else { return }
+        
+        for consumable in rewards {
+            ToastManager.shared.showReward(
+                "Bond Level \(bond.bondLevel) Reward!",
+                subtitle: consumable.name,
+                icon: consumable.icon
+            )
+        }
+    }
+    
+    /// Roll a consumable drop from a partner-related activity.
+    /// Returns the consumable name if one dropped (nil otherwise).
+    func rollPartnerActivityDrop(
+        bond: Bond,
+        character: PlayerCharacter,
+        dropChance: Double,
+        context: ModelContext
+    ) -> String? {
+        guard Double.random(in: 0...1) <= dropChance else { return nil }
+        
+        guard let consumable = ConsumableDropTable.rollPartnerDrop(
+            bondLevel: bond.bondLevel,
+            level: character.level,
+            characterID: character.id
+        ) else { return nil }
+        
+        context.insert(consumable)
+        Task { try? await SupabaseService.shared.syncConsumable(consumable) }
+        return consumable.name
     }
     
     /// Claim a duty board task and award bond EXP
@@ -1443,6 +1559,9 @@ class GameEngine: ObservableObject {
         if bond.unlockedPerks.contains(.bondEXPBoost) {
             bondEXP = Int(Double(bondEXP) * 1.1)
         }
+        if character.hasActivePartyBeacon {
+            bondEXP = Int(Double(bondEXP) * 1.25)
+        }
         
         bond.gainBondEXP(bondEXP)
         bond.kudosSent += 1
@@ -1465,6 +1584,9 @@ class GameEngine: ObservableObject {
         var bondEXP = GameEngine.bondEXPForNudge
         if bond.unlockedPerks.contains(.bondEXPBoost) {
             bondEXP = Int(Double(bondEXP) * 1.1)
+        }
+        if character.hasActivePartyBeacon {
+            bondEXP = Int(Double(bondEXP) * 1.25)
         }
         
         bond.gainBondEXP(bondEXP)
@@ -1667,6 +1789,362 @@ class GameEngine: ObservableObject {
         boss.rewardsClaimed = true
     }
     
+    // MARK: - Equipment EXP
+    
+    struct EquipmentLevelUpResult {
+        let item: Equipment
+        let newLevel: Int
+        let quirk: EquipmentQuirk
+    }
+    
+    /// Grant EXP to all equipped items on a character. Returns any level-up results.
+    @discardableResult
+    func grantEquipmentEXP(
+        character: PlayerCharacter,
+        amount: Int,
+        context: ModelContext? = nil
+    ) -> [EquipmentLevelUpResult] {
+        let equipped = character.equipment.allEquipped
+        var levelUps: [EquipmentLevelUpResult] = []
+        
+        for item in equipped where item.canLevelUp {
+            let didLevel = item.grantEXP(amount)
+            if didLevel {
+                let quirk = QuirkRoller.rollQuirk(
+                    equipmentLevel: item.equipmentLevel,
+                    itemRarity: item.rarity,
+                    baseType: item.detectedBaseType,
+                    existingQuirks: item.quirks
+                )
+                item.quirks.append(quirk)
+                if let ctx = context {
+                    ctx.insert(quirk)
+                }
+                levelUps.append(EquipmentLevelUpResult(
+                    item: item,
+                    newLevel: item.equipmentLevel,
+                    quirk: quirk
+                ))
+            }
+        }
+        
+        return levelUps
+    }
+    
+    /// Equipment EXP for task completion based on verification tier
+    nonisolated static func equipmentEXPForTask(verificationTier: VerificationTier) -> Int {
+        switch verificationTier {
+        case .quick: return 5
+        case .standard: return 7
+        case .verified: return 8
+        case .partyVerified: return 10
+        }
+    }
+    
+    /// Equipment EXP for a dungeon room
+    nonisolated static func equipmentEXPForDungeonRoom(isBoss: Bool) -> Int {
+        isBoss ? Int.random(in: 30...50) : Int.random(in: 10...20)
+    }
+    
+    /// Equipment EXP for mission completion based on rarity
+    nonisolated static func equipmentEXPForMission(rarity: MissionRarity) -> Int {
+        switch rarity {
+        case .common: return 5
+        case .uncommon: return 8
+        case .rare: return 10
+        case .epic: return 12
+        case .legendary: return 15
+        }
+    }
+    
+    /// Equipment EXP for surviving an arena wave
+    nonisolated static func equipmentEXPForArenaWave() -> Int {
+        Int.random(in: 5...10)
+    }
+    
+    // MARK: - Enhancement → Equipment EXP Migration
+    
+    private static let enhancementMigrationKey = "enhancement_to_equipexp_migrated_v1"
+    
+    /// One-time migration: convert old enhancementLevel into equipment EXP.
+    /// Each old enhancement level grants 30 EXP (enough to nearly level once at low levels).
+    func migrateEnhancementsToEquipmentEXP(context: ModelContext) {
+        guard !UserDefaults.standard.bool(forKey: Self.enhancementMigrationKey) else { return }
+        
+        let descriptor = FetchDescriptor<Equipment>()
+        guard let allItems = try? context.fetch(descriptor) else { return }
+        
+        var migrated = 0
+        for item in allItems where item.enhancementLevel > 0 {
+            let bonusEXP = item.enhancementLevel * 30
+            _ = item.grantEXP(bonusEXP)
+            
+            while item.canLevelUp && item.equipmentEXP >= item.expToNextLevel {
+                let didLevel = item.grantEXP(0)
+                if didLevel {
+                    let quirk = QuirkRoller.rollQuirk(
+                        equipmentLevel: item.equipmentLevel,
+                        itemRarity: item.rarity,
+                        baseType: item.detectedBaseType,
+                        existingQuirks: item.quirks
+                    )
+                    item.quirks.append(quirk)
+                    context.insert(quirk)
+                }
+                if !didLevel { break }
+            }
+            migrated += 1
+        }
+        
+        UserDefaults.standard.set(true, forKey: Self.enhancementMigrationKey)
+        
+        if migrated > 0 {
+            _debugLog("Migrated \(migrated) enhanced items to equipment EXP system")
+        }
+    }
+    
+    // MARK: - Temper (Forge EXP Injection)
+    
+    struct TemperResult {
+        let expGranted: Int
+        let leveledUp: Bool
+        let newLevel: Int
+        let quirkGained: EquipmentQuirk?
+        let goldSpent: Int
+        let materialsSpent: Int
+    }
+    
+    /// Gold cost to temper equipment (inject EXP) based on current equipment level and rarity
+    nonisolated static func temperGoldCost(item: Equipment) -> Int {
+        let baseCost: Int
+        switch item.rarity {
+        case .common: baseCost = 40
+        case .uncommon: baseCost = 80
+        case .rare: baseCost = 160
+        case .epic: baseCost = 350
+        case .legendary: baseCost = 700
+        }
+        let levelMult = 1.0 + Double(item.equipmentLevel - 1) * 0.4
+        return Int(Double(baseCost) * levelMult)
+    }
+    
+    /// Materials required to temper equipment
+    nonisolated static func temperMaterialCost(item: Equipment) -> Int {
+        switch item.equipmentLevel {
+        case 1: return 2
+        case 2: return 3
+        case 3: return 5
+        case 4: return 8
+        default: return 10
+        }
+    }
+    
+    /// EXP granted per temper session
+    nonisolated static func temperEXPGrant(item: Equipment) -> Int {
+        let base: Int
+        switch item.rarity {
+        case .common: base = 20
+        case .uncommon: base = 25
+        case .rare: base = 30
+        case .epic: base = 35
+        case .legendary: base = 40
+        }
+        return base + item.equipmentLevel * 5
+    }
+    
+    /// Determine which material type is needed for tempering based on equipment slot
+    nonisolated static func temperMaterialType(for item: Equipment) -> MaterialType {
+        switch item.slot {
+        case .weapon: return .ore
+        case .armor: return .hide
+        case .accessory: return .crystal
+        case .trinket: return .essence
+        case .cloak: return .hide
+        }
+    }
+    
+    /// Temper an equipped item: spend gold + materials to inject EXP, potentially leveling it up and gaining a quirk
+    func temperEquipment(
+        _ item: Equipment,
+        character: PlayerCharacter,
+        context: ModelContext
+    ) -> TemperResult? {
+        guard item.canLevelUp else { return nil }
+        
+        let goldCost = Self.temperGoldCost(item: item)
+        let matCost = Self.temperMaterialCost(item: item)
+        let matType = Self.temperMaterialType(for: item)
+        let charID = character.id
+        
+        guard character.gold >= goldCost else { return nil }
+        
+        let matAmount = materialCount(matType, characterID: charID, context: context)
+        guard matAmount >= matCost else { return nil }
+        
+        character.gold -= goldCost
+        deductMaterial(matType, amount: matCost, characterID: charID, context: context)
+        
+        let expAmount = Self.temperEXPGrant(item: item)
+        let didLevel = item.grantEXP(expAmount)
+        
+        var quirkGained: EquipmentQuirk?
+        if didLevel {
+            let quirk = QuirkRoller.rollQuirk(
+                equipmentLevel: item.equipmentLevel,
+                itemRarity: item.rarity,
+                baseType: item.detectedBaseType,
+                existingQuirks: item.quirks
+            )
+            item.quirks.append(quirk)
+            context.insert(quirk)
+            quirkGained = quirk
+        }
+        
+        return TemperResult(
+            expGranted: expAmount,
+            leveledUp: didLevel,
+            newLevel: item.equipmentLevel,
+            quirkGained: quirkGained,
+            goldSpent: goldCost,
+            materialsSpent: matCost
+        )
+    }
+    
+    // MARK: - Reforge (Quirk Reroll / Purify)
+    
+    struct ReforgeResult {
+        let oldQuirk: EquipmentQuirk
+        let newQuirk: EquipmentQuirk?
+        let purified: Bool
+        let goldSpent: Int
+        let materialsSpent: Int
+    }
+    
+    /// Gold cost to reforge (reroll) a quirk
+    nonisolated static func reforgeGoldCost(item: Equipment) -> Int {
+        let baseCost: Int
+        switch item.rarity {
+        case .common: baseCost = 250
+        case .uncommon: baseCost = 500
+        case .rare: baseCost = 1000
+        case .epic: baseCost = 2000
+        case .legendary: baseCost = 4000
+        }
+        return baseCost
+    }
+    
+    /// Material cost to reforge a quirk
+    nonisolated static func reforgeMaterialCost(item: Equipment) -> Int {
+        switch item.rarity {
+        case .common: return 3
+        case .uncommon: return 5
+        case .rare: return 8
+        case .epic: return 12
+        case .legendary: return 18
+        }
+    }
+    
+    /// Gold cost to purify (remove) a negative quirk
+    nonisolated static func purifyGoldCost(item: Equipment) -> Int {
+        let baseCost: Int
+        switch item.rarity {
+        case .common: baseCost = 400
+        case .uncommon: baseCost = 750
+        case .rare: baseCost = 1500
+        case .epic: baseCost = 3000
+        case .legendary: baseCost = 6000
+        }
+        return baseCost
+    }
+    
+    /// Material cost to purify a negative quirk
+    nonisolated static func purifyMaterialCost(item: Equipment) -> Int {
+        switch item.rarity {
+        case .common: return 5
+        case .uncommon: return 8
+        case .rare: return 12
+        case .epic: return 18
+        case .legendary: return 25
+        }
+    }
+    
+    /// Reroll a specific quirk on an item, replacing it with a new random quirk
+    func reforgeQuirk(
+        _ item: Equipment,
+        quirkIndex: Int,
+        character: PlayerCharacter,
+        context: ModelContext
+    ) -> ReforgeResult? {
+        guard quirkIndex >= 0 && quirkIndex < item.quirks.count else { return nil }
+        
+        let goldCost = Self.reforgeGoldCost(item: item)
+        let matCost = Self.reforgeMaterialCost(item: item)
+        let matType = Self.temperMaterialType(for: item)
+        let charID = character.id
+        
+        guard character.gold >= goldCost else { return nil }
+        guard materialCount(matType, characterID: charID, context: context) >= matCost else { return nil }
+        
+        character.gold -= goldCost
+        deductMaterial(matType, amount: matCost, characterID: charID, context: context)
+        
+        let oldQuirk = item.quirks[quirkIndex]
+        let levelForRoll = oldQuirk.levelGained
+        
+        let newQuirk = QuirkRoller.rollQuirk(
+            equipmentLevel: levelForRoll,
+            itemRarity: item.rarity,
+            baseType: item.detectedBaseType,
+            existingQuirks: item.quirks.enumerated().compactMap { $0.offset != quirkIndex ? $0.element : nil }
+        )
+        
+        context.delete(oldQuirk)
+        item.quirks[quirkIndex] = newQuirk
+        context.insert(newQuirk)
+        
+        return ReforgeResult(
+            oldQuirk: oldQuirk,
+            newQuirk: newQuirk,
+            purified: false,
+            goldSpent: goldCost,
+            materialsSpent: matCost
+        )
+    }
+    
+    /// Remove a negative quirk from an item entirely
+    func purifyQuirk(
+        _ item: Equipment,
+        quirkIndex: Int,
+        character: PlayerCharacter,
+        context: ModelContext
+    ) -> ReforgeResult? {
+        guard quirkIndex >= 0 && quirkIndex < item.quirks.count else { return nil }
+        let quirk = item.quirks[quirkIndex]
+        guard quirk.category == .negative else { return nil }
+        
+        let goldCost = Self.purifyGoldCost(item: item)
+        let matCost = Self.purifyMaterialCost(item: item)
+        let matType = Self.temperMaterialType(for: item)
+        let charID = character.id
+        
+        guard character.gold >= goldCost else { return nil }
+        guard materialCount(matType, characterID: charID, context: context) >= matCost else { return nil }
+        
+        character.gold -= goldCost
+        deductMaterial(matType, amount: matCost, characterID: charID, context: context)
+        
+        let removed = item.quirks.remove(at: quirkIndex)
+        context.delete(removed)
+        
+        return ReforgeResult(
+            oldQuirk: removed,
+            newQuirk: nil,
+            purified: true,
+            goldSpent: goldCost,
+            materialsSpent: matCost
+        )
+    }
+    
     // MARK: - Forge (Redesigned)
     
     /// Result from the new salvage system (materials, fragments, gold, optional affix scroll)
@@ -1710,8 +2188,8 @@ class GameEngine: ObservableObject {
         var recoveredScroll = false
         if affixRecoveryChance > 0 && Double.random(in: 0...1) <= affixRecoveryChance {
             let scroll = Consumable(
-                name: "Recovered Affix Scroll",
-                description: "An affix scroll recovered from salvaging equipment.",
+                name: "Recovered Enchantment Elixir",
+                description: "An enchantment elixir recovered from salvaging equipment.",
                 consumableType: .affixScroll,
                 icon: "scroll.fill",
                 effectValue: 1,
@@ -1740,6 +2218,10 @@ class GameEngine: ObservableObject {
             case .trinket:
                 if character.equipment.trinket?.id == item.id {
                     character.equipment.trinket = nil
+                }
+            case .cloak:
+                if character.equipment.cloak?.id == item.id {
+                    character.equipment.cloak = nil
                 }
             }
         }
@@ -1783,11 +2265,11 @@ class GameEngine: ObservableObject {
     
     static func defaultSalvageGold(rarity: ItemRarity) -> Int {
         switch rarity {
-        case .common: return 5
-        case .uncommon: return 15
-        case .rare: return 40
-        case .epic: return 100
-        case .legendary: return 250
+        case .common: return 15
+        case .uncommon: return 50
+        case .rare: return 150
+        case .epic: return 400
+        case .legendary: return 1000
         }
     }
     
@@ -1836,14 +2318,15 @@ class GameEngine: ObservableObject {
     
     /// Award crafting materials after completing an IRL task
     /// This is the key bridge: real-life tasks earn Essence + chance of bonus material
+    @discardableResult
     func awardMaterialsForTask(
         task: GameTask,
         character: PlayerCharacter,
         context: ModelContext
-    ) {
+    ) -> [MaterialDrop] {
         let characterID = character.id
+        var drops: [MaterialDrop] = []
         
-        // Essence scales with verification type (verified tasks give more)
         let essenceAmount: Int
         switch task.verificationType {
         case .none: essenceAmount = 1
@@ -1853,23 +2336,28 @@ class GameEngine: ObservableObject {
         }
         
         addMaterial(.essence, rarity: .common, amount: essenceAmount, characterID: characterID, context: context)
+        drops.append(MaterialDrop(type: .essence, rarity: .common, amount: essenceAmount))
         
         // 20% chance of a random common material
         if Int.random(in: 1...5) == 1 {
             let bonusTypes: [MaterialType] = [.ore, .crystal, .hide, .herb]
             if let bonusType = bonusTypes.randomElement() {
                 addMaterial(bonusType, rarity: .common, amount: 1, characterID: characterID, context: context)
+                drops.append(MaterialDrop(type: bonusType, rarity: .common, amount: 1))
             }
         }
+        
+        return drops
     }
     
     /// Award crafting materials after clearing a dungeon room
+    @discardableResult
     func awardMaterialsForDungeonRoom(
         encounterType: EncounterType,
         dungeonTier: Int,
         character: PlayerCharacter,
         context: ModelContext
-    ) {
+    ) -> MaterialDrop {
         let characterID = character.id
         let rarity = rarityForDungeonTier(dungeonTier)
         
@@ -1882,20 +2370,21 @@ class GameEngine: ObservableObject {
         case .trap, .boss:
             materialType = .hide
         case .treasure:
-            // Treasure rooms give a random material
             materialType = [MaterialType.ore, .crystal, .hide].randomElement() ?? .ore
         }
         
         let amount = encounterType == .boss ? 2 : 1
         addMaterial(materialType, rarity: rarity, amount: amount, characterID: characterID, context: context)
+        return MaterialDrop(type: materialType, rarity: rarity, amount: amount)
     }
     
     /// Award crafting materials after completing a mission
+    @discardableResult
     func awardMaterialsForMission(
         missionRarity: MissionRarity,
         character: PlayerCharacter,
         context: ModelContext
-    ) {
+    ) -> MaterialDrop {
         let characterID = character.id
         let amount: Int
         let itemRarity: ItemRarity
@@ -1912,13 +2401,14 @@ class GameEngine: ObservableObject {
             itemRarity = .rare
         case .epic:
             amount = 3
-            itemRarity = .rare  // cap at rare for herbs
+            itemRarity = .rare
         case .legendary:
             amount = 5
-            itemRarity = .rare  // cap at rare for herbs
+            itemRarity = .rare
         }
         
         addMaterial(.herb, rarity: itemRarity, amount: amount, characterID: characterID, context: context)
+        return MaterialDrop(type: .herb, rarity: itemRarity, amount: amount)
     }
     
     /// Award Research Tokens from a successful AFK mission
@@ -1951,6 +2441,17 @@ class GameEngine: ObservableObject {
     }
     
     // MARK: - Material Helpers
+    
+    /// Public wrapper to award a material drop (used by views that resolve rewards)
+    func addMaterialPublic(
+        _ type: MaterialType,
+        rarity: ItemRarity,
+        amount: Int,
+        characterID: UUID,
+        context: ModelContext
+    ) {
+        addMaterial(type, rarity: rarity, amount: amount, characterID: characterID, context: context)
+    }
     
     /// Add a quantity of a material to the character's stash (creates or increments)
     private func addMaterial(
@@ -2252,19 +2753,21 @@ class GameEngine: ObservableObject {
     
     /// Calculate gold cost to enhance equipment to the next level.
     /// Uses server-driven cost multiplier from ContentManager when available.
-    func enhancementCost(for item: Equipment) -> Int {
+    /// Applies a player-level factor so enhancement stays proportional to income.
+    func enhancementCost(for item: Equipment, playerLevel: Int = 1) -> Int {
         let basePrice = Self.enhancementBasePrice(rarity: item.rarity)
         let nextLevel = item.enhancementLevel + 1
+        let levelFactor = 1.0 + Double(playerLevel / 10) * 0.25
         
         // Try server-driven multiplier
         let cm = ContentManager.shared
         if let rule = cm.enhancementRule(forLevel: nextLevel) {
-            return Int(Double(basePrice) * rule.costMultiplier)
+            return Int(Double(basePrice) * rule.costMultiplier * levelFactor)
         }
         
         // Fallback: use default multiplier table
         let multiplier = Self.defaultEnhancementCostMultiplier(level: nextLevel)
-        return Int(Double(basePrice) * multiplier)
+        return Int(Double(basePrice) * multiplier * levelFactor)
     }
     
     /// Base gold cost per rarity (from §13 in GAME_DESIGN.md)
@@ -2330,7 +2833,7 @@ class GameEngine: ObservableObject {
             return EnhancementResult(success: false, critical: false, statGained: 0, newLevel: item.enhancementLevel, goldSpent: 0, materialsConsumed: false)
         }
         
-        let cost = enhancementCost(for: item)
+        let cost = enhancementCost(for: item, playerLevel: character.level)
         guard character.gold >= cost else {
             return EnhancementResult(success: false, critical: false, statGained: 0, newLevel: item.enhancementLevel, goldSpent: 0, materialsConsumed: false)
         }
@@ -2358,7 +2861,7 @@ class GameEngine: ObservableObject {
             let actualStatGain = isCritical ? baseStatGain * 2 : baseStatGain
             
             item.enhancementLevel = nextLevel
-            item.statBonus += actualStatGain
+            item.statBonus += Double(actualStatGain)
             
             Task { try? await SupabaseService.shared.syncEquipment(item) }
             SyncManager.shared.queueCharacterSync(character)
@@ -2524,6 +3027,10 @@ class GameEngine: ObservableObject {
         let herbRarity: ItemRarity
         let goldCost: Int
         let levelRequirement: Int
+        
+        var imageName: String? {
+            consumableType.imageName(effectValue: effectValue, effectStat: effectStat)
+        }
     }
     
     /// All available herb crafting recipes (server-driven from ContentManager with fallback)
@@ -2562,12 +3069,12 @@ class GameEngine: ObservableObject {
         ),
         // Rare Herbs → Strong consumables
         HerbRecipe(
-            id: "herb_forge_catalyst", name: "Forge Catalyst", description: "Volatile compounds that double enhancement success.",
+            id: "herb_forge_catalyst", name: "Forge Tonic", description: "A volatile crimson brew that doubles enhancement success.",
             consumableType: .forgeCatalyst, icon: "bolt.trianglebadge.exclamationmark.fill", effectValue: 1, effectStat: nil,
             herbCost: 3, herbRarity: .rare, goldCost: 200, levelRequirement: 20
         ),
         HerbRecipe(
-            id: "herb_party_beacon", name: "Party Beacon", description: "A radiant concoction that strengthens bonds.",
+            id: "herb_party_beacon", name: "Bond Totem", description: "A radiant totem infusion that strengthens bonds.",
             consumableType: .partyBeacon, icon: "antenna.radiowaves.left.and.right", effectValue: 25, effectStat: nil,
             herbCost: 3, herbRarity: .rare, goldCost: 250, levelRequirement: 15
         ),
@@ -2664,7 +3171,8 @@ class GameEngine: ObservableObject {
             levelRequirement: item.levelRequirement,
             secondaryStat: item.secondaryStat,
             secondaryStatBonus: item.secondaryStatBonus,
-            ownerID: character.id
+            ownerID: character.id,
+            baseType: item.baseType
         )
         context.insert(purchased)
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
@@ -2768,22 +3276,16 @@ class GameEngine: ObservableObject {
         
         switch consumable.consumableType {
         case .hpPotion:
-            // Heal character's persistent HP
             let oldHP = character.currentHP
             character.heal(amount: consumable.effectValue)
             let healed = character.currentHP - oldHP
             if healed > 0 {
-                consumable.remainingUses -= 1
-                if consumable.remainingUses <= 0 {
-                    context.delete(consumable)
-                }
-                try? context.save()
+                consumeAndSave(consumable, context: context)
                 return true
             }
-            return false // Already at max HP
+            return false
             
         case .regenBuff:
-            // Apply regen buff — effectValue is the regen rate, duration is tiered by cost
             let durationHours: TimeInterval
             if consumable.effectValue >= 150 {
                 durationHours = 12
@@ -2793,17 +3295,100 @@ class GameEngine: ObservableObject {
                 durationHours = 4
             }
             character.regenBuffExpiresAt = Date().addingTimeInterval(durationHours * 3600)
-            consumable.remainingUses -= 1
-            if consumable.remainingUses <= 0 {
-                context.delete(consumable)
-            }
-            try? context.save()
+            consumeAndSave(consumable, context: context)
             return true
             
-        default:
-            // Other consumables handled by their existing systems
-            return false
+        case .expBoost:
+            character.expBoostTasksRemaining += consumable.effectValue
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .goldBoost:
+            character.goldBoostTasksRemaining += consumable.effectValue
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .streakShield:
+            character.streakFreezeCharges += consumable.effectValue
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .statFood:
+            guard let stat = consumable.effectStat else { return false }
+            character.statFoodBuffStat = stat
+            character.statFoodBuffAmount = consumable.effectValue
+            character.statFoodBuffExpiresAt = Date().addingTimeInterval(3600) // 1 hour duration
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .missionSpeedUp:
+            guard let active = activeMission else { return false }
+            let remaining = active.completesAt.timeIntervalSince(Date())
+            if remaining > 0 {
+                active.completesAt = Date().addingTimeInterval(remaining / 2.0)
+            }
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .materialMagnet:
+            character.materialMagnetTasksRemaining += consumable.effectValue
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .luckElixir:
+            character.luckElixirActive = true
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .affixScroll:
+            character.affixScrollActive = true
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .dutyScroll:
+            guard DutyBoardGenerator.generateScrollDuty(
+                characterID: character.id,
+                context: context
+            ) != nil else {
+                return false
+            }
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .forgeCatalyst:
+            character.forgeCatalystActive = true
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .partyBeacon:
+            character.partyBeaconExpiresAt = Date().addingTimeInterval(3600) // 1 hour
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .dungeonRevive:
+            // Handled separately in dungeon flow — just mark as used here
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .lootReroll:
+            // Handled separately in equipment detail — just mark as used here
+            consumeAndSave(consumable, context: context)
+            return true
+            
+        case .expeditionCompass:
+            // Handled by expedition view to reveal rewards — just mark as used
+            consumeAndSave(consumable, context: context)
+            return true
         }
+    }
+    
+    /// Shared helper: decrement uses, delete if empty, and save context.
+    private func consumeAndSave(_ consumable: Consumable, context: ModelContext) {
+        consumable.remainingUses -= 1
+        if consumable.remainingUses <= 0 {
+            context.delete(consumable)
+        }
+        try? context.save()
     }
     
     // MARK: - Partner Task Sync
@@ -3079,7 +3664,7 @@ class GameEngine: ObservableObject {
     // MARK: - Task Loot Rolls
     
     /// Roll for loot on task completion.
-    /// Base rates: 5-8% equipment, 30-40% materials, 15-20% consumables
+    /// Base rates: 9% equipment, 33% materials, 20% consumables, ~38% nothing
     static func rollTaskLoot(
         character: PlayerCharacter,
         lootBonus: Double = 0.0,
@@ -3088,46 +3673,64 @@ class GameEngine: ObservableObject {
         let roll = Double.random(in: 0...1)
         let charID = character.id
         
-        // Equipment: 5-8% base (use 6.5% center + loot bonus)
-        let equipChance = 0.065 + lootBonus
+        // Equipment: 9% base + loot bonus
+        let equipChance = 0.09 + lootBonus
         if roll < equipChance {
             let tier = max(1, character.level / 10 + 1)
             let equipment = LootGenerator.generateEquipment(
                 tier: tier,
                 luck: character.effectiveStats.luck,
+                characterClass: character.characterClass,
                 playerLevel: character.level
             )
             equipment.ownerID = charID
+            
+            // Apply affix scroll if active
+            if character.affixScrollActive {
+                if equipment.prefix == nil {
+                    let (prefix, _) = AffixRoller.rollAffixes(
+                        rarity: max(equipment.rarity, .uncommon),
+                        characterClass: character.characterClass,
+                        itemLevel: equipment.levelRequirement
+                    )
+                    equipment.prefix = prefix
+                }
+                character.affixScrollActive = false
+            }
+            
             context.insert(equipment)
             Task { try? await SupabaseService.shared.syncEquipment(equipment) }
             return LootDrop(type: .equipment(equipment))
         }
         
-        // Materials: 30-40% base (use 35% center)
-        let materialChance = equipChance + 0.35
+        // Materials: 33% base (Material Magnet boosts to 48%)
+        let materialMagnetActive = character.materialMagnetTasksRemaining > 0
+        let materialBase = materialMagnetActive ? 0.48 : 0.33
+        let materialChance = equipChance + materialBase
         if roll < materialChance {
             let materialTypes: [MaterialType] = [.ore, .crystal, .hide, .herb, .essence]
             let matType = materialTypes.randomElement() ?? .essence
             let rarity: ItemRarity = {
                 let r = Double.random(in: 0...1)
-                if r < 0.6 { return .common }
-                if r < 0.85 { return .uncommon }
-                if r < 0.97 { return .rare }
+                if r < 0.45 { return .common }
+                if r < 0.75 { return .uncommon }
+                if r < 0.93 { return .rare }
                 return .epic
             }()
-            let qty = rarity == .common ? Int.random(in: 1...3) : 1
+            let baseQty = rarity == .common ? Int.random(in: 1...3) : 1
+            let qty = materialMagnetActive ? baseQty * 2 : baseQty
             return LootDrop(type: .material(matType, rarity, qty))
         }
         
-        // Consumables: 15-20% base (use 17.5%)
-        let consumableChance = materialChance + 0.175
+        // Consumables: 20% base
+        let consumableChance = materialChance + 0.20
         if roll < consumableChance {
-            let consumableNames = ["Herbal Tea", "Energy Bar", "Lucky Coin", "Trail Mix"]
-            let name = consumableNames.randomElement() ?? "Herbal Tea"
-            return LootDrop(type: .consumable(name))
+            if let consumable = ConsumableDropTable.rollTaskDrop(level: character.level, characterID: charID) {
+                return LootDrop(type: .consumableItem(consumable))
+            }
         }
         
-        // No loot (~40% chance)
+        // No loot (~38% chance)
         return nil
     }
     
@@ -3328,6 +3931,9 @@ struct TaskCompletionResult {
     /// HP healed from completing this task (0 if already at max)
     let hpHealed: Int
     
+    /// Material drops from task completion (essence + chance of bonus)
+    var materialDrops: [MaterialDrop] = []
+    
     /// Convenience: first bonus stat gain (for backward-compatible display)
     var bonusStatGain: (StatType, Int)? {
         bonusStatGains.first
@@ -3397,7 +4003,8 @@ struct LootDrop {
     enum LootType {
         case equipment(Equipment)
         case material(MaterialType, ItemRarity, Int)   // type, rarity, quantity
-        case consumable(String)                        // consumable template name
+        case consumable(String)                        // consumable template name (legacy)
+        case consumableItem(Consumable)                // actual consumable object
     }
     
     let type: LootType
@@ -3407,6 +4014,7 @@ struct LootDrop {
         case .equipment(let item): return item.name
         case .material(let matType, _, let qty): return "\(qty)x \(matType.rawValue)"
         case .consumable(let name): return name
+        case .consumableItem(let item): return item.name
         }
     }
     
@@ -3415,6 +4023,16 @@ struct LootDrop {
         case .equipment(let item): return item.slot.icon
         case .material: return "cube.fill"
         case .consumable: return "cross.vial.fill"
+        case .consumableItem(let item): return item.icon
+        }
+    }
+    
+    var imageName: String? {
+        switch type {
+        case .equipment(let item): return item.imageName
+        case .material(let matType, let rarity, _): return matType.imageName(rarity: rarity)
+        case .consumable: return nil
+        case .consumableItem(let item): return item.imageName
         }
     }
     
@@ -3423,6 +4041,7 @@ struct LootDrop {
         case .equipment(let item): return item.rarity.color
         case .material(_, let rarity, _): return rarity.color
         case .consumable: return "RarityUncommon"
+        case .consumableItem: return "RarityUncommon"
         }
     }
 }
@@ -3506,6 +4125,18 @@ extension GameEngine {
         
         // Roll for materials
         let materialDropped = success && Double.random(in: 0...1) <= stageRewards.materialChance
+        var matTypeName: String? = nil
+        var matRarityName: String? = nil
+        var matAmount: Int? = nil
+        if materialDropped {
+            let matTypes: [MaterialType] = [.ore, .crystal, .hide, .herb]
+            let matType = matTypes.randomElement() ?? .ore
+            let matRarity: ItemRarity = character.level >= 30 ? .rare : (character.level >= 15 ? .uncommon : .common)
+            let amt = Int.random(in: 1...2)
+            matTypeName = matType.rawValue
+            matRarityName = matRarity.rawValue
+            matAmount = amt
+        }
         
         // Roll for card
         let cardDropped = success && Double.random(in: 0...1) <= stageRewards.cardChance
@@ -3536,7 +4167,10 @@ extension GameEngine {
             earnedGold: goldEarned,
             lootDroppedName: lootName,
             materialDropped: materialDropped,
-            cardDropped: cardDropped
+            cardDropped: cardDropped,
+            materialTypeName: matTypeName,
+            materialRarityName: matRarityName,
+            materialAmount: matAmount
         )
         
         // Record the result (advances stage or marks completion)
@@ -3592,6 +4226,12 @@ struct MissionCompletionResult {
     
     /// Number of Research Tokens dropped (mission-exclusive)
     var researchTokensDropped: Int = 0
+    
+    /// Consumable item dropped from mission completion (nil if none)
+    var consumableDropped: String? = nil
+    
+    /// Material drops awarded from this mission (herbs)
+    var materialDrops: [MaterialDrop] = []
     
     /// Class the character ranked up to (nil if not a rank-up training)
     var rankedUpToClass: CharacterClass? = nil

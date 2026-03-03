@@ -24,8 +24,8 @@ final class Equipment {
     /// Primary stat this item boosts
     var primaryStat: StatType
     
-    /// Amount of stat bonus
-    var statBonus: Int
+    /// Amount of stat bonus (Double for precise quirk/affix stacking)
+    var statBonus: Double
     
     /// Level required to equip
     var levelRequirement: Int
@@ -33,8 +33,8 @@ final class Equipment {
     /// Secondary stat this item boosts (optional)
     var secondaryStat: StatType?
     
-    /// Amount of secondary stat bonus
-    var secondaryStatBonus: Int
+    /// Amount of secondary stat bonus (Double for precise quirk/affix stacking)
+    var secondaryStatBonus: Double
     
     /// Character ID of the owner (nil = unowned)
     var ownerID: UUID?
@@ -51,6 +51,9 @@ final class Equipment {
     /// Catalog ID for matching gear sets and milestone items (nil for procedurally generated gear)
     var catalogID: String?
     
+    /// Explicit base type for sprite resolution (e.g. "sword", "leather armor"). Overrides keyword matching.
+    var baseType: String?
+    
     // MARK: - Affixes
     
     /// Prefix affix (e.g. "Blazing" — +X% EXP from physical tasks)
@@ -61,7 +64,22 @@ final class Equipment {
     @Relationship(deleteRule: .cascade)
     var suffix: EquipmentAffix?
     
-    /// Maximum enhancement level
+    // MARK: - Equipment Leveling
+    
+    /// Equipment experience points (earned by using the item in activities)
+    var equipmentEXP: Int = 0
+    
+    /// Equipment level (1-5). Gains a quirk at each level-up (2, 3, 4, 5).
+    var equipmentLevel: Int = 1
+    
+    /// Quirks gained through leveling — random traits with positive, negative, or mixed effects
+    @Relationship(deleteRule: .cascade)
+    var quirks: [EquipmentQuirk] = []
+    
+    /// Maximum equipment level
+    static let maxEquipmentLevel = 5
+    
+    /// Maximum enhancement level (legacy, will be removed)
     static let maxEnhancementLevel = 10
     
     init(
@@ -70,11 +88,12 @@ final class Equipment {
         slot: EquipmentSlot,
         rarity: ItemRarity,
         primaryStat: StatType,
-        statBonus: Int,
+        statBonus: Double,
         levelRequirement: Int = 1,
         secondaryStat: StatType? = nil,
-        secondaryStatBonus: Int = 0,
-        ownerID: UUID? = nil
+        secondaryStatBonus: Double = 0,
+        ownerID: UUID? = nil,
+        baseType: String? = nil
     ) {
         self.id = UUID()
         self.name = name
@@ -90,18 +109,128 @@ final class Equipment {
         self.isEquipped = false
         self.acquiredAt = Date()
         self.enhancementLevel = 0
+        self.equipmentEXP = 0
+        self.equipmentLevel = 1
+        self.quirks = []
         self.prefix = nil
         self.suffix = nil
+        self.baseType = baseType
     }
     
     /// Primary stat bonus including enhancements
-    var effectivePrimaryBonus: Int {
-        statBonus + enhancementLevel
+    var effectivePrimaryBonus: Double {
+        statBonus + Double(enhancementLevel)
     }
     
     /// Total stat bonus (primary + enhancement + secondary)
-    var totalStatBonus: Int {
+    var totalStatBonus: Double {
         effectivePrimaryBonus + secondaryStatBonus
+    }
+    
+    /// Rounded display value for primary bonus
+    var effectivePrimaryBonusDisplay: Int {
+        Int(effectivePrimaryBonus.rounded())
+    }
+    
+    /// Rounded display value for total bonus
+    var totalStatBonusDisplay: Int {
+        Int(totalStatBonus.rounded())
+    }
+    
+    /// Rounded display value for base stat bonus
+    var statBonusDisplay: Int {
+        Int(statBonus.rounded())
+    }
+    
+    /// Rounded display value for secondary stat bonus
+    var secondaryStatBonusDisplay: Int {
+        Int(secondaryStatBonus.rounded())
+    }
+    
+    // MARK: - Equipment Leveling
+    
+    /// EXP required to reach a given equipment level
+    static func expRequired(forLevel level: Int) -> Int {
+        switch level {
+        case 2: return 100
+        case 3: return 350
+        case 4: return 750
+        case 5: return 1500
+        default: return 0
+        }
+    }
+    
+    /// EXP needed to reach the next level from current level (0 if maxed)
+    var expToNextLevel: Int {
+        guard equipmentLevel < Equipment.maxEquipmentLevel else { return 0 }
+        return Equipment.expRequired(forLevel: equipmentLevel + 1)
+    }
+    
+    /// Progress toward next level as 0.0-1.0
+    var levelProgress: Double {
+        guard expToNextLevel > 0 else { return 1.0 }
+        return min(1.0, Double(equipmentEXP) / Double(expToNextLevel))
+    }
+    
+    /// Whether this item can still level up
+    var canLevelUp: Bool {
+        equipmentLevel < Equipment.maxEquipmentLevel
+    }
+    
+    /// Grant EXP to this item. Returns true if a level-up occurred.
+    @discardableResult
+    func grantEXP(_ amount: Int) -> Bool {
+        guard canLevelUp else { return false }
+        equipmentEXP += amount
+        
+        if equipmentEXP >= expToNextLevel {
+            equipmentEXP -= expToNextLevel
+            equipmentLevel += 1
+            return true
+        }
+        return false
+    }
+    
+    /// Aggregate quirk stat bonuses with diminishing returns
+    var quirkBonuses: [StatType: Double] {
+        QuirkRoller.aggregateQuirkBonuses(quirks)
+    }
+    
+    /// Aggregate quirk special effects
+    var quirkSpecialEffects: [SpecialEffectType: Double] {
+        QuirkRoller.aggregateSpecialEffects(quirks)
+    }
+    
+    /// Detect the base type keyword from the item name for quirk pool lookups
+    var detectedBaseType: String {
+        if let bt = baseType { return bt.lowercased() }
+        let lower = name.lowercased()
+        let keywords = [
+            "sword", "axe", "staff", "dagger", "bow", "orb", "wand", "mace",
+            "spear", "shield", "crossbow", "tome", "halberd",
+            "plate", "chainmail", "robes", "leather armor", "breastplate",
+            "heavy helm", "helm", "heavy gauntlets", "gauntlets",
+            "heavy boots", "boots", "greaves", "pauldrons", "cape", "mantle",
+            "ring", "amulet", "pendant", "earring", "brooch", "talisman",
+            "cloak", "bracelet", "charm", "belt"
+        ]
+        return keywords.first(where: { lower.contains($0) }) ?? "sword"
+    }
+    
+    /// Armor weight class derived from the item's base type
+    var armorWeight: ArmorWeight {
+        guard slot == .armor else { return .universal }
+        let base = detectedBaseType
+        switch base {
+        case "plate", "chainmail", "breastplate", "pauldrons",
+             "heavy helm", "heavy gauntlets", "heavy boots":
+            return .heavy
+        case "robes", "leather armor", "helm", "gauntlets",
+             "boots", "greaves":
+            return .light
+        default:
+            return .universal
+        }
     }
     
     /// Maps this equipment to a rarity-tinted image asset in Equipment.xcassets.
@@ -121,6 +250,10 @@ final class Equipment {
     
     /// The base equipment type image key (without rarity suffix).
     private var baseImageName: String? {
+        if let bt = baseType {
+            return "equip-\(bt.lowercased().replacingOccurrences(of: " ", with: "-"))"
+        }
+        
         let lowerName = name.lowercased()
         
         // Weapon base types
@@ -130,30 +263,32 @@ final class Equipment {
             ("staff", "equip-staff"),
             ("dagger", "equip-dagger"),
             ("bow", "equip-bow"),
+            ("orb", "equip-wand"),
             ("wand", "equip-wand"),
             ("mace", "equip-mace"),
             ("spear", "equip-spear"),
+            ("halberd", "equip-halberd"),
             ("shield", "equip-shield"),
             ("crossbow", "equip-crossbow"),
             ("tome", "equip-tome"),
-            ("halberd", "equip-halberd"),
         ]
         
-        // Armor base types
+        // Armor base types (heavy-specific keywords must come before generic ones)
         let armorMap: [(keyword: String, asset: String)] = [
             ("plate", "equip-plate"),
             ("chainmail", "equip-chainmail"),
+            ("breastplate", "equip-breastplate"),
             ("robes", "equip-robes"),
             ("leather armor", "equip-leather-armor"),
-            ("breastplate", "equip-breastplate"),
+            ("heavy helm", "equip-heavy-helm"),
             ("helm", "equip-helm"),
+            ("heavy gauntlets", "equip-heavy-gauntlets"),
             ("gauntlets", "equip-gauntlets"),
+            ("heavy boots", "equip-heavy-boots"),
             ("boots", "equip-boots"),
             ("greaves", "equip-boots"),
             ("sandals", "equip-boots"),
             ("pauldrons", "equip-pauldrons"),
-            ("cape", "equip-cape"),
-            ("mantle", "equip-cape"),
         ]
         
         // Accessory base types (Rings, Amulets, Pendants, Earrings, Brooches, Talismans)
@@ -161,18 +296,25 @@ final class Equipment {
             ("ring", "equip-ring"),
             ("amulet", "equip-amulet"),
             ("pendant", "equip-pendant"),
+            ("brooch", "equip-brooch"),
             ("earring", "equip-earring"),
             ("stud", "equip-earring"),
-            ("brooch", "equip-brooch"),
             ("talisman", "equip-talisman"),
         ]
         
-        // Trinket base types (Cloaks, Belts, Charms, Bracelets — moved from Accessory)
+        // Trinket base types (Belts, Charms, Bracelets)
         let trinketMap: [(keyword: String, asset: String)] = [
-            ("cloak", "equip-cloak"),
-            ("bracelet", "equip-bracelet"),
             ("charm", "equip-charm"),
+            ("bracelet", "equip-bracelet"),
             ("belt", "equip-belt"),
+        ]
+        
+        // Cloak base types
+        let cloakMap: [(keyword: String, asset: String)] = [
+            ("cloak", "equip-cloak"),
+            ("cape", "equip-cape"),
+            ("mantle", "equip-cloak"),
+            ("shroud", "equip-cloak"),
         ]
         
         let maps: [[(keyword: String, asset: String)]]
@@ -181,6 +323,7 @@ final class Equipment {
         case .armor: maps = [armorMap]
         case .accessory: maps = [accessoryMap]
         case .trinket: maps = [trinketMap]
+        case .cloak: maps = [cloakMap]
         }
         
         for map in maps {
@@ -215,13 +358,13 @@ final class Equipment {
     
     /// Summary of all stat bonuses (includes enhancement)
     var statSummary: String {
-        var primaryText = "+\(effectivePrimaryBonus) \(primaryStat.rawValue)"
+        var primaryText = "+\(effectivePrimaryBonusDisplay) \(primaryStat.rawValue)"
         if enhancementLevel > 0 {
             primaryText += " [+\(enhancementLevel)]"
         }
         var parts = [primaryText]
         if let secondary = secondaryStat, secondaryStatBonus > 0 {
-            parts.append("+\(secondaryStatBonus) \(secondary.rawValue)")
+            parts.append("+\(secondaryStatBonusDisplay) \(secondary.rawValue)")
         }
         return parts.joined(separator: ", ")
     }
@@ -236,12 +379,28 @@ final class Equipment {
 
 // MARK: - Supporting Types
 
-/// Equipment slot types (4 slots: Weapon, Armor, Accessory, Trinket)
+/// Armor weight class — determines which classes can equip a piece
+enum ArmorWeight: String, Codable, CaseIterable {
+    case light = "Light"
+    case heavy = "Heavy"
+    case universal = "Universal"
+    
+    var label: String {
+        switch self {
+        case .light: return "Light Armor"
+        case .heavy: return "Heavy Armor"
+        case .universal: return ""
+        }
+    }
+}
+
+/// Equipment slot types (5 slots: Weapon, Armor, Accessory, Trinket, Cloak)
 enum EquipmentSlot: String, Codable, CaseIterable {
     case weapon = "Weapon"
     case armor = "Armor"
     case accessory = "Accessory"
     case trinket = "Trinket"
+    case cloak = "Cloak"
     
     var icon: String {
         switch self {
@@ -249,17 +408,32 @@ enum EquipmentSlot: String, Codable, CaseIterable {
         case .armor: return "shield.fill"
         case .accessory: return "sparkle"
         case .trinket: return "tag.fill"
+        case .cloak: return "wind"
         }
     }
 }
 
 /// Item rarity
-enum ItemRarity: String, Codable, CaseIterable {
+enum ItemRarity: String, Codable, CaseIterable, Comparable {
     case common = "Common"
     case uncommon = "Uncommon"
     case rare = "Rare"
     case epic = "Epic"
     case legendary = "Legendary"
+    
+    private var sortOrder: Int {
+        switch self {
+        case .common: return 0
+        case .uncommon: return 1
+        case .rare: return 2
+        case .epic: return 3
+        case .legendary: return 4
+        }
+    }
+    
+    static func < (lhs: ItemRarity, rhs: ItemRarity) -> Bool {
+        lhs.sortOrder < rhs.sortOrder
+    }
     
     var color: String {
         switch self {

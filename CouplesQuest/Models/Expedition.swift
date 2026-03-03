@@ -87,6 +87,10 @@ struct StageResult: Codable, Identifiable, Hashable {
     let lootDroppedName: String?
     let materialDropped: Bool
     let cardDropped: Bool
+    
+    var materialTypeName: String?
+    var materialRarityName: String?
+    var materialAmount: Int?
 }
 
 // MARK: - Expedition (Template)

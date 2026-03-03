@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LevelUpCelebrationView: View {
     @EnvironmentObject var gameEngine: GameEngine
@@ -188,10 +189,13 @@ struct LevelUpCelebrationView: View {
         // Crafting materials
         for reward in rewards {
             if case .craftingMaterial(let name, let qty) = reward {
+                let matType = MaterialType.allCases.first { $0.displayName == name }
+                let imgName = matType?.imageName(rarity: .common)
                 displays.append(RewardDisplay(
-                    icon: "cube.fill",
+                    icon: matType?.icon ?? "cube.fill",
                     text: "+\(qty) \(name)",
-                    color: "AccentOrange"
+                    color: "AccentOrange",
+                    imageName: imgName
                 ))
             }
         }
@@ -250,6 +254,7 @@ struct RewardDisplay {
     let icon: String
     let text: String
     let color: String
+    var imageName: String? = nil
 }
 
 struct LevelUpRewardRow: View {
@@ -257,9 +262,22 @@ struct LevelUpRewardRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: reward.icon)
-                .font(.title3)
-                .foregroundColor(Color(reward.color))
+            ZStack {
+                Circle()
+                    .fill(Color(reward.color).opacity(0.15))
+                    .frame(width: 36, height: 36)
+                if let imgName = reward.imageName, UIImage(named: imgName) != nil {
+                    Image(imgName)
+                        .interpolation(.none)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 26, height: 26)
+                } else {
+                    Image(systemName: reward.icon)
+                        .font(.title3)
+                        .foregroundColor(Color(reward.color))
+                }
+            }
             
             Text(reward.text)
                 .font(.custom("Avenir-Heavy", size: 16))

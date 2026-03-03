@@ -37,12 +37,14 @@ struct DungeonRunView: View {
     
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Image(dungeon.theme.thumbnailImage)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .ignoresSafeArea()
+            
+            Color("BackgroundTop").opacity(0.75)
+                .ignoresSafeArea()
             
             switch phase {
             case .waiting:
@@ -126,12 +128,15 @@ struct DungeonRunView: View {
                     .frame(width: 160, height: 160)
                     .rotationEffect(.degrees(-90))
                 
-                Circle()
-                    .fill(Color(dungeon.difficulty.color).opacity(0.1))
+                Image(dungeon.theme.thumbnailImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 130, height: 130)
-                Image(systemName: dungeon.theme.icon)
-                    .font(.system(size: 50))
-                    .foregroundColor(Color(dungeon.difficulty.color))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().fill(Color(dungeon.difficulty.color).opacity(0.1))
+                    )
                     .scaleEffect(animateIcon ? 1.05 : 0.95)
                     .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: animateIcon)
             }
@@ -221,12 +226,15 @@ struct DungeonRunView: View {
             Spacer()
             
             ZStack {
-                Circle()
-                    .fill(Color(dungeon.difficulty.color).opacity(0.15))
+                Image(dungeon.theme.thumbnailImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 120, height: 120)
-                Image(systemName: dungeon.theme.icon)
-                    .font(.system(size: 56))
-                    .foregroundColor(Color(dungeon.difficulty.color))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().fill(Color(dungeon.difficulty.color).opacity(0.15))
+                    )
                     .scaleEffect(animateIcon ? 1.2 : 1.0)
                     .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: animateIcon)
             }
@@ -662,9 +670,37 @@ struct DungeonRunView: View {
             ForEach(result.lootDrops, id: \.id) { item in
                 LootDropRow(equipment: item)
             }
+            
+            if !result.materialDrops.isEmpty {
+                Divider().overlay(Color.white.opacity(0.1))
+                HStack {
+                    Image(systemName: "cube.fill")
+                        .foregroundColor(Color("AccentOrange"))
+                    Text("Materials Gathered")
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                ForEach(consolidatedMaterialDrops(result.materialDrops)) { drop in
+                    MaterialLootRow(drop: drop, size: 36)
+                }
+            }
         }
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 20).fill(Color("CardBackground")))
+    }
+    
+    private func consolidatedMaterialDrops(_ drops: [MaterialDrop]) -> [MaterialDrop] {
+        var grouped: [String: (MaterialType, ItemRarity, Int)] = [:]
+        for drop in drops {
+            let key = "\(drop.type.rawValue)-\(drop.rarity.rawValue)"
+            if let existing = grouped[key] {
+                grouped[key] = (existing.0, existing.1, existing.2 + drop.amount)
+            } else {
+                grouped[key] = (drop.type, drop.rarity, drop.amount)
+            }
+        }
+        return grouped.values.map { MaterialDrop(type: $0.0, rarity: $0.1, amount: $0.2) }
+            .sorted { $0.type.rawValue < $1.type.rawValue }
     }
     
     // MARK: - Secret Discovery Card
@@ -708,8 +744,12 @@ struct DungeonRunView: View {
                 
                 if result.secretBonusMaterials > 0 {
                     HStack(spacing: 8) {
-                        Image(systemName: "hammer.fill")
-                            .foregroundColor(Color("AccentPurple"))
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color("AccentPurple").opacity(0.15))
+                                .frame(width: 28, height: 28)
+                            MaterialIconView(materialType: .crystal, rarity: .rare, size: 24)
+                        }
                         Text("Bonus Materials")
                             .font(.custom("Avenir-Medium", size: 14))
                         Spacer()
@@ -914,6 +954,19 @@ struct DungeonRunView: View {
                 member.gold += result.totalGold / max(1, party.count)
             }
             
+            // Grant equipment EXP per cleared room
+            for (index, roomResult) in result.roomResults.enumerated() where roomResult.success {
+                let isBoss = index < dungeon.rooms.count && dungeon.rooms[index].isBossRoom
+                let roomEquipEXP = GameEngine.equipmentEXPForDungeonRoom(isBoss: isBoss)
+                for member in party {
+                    gameEngine.grantEquipmentEXP(
+                        character: member,
+                        amount: roomEquipEXP,
+                        context: modelContext
+                    )
+                }
+            }
+            
             // Capture character state AFTER rewards
             let expProgressAfter = leadChar?.levelProgress ?? 0
             let goldAfter = leadChar?.gold ?? 0
@@ -934,9 +987,16 @@ struct DungeonRunView: View {
             
             completionResult = result
             
-            // Insert loot into model context
+            // Insert loot into model context and sync to cloud
             for item in result.lootDrops {
                 modelContext.insert(item)
+                Task { try? await SupabaseService.shared.syncEquipment(item) }
+            }
+            
+            // Insert consumable drops into model context and sync to cloud
+            for consumable in result.consumableDrops {
+                modelContext.insert(consumable)
+                Task { try? await SupabaseService.shared.syncConsumable(consumable) }
             }
             
             // Collect any dropped cards
@@ -967,15 +1027,52 @@ struct DungeonRunView: View {
                 )
                 
                 // Award crafting materials for each cleared room
+                var collectedMaterials: [MaterialDrop] = []
                 for (index, roomResult) in result.roomResults.enumerated() where roomResult.success {
                     if index < dungeon.rooms.count {
-                        gameEngine.awardMaterialsForDungeonRoom(
+                        let drop = gameEngine.awardMaterialsForDungeonRoom(
                             encounterType: dungeon.rooms[index].encounterType,
                             dungeonTier: dungeon.lootTier,
                             character: firstMember,
                             context: modelContext
                         )
+                        collectedMaterials.append(drop)
                     }
+                }
+                result.materialDrops = collectedMaterials
+            }
+            
+            // Apply secret discovery rewards (gold, materials, equipment)
+            if result.secretDiscovery, let leader = party.first {
+                if result.secretBonusGold > 0 {
+                    leader.gold += result.secretBonusGold
+                }
+                
+                if result.secretBonusMaterials > 0 {
+                    let materialTypes: [MaterialType] = [.ore, .crystal, .hide]
+                    for _ in 0..<result.secretBonusMaterials {
+                        let randomType = materialTypes.randomElement() ?? .ore
+                        gameEngine.addMaterialPublic(
+                            randomType,
+                            rarity: .rare,
+                            amount: 1,
+                            characterID: leader.id,
+                            context: modelContext
+                        )
+                    }
+                }
+                
+                if result.secretEquipmentDrop {
+                    let secretItem = LootGenerator.generateEquipment(
+                        tier: dungeon.lootTier + 1,
+                        luck: leader.effectiveStats.luck,
+                        characterClass: leader.characterClass,
+                        playerLevel: leader.level
+                    )
+                    secretItem.ownerID = leader.id
+                    modelContext.insert(secretItem)
+                    Task { try? await SupabaseService.shared.syncEquipment(secretItem) }
+                    result.lootDrops.append(secretItem)
                 }
             }
             

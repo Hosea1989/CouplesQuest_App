@@ -90,22 +90,22 @@ struct ArenaMilestoneReward: Codable, Identifiable {
     static func milestoneForWave(_ wave: Int) -> ArenaMilestoneReward? {
         switch wave {
         case 5:
-            return ArenaMilestoneReward(wave: 5, goldReward: 50, consumableRarity: "common")
+            return ArenaMilestoneReward(wave: 5, goldReward: 150, consumableRarity: "common")
         case 10:
-            return ArenaMilestoneReward(wave: 10, goldReward: 100, consumableRarity: "uncommon")
+            return ArenaMilestoneReward(wave: 10, goldReward: 350, consumableRarity: "uncommon")
         case 15:
-            return ArenaMilestoneReward(wave: 15, goldReward: 150, consumableRarity: "rare", cardDropChance: 0.10)
+            return ArenaMilestoneReward(wave: 15, goldReward: 600, consumableRarity: "rare", cardDropChance: 0.10)
         case 20:
-            return ArenaMilestoneReward(wave: 20, goldReward: 200, consumableRarity: "rare", equipDropChance: 1.0, equipMinRarity: "rare")
+            return ArenaMilestoneReward(wave: 20, goldReward: 1000, consumableRarity: "rare", equipDropChance: 1.0, equipMinRarity: "rare")
         case 25:
-            return ArenaMilestoneReward(wave: 25, goldReward: 300, consumableRarity: "epic", cardDropChance: 0.25)
+            return ArenaMilestoneReward(wave: 25, goldReward: 1500, consumableRarity: "epic", cardDropChance: 0.25)
         default:
             // Every 10 waves after 25: escalating rewards
             if wave > 25 && wave % 10 == 0 {
                 let tier = (wave - 25) / 10
                 return ArenaMilestoneReward(
                     wave: wave,
-                    goldReward: 300 + tier * 100,
+                    goldReward: 1000 + tier * 300,
                     consumableRarity: "epic",
                     equipDropChance: min(0.5, 0.2 + Double(tier) * 0.05),
                     equipMinRarity: "rare",
@@ -439,7 +439,7 @@ final class ArenaRun {
     
     /// Gold reward for completing a wave (with modifier scaling)
     static func goldReward(wave: Int, modifier: ArenaModifier = .standard) -> Int {
-        let base = wave * 10
+        let base = wave * 20
         return Int(Double(base) * modifier.goldMultiplier)
     }
     
@@ -512,6 +512,21 @@ final class ArenaRun {
                 character.gold += goldEarned
                 run.totalExpEarned += expEarned
                 run.totalGoldEarned += goldEarned
+                
+                // Grant equipment EXP to all equipped gear
+                let arenaEquipEXP = GameEngine.equipmentEXPForArenaWave()
+                for item in character.equipment.allEquipped where item.canLevelUp {
+                    let didLevel = item.grantEXP(arenaEquipEXP)
+                    if didLevel {
+                        let quirk = QuirkRoller.rollQuirk(
+                            equipmentLevel: item.equipmentLevel,
+                            itemRarity: item.rarity,
+                            baseType: item.detectedBaseType,
+                            existingQuirks: item.quirks
+                        )
+                        item.quirks.append(quirk)
+                    }
+                }
                 
                 // Check for milestone
                 let isMilestone = ArenaMilestoneReward.isMilestoneWave(wave)

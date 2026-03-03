@@ -28,9 +28,9 @@ struct ContentEquipment: Codable, Identifiable, Hashable {
     let baseType: String        // "sword", "axe", "plate", "ring", "cloak", etc.
     let rarity: String          // "common" ... "legendary"
     let primaryStat: String     // "strength", "wisdom", etc.
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: String?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let levelRequirement: Int
     let imageName: String?
     let isSetPiece: Bool
@@ -61,9 +61,9 @@ struct ContentMilestoneGear: Codable, Identifiable, Hashable {
     let baseType: String
     let rarity: String
     let primaryStat: String
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: String?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let levelRequirement: Int
     let characterClass: String
     let goldCost: Int

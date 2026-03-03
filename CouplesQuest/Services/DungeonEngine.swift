@@ -588,20 +588,66 @@ struct DungeonEngine {
         
         // Generate loot drops
         var loot: [Equipment] = []
+        var consumableLoot: [Consumable] = []
         if success {
+            let leader = party.first
+            
+            // Apply Luck Elixir buff if active (+20% effective luck for this run)
+            var effectiveLuck = luck
+            if leader?.luckElixirActive == true {
+                effectiveLuck = luck + Int(Double(luck) * 0.20) + 4
+                leader?.luckElixirActive = false
+            }
+            
             loot = LootGenerator.generateDungeonLoot(
                 tier: dungeon.lootTier,
-                luck: luck,
+                luck: effectiveLuck,
                 roomResults: run.roomResults,
                 dungeonDifficulty: dungeon.difficulty,
                 classLootBonus: classLootBonus,
                 cardLootBonus: cardLootBonus,
-                playerLevel: party.first?.level
+                playerLevel: leader?.level
             )
+            
+            // Apply affix scroll to first equipment drop if active
+            if leader?.affixScrollActive == true, let firstItem = loot.first {
+                if firstItem.prefix == nil {
+                    let (prefix, _) = AffixRoller.rollAffixes(
+                        rarity: max(firstItem.rarity, .uncommon),
+                        characterClass: leader?.characterClass,
+                        itemLevel: firstItem.levelRequirement
+                    )
+                    firstItem.prefix = prefix
+                }
+                leader?.affixScrollActive = false
+            }
             
             // Assign loot to first party member (can be distributed later)
             for item in loot {
-                item.ownerID = party.first?.id
+                item.ownerID = leader?.id
+            }
+            
+            // Roll consumable drops from dungeon loot table
+            if let charID = leader?.id {
+                consumableLoot = ConsumableDropTable.rollDungeonDrops(
+                    tier: dungeon.lootTier,
+                    level: leader?.level ?? 1,
+                    roomResults: run.roomResults,
+                    difficulty: dungeon.difficulty,
+                    characterID: charID
+                )
+                
+                // Co-op bonus: partner dungeons have an extra consumable chance
+                if run.isCoopRun && Double.random(in: 0...1) <= ConsumableDropTable.DropRates.partnerCoopDungeonDrop {
+                    let bondLevel = 5 // Estimate if not available; views can pass actual
+                    if let partnerDrop = ConsumableDropTable.rollPartnerDrop(
+                        bondLevel: bondLevel,
+                        level: leader?.level ?? 1,
+                        characterID: charID
+                    ) {
+                        consumableLoot.append(partnerDrop)
+                    }
+                }
             }
         }
         
@@ -658,6 +704,7 @@ struct DungeonEngine {
             hpRemaining: run.partyHP,
             maxHP: run.maxPartyHP,
             lootDrops: loot,
+            consumableDrops: consumableLoot,
             roomResults: run.roomResults,
             isCoopRun: run.isCoopRun,
             bondExpEarned: bondExp,
@@ -833,7 +880,8 @@ struct DungeonCompletionResult {
     let totalRooms: Int
     let hpRemaining: Int
     let maxHP: Int
-    let lootDrops: [Equipment]
+    var lootDrops: [Equipment]
+    let consumableDrops: [Consumable]
     let roomResults: [RoomResult]
     let isCoopRun: Bool
     let bondExpEarned: Int
@@ -846,6 +894,9 @@ struct DungeonCompletionResult {
     let secretBonusMaterials: Int
     let secretEquipmentDrop: Bool
     let secretNarrative: String
+    
+    /// Material drops collected from cleared rooms (set by the view after awarding)
+    var materialDrops: [MaterialDrop] = []
     
     // MARK: - Character Progress Snapshot (set by the view after reward application)
     
@@ -887,6 +938,7 @@ struct DungeonCompletionResult {
         hpRemaining: Int,
         maxHP: Int,
         lootDrops: [Equipment],
+        consumableDrops: [Consumable] = [],
         roomResults: [RoomResult],
         isCoopRun: Bool = false,
         bondExpEarned: Int = 0,
@@ -907,6 +959,7 @@ struct DungeonCompletionResult {
         self.hpRemaining = hpRemaining
         self.maxHP = maxHP
         self.lootDrops = lootDrops
+        self.consumableDrops = consumableDrops
         self.roomResults = roomResults
         self.isCoopRun = isCoopRun
         self.bondExpEarned = bondExpEarned
@@ -969,6 +1022,66 @@ enum SecretDiscoveryNarratives {
             themeNarrative = [
                 "A rift in reality opens briefly — beyond it, treasure from another plane!",
                 "The void whispers your name and offers a fragment of its infinite hoard!"
+            ]
+        case .aquatic:
+            themeNarrative = [
+                "A sunken chest, barnacled and ancient, surfaces from the murky depths!",
+                "Bioluminescent fish circle a cache of waterlogged treasure — still gleaming!"
+            ]
+        case .volcanic:
+            themeNarrative = [
+                "A vein of raw gemstones glows in the mine wall — the heat preserved them perfectly!",
+                "Dwarven lockboxes, abandoned in haste, still hold their precious cargo!"
+            ]
+        case .phantom:
+            themeNarrative = [
+                "A spectral hand gestures toward a wall — behind it, treasure the ghosts could never claim!",
+                "The echoes of the fallen reveal the location of a royal stash, long forgotten!"
+            ]
+        case .jungle:
+            themeNarrative = [
+                "Vines part to reveal a temple offering, untouched by time and overgrowth!",
+                "A hollow in the ancient roots holds treasure left by a lost jungle civilization!"
+            ]
+        case .crystal:
+            themeNarrative = [
+                "A geode cracks open to reveal prismatic crystals worth a fortune!",
+                "Light refracts through a hidden crystal formation, illuminating a secret cache!"
+            ]
+        case .storm:
+            themeNarrative = [
+                "Lightning strikes reveal a metallic cache embedded in the storm-worn rock!",
+                "The eye of the storm clears just long enough to spot treasure on a hidden ledge!"
+            ]
+        case .shadow:
+            themeNarrative = [
+                "The shadows themselves part, revealing a cache left by the necropolis builders!",
+                "A sarcophagus holds more than bones — gold and dark relics line its depths!"
+            ]
+        case .celestial:
+            themeNarrative = [
+                "A beam of divine light illuminates a sacred reliquary hidden in the sanctum!",
+                "Star-forged treasure materializes from the celestial ether, a gift from above!"
+            ]
+        case .mountain:
+            themeNarrative = [
+                "The ice cracks to reveal a frozen mountaineer's pack, stuffed with valuables!",
+                "A hidden ice cave sparkles with frost-preserved treasure from a forgotten expedition!"
+            ]
+        case .mushroom:
+            themeNarrative = [
+                "A giant mushroom cap lifts to reveal a mycelium-wrapped treasure cache!",
+                "Glowing spores guide you to a fungal hollow brimming with rare alchemical gems!"
+            ]
+        case .desert:
+            themeNarrative = [
+                "The shifting sands reveal an ornate chest, buried by a long-dead pharaoh's caravan!",
+                "A sandstorm clears to expose ancient gold half-buried in the scorching dunes!"
+            ]
+        case .grove:
+            themeNarrative = [
+                "Sprites scatter as you stumble upon their hidden hoard of woodland trinkets!",
+                "The roots of the great oak cradle a cache of nature's finest treasures!"
             ]
         }
         

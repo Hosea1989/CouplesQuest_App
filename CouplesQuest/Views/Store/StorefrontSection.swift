@@ -1,5 +1,24 @@
 import SwiftUI
 import SwiftData
+import UIKit
+
+enum StorefrontCategory: String, CaseIterable {
+    case all = "All"
+    case deals = "Deals"
+    case milestone = "Milestone"
+    case gearSets = "Gear Sets"
+    case bundles = "Bundles"
+    
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .deals: return "flame.fill"
+        case .milestone: return "star.circle.fill"
+        case .gearSets: return "square.grid.3x3.fill"
+        case .bundles: return "gift.fill"
+        }
+    }
+}
 
 /// The Storefront tab content: Deal of the Day, Milestone Gear, Class Sets, and Bundle Deals
 struct StorefrontSection: View {
@@ -14,12 +33,32 @@ struct StorefrontSection: View {
     let purchasedSetPieceIDs: Set<String>
     let purchasedBundleIDs: Set<String>
     
+    @State private var selectedCategory: StorefrontCategory = .all
+    
     var body: some View {
-        VStack(spacing: 20) {
-            dealOfTheDaySection
-            milestoneGearSection
-            classGearSetSection
-            bundleDealsSection
+        VStack(spacing: 16) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(StorefrontCategory.allCases, id: \.self) { category in
+                        ShopFilterPill(label: category.rawValue, icon: category.icon, isSelected: selectedCategory == category) {
+                            selectedCategory = category
+                        }
+                    }
+                }
+            }
+            
+            if selectedCategory == .all || selectedCategory == .deals {
+                dealOfTheDaySection
+            }
+            if selectedCategory == .all || selectedCategory == .milestone {
+                milestoneGearSection
+            }
+            if selectedCategory == .all || selectedCategory == .gearSets {
+                classGearSetSection
+            }
+            if selectedCategory == .all || selectedCategory == .bundles {
+                bundleDealsSection
+            }
         }
     }
     
@@ -45,7 +84,7 @@ struct StorefrontSection: View {
             if let item = dealItem {
                 let originalPrice = ShopGenerator.priceForEquipment(item)
                 let salePrice = ShopGenerator.dealPrice(for: item)
-                let discount = ShopGenerator.dealDiscount()
+                let discount = ShopGenerator.adjustedDealDiscount(for: item)
                 let isPurchased = purchasedDealID == item.id
                 let canAfford = (character?.gold ?? 0) >= salePrice
                 
@@ -57,9 +96,7 @@ struct StorefrontSection: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(Color(item.rarity.color).opacity(0.2))
                                 .frame(width: 56, height: 56)
-                            Image(systemName: item.slot.icon)
-                                .font(.title2)
-                                .foregroundColor(Color(item.rarity.color))
+                            EquipmentIconView(item: item, slot: item.slot, size: 56)
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
@@ -152,91 +189,115 @@ struct StorefrontSection: View {
                 let items = MilestoneGearCatalog.items(for: charClass)
                 
                 ForEach(items) { item in
-                    let isUnlocked = (character?.level ?? 1) >= item.levelRequirement
-                    let isPurchased = purchasedMilestoneIDs.contains(item.id)
-                    let canAfford = (character?.gold ?? 0) >= item.goldCost
-                    
-                    Button {
-                        if isUnlocked && !isPurchased {
-                            onBuyMilestone(item)
-                        }
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(isUnlocked ? Color(item.rarity.color).opacity(0.2) : Color.gray.opacity(0.1))
-                                    .frame(width: 50, height: 50)
-                                if isUnlocked {
-                                    Image(systemName: item.slot.icon)
-                                        .font(.title3)
-                                        .foregroundColor(Color(item.rarity.color))
-                                } else {
-                                    Image(systemName: "lock.fill")
-                                        .font(.title3)
-                                        .foregroundColor(.gray)
-                                }
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.name)
-                                    .font(.custom("Avenir-Heavy", size: 14))
-                                    .foregroundColor(isUnlocked ? Color(item.rarity.color) : .gray)
-                                if isUnlocked {
-                                    Text("+\(item.statBonus) \(item.primaryStat.rawValue)" +
-                                         (item.secondaryStat != nil ? ", +\(item.secondaryStatBonus) \(item.secondaryStat!.rawValue)" : ""))
-                                        .font(.custom("Avenir-Medium", size: 12))
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Reach Lv.\(item.levelRequirement) to unlock")
-                                        .font(.custom("Avenir-Medium", size: 12))
-                                        .foregroundColor(.gray)
-                                }
-                                HStack(spacing: 6) {
-                                    Text(item.rarity.rawValue)
-                                        .font(.custom("Avenir-Heavy", size: 10))
-                                        .foregroundColor(isUnlocked ? Color(item.rarity.color) : .gray)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill((isUnlocked ? Color(item.rarity.color) : .gray).opacity(0.2)))
-                                        .rarityShimmer(item.rarity)
-                                    Text("Lv.\(item.levelRequirement)")
-                                        .font(.custom("Avenir-Medium", size: 10))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            if isPurchased {
-                                Text("Owned")
-                                    .font(.custom("Avenir-Heavy", size: 13))
-                                    .foregroundColor(.secondary)
-                            } else if isUnlocked {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "dollarsign.circle.fill")
-                                        .foregroundColor(Color("AccentGold"))
-                                        .font(.caption)
-                                    Text("\(item.goldCost)")
-                                        .font(.custom("Avenir-Heavy", size: 15))
-                                        .foregroundColor(canAfford ? Color("AccentGold") : .red)
-                                }
-                            }
-                        }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color("CardBackground"))
-                        )
-                        .opacity(isPurchased ? 0.6 : (isUnlocked ? 1.0 : 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!isUnlocked || isPurchased)
+                    milestoneRow(item: item)
                 }
             } else {
                 Text("Choose a class to see milestone gear.")
                     .font(.custom("Avenir-Medium", size: 13))
                     .foregroundColor(.secondary)
                     .padding(.vertical, 12)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func milestoneRow(item: MilestoneItem) -> some View {
+        let isUnlocked = (character?.level ?? 1) >= item.levelRequirement
+        let isPurchased = purchasedMilestoneIDs.contains(item.id)
+        let canAfford = (character?.gold ?? 0) >= item.goldCost
+        
+        Button {
+            if isUnlocked && !isPurchased {
+                onBuyMilestone(item)
+            }
+        } label: {
+            HStack(spacing: 14) {
+                milestoneIcon(item: item, isUnlocked: isUnlocked)
+                milestoneInfo(item: item, isUnlocked: isUnlocked)
+                Spacer()
+                milestonePrice(isPurchased: isPurchased, isUnlocked: isUnlocked, canAfford: canAfford, goldCost: item.goldCost)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color("CardBackground"))
+            )
+            .opacity(isPurchased ? 0.6 : (isUnlocked ? 1.0 : 0.5))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isUnlocked || isPurchased)
+    }
+    
+    @ViewBuilder
+    private func milestoneIcon(item: MilestoneItem, isUnlocked: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isUnlocked ? Color(item.rarity.color).opacity(0.2) : Color.gray.opacity(0.1))
+                .frame(width: 50, height: 50)
+            if !isUnlocked {
+                Image(systemName: "lock.fill")
+                    .font(.title3)
+                    .foregroundColor(.gray)
+            } else if let imgName = item.imageName, UIImage(named: imgName) != nil {
+                Image(imgName)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 40, height: 40)
+            } else {
+                Image(systemName: item.slot.icon)
+                    .font(.title3)
+                    .foregroundColor(Color(item.rarity.color))
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func milestoneInfo(item: MilestoneItem, isUnlocked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(item.name)
+                .font(.custom("Avenir-Heavy", size: 14))
+                .foregroundColor(isUnlocked ? Color(item.rarity.color) : .gray)
+            if isUnlocked {
+                let statText = "+\(Int(item.statBonus.rounded())) \(item.primaryStat.rawValue)"
+                let secondaryText = item.secondaryStat.map { ", +\(Int(item.secondaryStatBonus.rounded())) \($0.rawValue)" } ?? ""
+                Text(statText + secondaryText)
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Reach Lv.\(item.levelRequirement) to unlock")
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.gray)
+            }
+            HStack(spacing: 6) {
+                Text(item.rarity.rawValue)
+                    .font(.custom("Avenir-Heavy", size: 10))
+                    .foregroundColor(isUnlocked ? Color(item.rarity.color) : .gray)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill((isUnlocked ? Color(item.rarity.color) : .gray).opacity(0.2)))
+                    .rarityShimmer(item.rarity)
+                Text("Lv.\(item.levelRequirement)")
+                    .font(.custom("Avenir-Medium", size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func milestonePrice(isPurchased: Bool, isUnlocked: Bool, canAfford: Bool, goldCost: Int) -> some View {
+        if isPurchased {
+            Text("Owned")
+                .font(.custom("Avenir-Heavy", size: 13))
+                .foregroundColor(.secondary)
+        } else if isUnlocked {
+            HStack(spacing: 4) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .foregroundColor(Color("AccentGold"))
+                    .font(.caption)
+                Text("\(goldCost)")
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(canAfford ? Color("AccentGold") : .red)
             }
         }
     }
@@ -298,6 +359,12 @@ struct StorefrontSection: View {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.title3)
                                             .foregroundColor(Color("AccentGreen"))
+                                    } else if let imgName = piece.imageName, UIImage(named: imgName) != nil {
+                                        Image(imgName)
+                                            .interpolation(.none)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 34, height: 34)
                                     } else {
                                         Image(systemName: piece.slot.icon)
                                             .font(.callout)
@@ -309,8 +376,8 @@ struct StorefrontSection: View {
                                     Text(piece.name)
                                         .font(.custom("Avenir-Heavy", size: 13))
                                         .foregroundColor(Color(piece.rarity.color))
-                                    Text("+\(piece.statBonus) \(piece.primaryStat.rawValue)" +
-                                         (piece.secondaryStat != nil ? ", +\(piece.secondaryStatBonus) \(piece.secondaryStat!.rawValue)" : ""))
+                                    Text("+\(piece.statBonusDisplay) \(piece.primaryStat.rawValue)" +
+                                         (piece.secondaryStat != nil ? ", +\(piece.secondaryStatBonusDisplay) \(piece.secondaryStat!.rawValue)" : ""))
                                         .font(.custom("Avenir-Medium", size: 11))
                                         .foregroundColor(.secondary)
                                 }

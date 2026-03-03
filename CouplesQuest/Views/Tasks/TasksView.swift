@@ -32,6 +32,7 @@ struct TasksView: View {
     @State private var wordSearchDuty: GameTask?
     @State private var show2048 = false
     @State private var game2048Duty: GameTask?
+    @State private var miniGameFailCounts: [UUID: Int] = [:]
     @State private var showMeditationSession = false
     @State private var meditationDuty: GameTask?
     @State private var showCoopChoice = false
@@ -187,43 +188,52 @@ struct TasksView: View {
                 }
             }
             .fullScreenCover(isPresented: $showSudoku) {
-                SudokuGameView { elapsedSeconds in
-                    completeSudokuDuty(elapsedSeconds: elapsedSeconds)
-                }
+                SudokuGameView(
+                    onComplete: { elapsedSeconds in
+                        completeSudokuDuty(elapsedSeconds: elapsedSeconds)
+                    },
+                    onFail: { handleMiniGameFail(for: sudokuDuty); sudokuDuty = nil }
+                )
             }
             .fullScreenCover(isPresented: $showMemoryMatch) {
-                MemoryMatchGameView { elapsedSeconds in
-                    let tier = MemoryMatchRewardTier.tier(for: elapsedSeconds)
-                    completeMiniGameDuty(
-                        task: memoryMatchDuty,
-                        elapsedSeconds: elapsedSeconds,
-                        gold: tier.gold,
-                        statBonus: tier.wisdomBonus,
-                        bonusStat: .luck,
-                        consumableName: tier.consumableName,
-                        consumableIcon: tier.consumableIcon,
-                        consumableCount: tier.consumableCount,
-                        gameName: "Memory Match"
-                    )
-                    memoryMatchDuty = nil
-                }
+                MemoryMatchGameView(
+                    onComplete: { elapsedSeconds in
+                        let tier = MemoryMatchRewardTier.tier(for: elapsedSeconds)
+                        completeMiniGameDuty(
+                            task: memoryMatchDuty,
+                            elapsedSeconds: elapsedSeconds,
+                            gold: tier.gold,
+                            statBonus: tier.wisdomBonus,
+                            bonusStat: .luck,
+                            consumableName: tier.consumableName,
+                            consumableIcon: tier.consumableIcon,
+                            consumableCount: tier.consumableCount,
+                            gameName: "Memory Match"
+                        )
+                        memoryMatchDuty = nil
+                    },
+                    onFail: { handleMiniGameFail(for: memoryMatchDuty); memoryMatchDuty = nil }
+                )
             }
             .fullScreenCover(isPresented: $showMathBlitz) {
-                MathBlitzGameView { elapsedSeconds in
-                    let tier = MathBlitzRewardTier.tier(for: elapsedSeconds)
-                    completeMiniGameDuty(
-                        task: mathBlitzDuty,
-                        elapsedSeconds: elapsedSeconds,
-                        gold: tier.gold,
-                        statBonus: tier.wisdomBonus,
-                        bonusStat: .wisdom,
-                        consumableName: tier.consumableName,
-                        consumableIcon: tier.consumableIcon,
-                        consumableCount: tier.consumableCount,
-                        gameName: "Math Blitz"
-                    )
-                    mathBlitzDuty = nil
-                }
+                MathBlitzGameView(
+                    onComplete: { elapsedSeconds in
+                        let tier = MathBlitzRewardTier.tier(for: elapsedSeconds)
+                        completeMiniGameDuty(
+                            task: mathBlitzDuty,
+                            elapsedSeconds: elapsedSeconds,
+                            gold: tier.gold,
+                            statBonus: tier.wisdomBonus,
+                            bonusStat: .wisdom,
+                            consumableName: tier.consumableName,
+                            consumableIcon: tier.consumableIcon,
+                            consumableCount: tier.consumableCount,
+                            gameName: "Math Blitz"
+                        )
+                        mathBlitzDuty = nil
+                    },
+                    onFail: { handleMiniGameFail(for: mathBlitzDuty); mathBlitzDuty = nil }
+                )
             }
             .fullScreenCover(isPresented: $showWordSearch) {
                 WordSearchGameView { elapsedSeconds in
@@ -374,9 +384,7 @@ struct TasksView: View {
         habit.habitLastCompletedDate = today
         
         // Use GameEngine's completeTask for proper EXP/reward flow
-        let result = gameEngine.completeTask(habit, character: character, context: modelContext)
-        lastCompletionResult = result
-        showCompletionCelebration = true
+        var result = gameEngine.completeTask(habit, character: character, context: modelContext)
         
         // Update daily quest progress and materials
         gameEngine.updateStreak(for: character, completedTaskToday: true)
@@ -387,11 +395,14 @@ struct TasksView: View {
             character: character,
             context: modelContext
         )
-        gameEngine.awardMaterialsForTask(
+        let matDrops = gameEngine.awardMaterialsForTask(
             task: habit,
             character: character,
             context: modelContext
         )
+        result.materialDrops = matDrops
+        lastCompletionResult = result
+        showCompletionCelebration = true
     }
     
     // MARK: - Duty Board Section
@@ -487,7 +498,7 @@ struct TasksView: View {
                     ForEach(dailyDuties.filter { $0.status == .pending }, id: \.id) { duty in
                         DutyNoteCard(
                             task: duty,
-                            isLocked: reachedDailyDutyLimit,
+                            isLocked: reachedDailyDutyLimit || DutyBoardGenerator.isAtActiveDutyCap(context: modelContext),
                             characterLevel: character?.level ?? 1,
                             onAccept: { acceptDuty(duty) }
                         )
@@ -622,9 +633,9 @@ struct TasksView: View {
                 
                 Spacer()
                 
-                Text("\(myTasks.count)")
+                Text("\(myTasks.count)/\(DutyBoardGenerator.maxActiveDuties)")
                     .font(.custom("Avenir-Heavy", size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(myTasks.count >= DutyBoardGenerator.maxActiveDuties ? Color("AccentOrange") : .secondary)
             }
             
             if myTasks.isEmpty {
@@ -744,6 +755,12 @@ struct TasksView: View {
     
     private func loadDailyDuties() {
         guard let character = character else { return }
+        
+        let expiredIDs = DutyBoardGenerator.expireOldDuties(context: modelContext)
+        for id in expiredIDs {
+            Task { try? await SupabaseService.shared.deleteTask(localID: id) }
+        }
+        
         dailyDuties = DutyBoardGenerator.ensureTodaysDuties(
             characterID: character.id,
             context: modelContext
@@ -828,6 +845,14 @@ struct TasksView: View {
     private func finalizeDutyAccept(_ task: GameTask, asCoop: Bool) {
         guard let character = character else { return }
         
+        if DutyBoardGenerator.isAtActiveDutyCap(context: modelContext) {
+            ToastManager.shared.showError(
+                "Active Duties Full",
+                subtitle: "Complete or abandon a duty first (\(DutyBoardGenerator.maxActiveDuties)/\(DutyBoardGenerator.maxActiveDuties))"
+            )
+            return
+        }
+        
         // Record the claim in persistent storage (survives view reloads)
         DutyBoardGenerator.recordDutyClaim()
         
@@ -837,9 +862,32 @@ struct TasksView: View {
         task.isDailyDuty = false
         task.isCoopDuty = asCoop
         
-        // No deadline or timer — duties can be completed at the player's pace
         task.status = .inProgress
         AudioManager.shared.play(.dutyAccept)
+    }
+    
+    /// Handle a mini-game failure. After 2 failures the duty is removed.
+    private func handleMiniGameFail(for task: GameTask?) {
+        guard let task = task else { return }
+        let count = (miniGameFailCounts[task.id] ?? 0) + 1
+        miniGameFailCounts[task.id] = count
+        
+        if count >= 2 {
+            let taskID = task.id
+            task.status = .expired
+            modelContext.delete(task)
+            AudioManager.shared.play(.error)
+            ToastManager.shared.showError(
+                "Duty Failed",
+                subtitle: "\(task.title) removed after 2 failed attempts"
+            )
+            Task { try? await SupabaseService.shared.deleteTask(localID: taskID) }
+        } else {
+            ToastManager.shared.showError(
+                "Strike 1",
+                subtitle: "One more failure and \(task.title) will be removed"
+            )
+        }
     }
     
     /// Opens the appropriate mini-game for a task.
@@ -1045,9 +1093,7 @@ struct TasksView: View {
     }
     
     private func applyCompletion(task: GameTask, character: PlayerCharacter) {
-        let result = gameEngine.completeTask(task, character: character, bond: bond, context: modelContext)
-        lastCompletionResult = result
-        showCompletionCelebration = true
+        var result = gameEngine.completeTask(task, character: character, bond: bond, context: modelContext)
 
         AudioManager.shared.play(.dutyComplete)
 
@@ -1081,11 +1127,14 @@ struct TasksView: View {
         )
         
         // Award crafting materials (Essence from IRL tasks)
-        gameEngine.awardMaterialsForTask(
+        let matDrops = gameEngine.awardMaterialsForTask(
             task: task,
             character: character,
             context: modelContext
         )
+        result.materialDrops = matDrops
+        lastCompletionResult = result
+        showCompletionCelebration = true
         
         // Auto-confirm expired partner tasks
         gameEngine.autoConfirmExpiredPartnerTasks(
@@ -1095,10 +1144,17 @@ struct TasksView: View {
         )
     }
     
-    /// Expire and remove any in-progress duties whose deadline has passed
+    /// Expire and remove any in-progress duties whose deadline has passed or older than 7 days
     private func expireOverdueTasks() {
         for task in myTasks where task.hasDeadline && task.isDeadlineExpired {
+            let taskID = task.id
             modelContext.delete(task)
+            Task { try? await SupabaseService.shared.deleteTask(localID: taskID) }
+        }
+        
+        let expiredIDs = DutyBoardGenerator.expireOldDuties(context: modelContext)
+        for id in expiredIDs {
+            Task { try? await SupabaseService.shared.deleteTask(localID: id) }
         }
     }
     
@@ -1133,9 +1189,11 @@ struct TasksView: View {
     }
     
     private func deleteTask(_ task: GameTask) {
+        let taskID = task.id
         modelContext.delete(task)
         AudioManager.shared.play(.taskDelete)
         deleteTrigger += 1
+        Task { try? await SupabaseService.shared.deleteTask(localID: taskID) }
     }
 }
 
@@ -2032,59 +2090,74 @@ struct TaskCompletionCelebration: View {
             
             // Main content
             VStack(spacing: 0) {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        Spacer().frame(height: 50)
-                        
-                        // Result icon
-                        resultIconView
-                            .opacity(showHeader ? 1 : 0)
-                            .scaleEffect(showHeader ? 1 : 0.3)
-                        
-                        // Title
-                        titleView
-                            .opacity(showHeader ? 1 : 0)
-                            .offset(y: showHeader ? 0 : 20)
-                        
-                        // EXP Progress Bar
-                        expProgressBarView
-                            .opacity(showExpBar ? 1 : 0)
-                            .offset(y: showExpBar ? 0 : 15)
-                        
-                        // Gold Counter
-                        goldCounterView
-                            .opacity(showGoldCounter ? 1 : 0)
-                            .offset(y: showGoldCounter ? 0 : 15)
-                        
-                        // Rewards breakdown
-                        if showRewards {
-                            rewardsCardView
-                                .transition(.asymmetric(
-                                    insertion: .scale(scale: 0.9).combined(with: .opacity),
-                                    removal: .opacity
-                                ))
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 20) {
+                            Spacer().frame(height: 50)
+                            
+                            // Result icon
+                            resultIconView
+                                .opacity(showHeader ? 1 : 0)
+                                .scaleEffect(showHeader ? 1 : 0.3)
+                            
+                            // Title
+                            titleView
+                                .opacity(showHeader ? 1 : 0)
+                                .offset(y: showHeader ? 0 : 20)
+                            
+                            // EXP Progress Bar
+                            expProgressBarView
+                                .opacity(showExpBar ? 1 : 0)
+                                .offset(y: showExpBar ? 0 : 15)
+                            
+                            // Gold Counter
+                            goldCounterView
+                                .opacity(showGoldCounter ? 1 : 0)
+                                .offset(y: showGoldCounter ? 0 : 15)
+                            
+                            // Rewards breakdown
+                            if showRewards {
+                                rewardsCardView
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.9).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
+                            
+                            // Character Stats Card
+                            if showStats {
+                                characterStatsCardView
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
+                            
+                            // Class message
+                            if let classMessage = result.classMessage, showRewards {
+                                Text(classMessage)
+                                    .font(.custom("Avenir-MediumOblique", size: 14))
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 4)
+                            }
+                            
+                            Spacer().frame(height: 20)
+                                .id("celebration_bottom")
                         }
-                        
-                        // Character Stats Card
-                        if showStats {
-                            characterStatsCardView
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                                    removal: .opacity
-                                ))
-                        }
-                        
-                        // Class message
-                        if let classMessage = result.classMessage, showRewards {
-                            Text(classMessage)
-                                .font(.custom("Avenir-MediumOblique", size: 14))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 4)
-                        }
-                        
-                        Spacer().frame(height: 20)
+                        .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal, 24)
+                    .onChange(of: showGoldCounter) { _, _ in
+                        withAnimation { proxy.scrollTo("celebration_bottom", anchor: .bottom) }
+                    }
+                    .onChange(of: showRewards) { _, _ in
+                        withAnimation { proxy.scrollTo("celebration_bottom", anchor: .bottom) }
+                    }
+                    .onChange(of: showStats) { _, _ in
+                        withAnimation { proxy.scrollTo("celebration_bottom", anchor: .bottom) }
+                    }
+                    .onChange(of: showContinue) { _, _ in
+                        withAnimation { proxy.scrollTo("celebration_bottom", anchor: .bottom) }
+                    }
                 }
                 
                 // Continue button — pinned at bottom
@@ -2320,8 +2393,17 @@ struct TaskCompletionCelebration: View {
                     iconColor: Color(loot.rarityColor),
                     label: "Loot Found!",
                     value: loot.displayName,
-                    valueColor: Color(loot.rarityColor)
+                    valueColor: Color(loot.rarityColor),
+                    imageName: loot.imageName
                 )
+            }
+            
+            // Material drops (essence + bonus materials)
+            if !result.materialDrops.isEmpty {
+                Divider().overlay(Color.white.opacity(0.05))
+                ForEach(result.materialDrops) { drop in
+                    MaterialLootRow(drop: drop, size: 32)
+                }
             }
             
             // Co-op bonuses
@@ -2438,16 +2520,24 @@ struct TaskCompletionCelebration: View {
     
     // MARK: - Shared Row
     
-    private func rewardItemRow(icon: String, iconColor: Color, label: String, value: String, valueColor: Color) -> some View {
+    private func rewardItemRow(icon: String, iconColor: Color, label: String, value: String, valueColor: Color, imageName: String? = nil) -> some View {
         HStack {
             HStack(spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(iconColor.opacity(0.15))
                         .frame(width: 32, height: 32)
-                    Image(systemName: icon)
-                        .font(.system(size: 15))
-                        .foregroundColor(iconColor)
+                    if let imgName = imageName, UIImage(named: imgName) != nil {
+                        Image(imgName)
+                            .interpolation(.none)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 24, height: 24)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 15))
+                            .foregroundColor(iconColor)
+                    }
                 }
                 Text(label)
                     .font(.custom("Avenir-Medium", size: 14))

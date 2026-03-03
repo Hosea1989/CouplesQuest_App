@@ -42,8 +42,8 @@ struct ShopkeeperDialogue {
         "These EXP boosts? Best seller in the shop.",
         "Streak about to break? I got just the thing for that.",
         "Never go into battle without a healing draught. Trust me.",
-        "That Lucky Coin there brings fortune to anyone who carries it.",
-        "A Protein Shake before a quest? Smart move, adventurer.",
+        "That Fortune Tonic there brings wealth to anyone who drinks it.",
+        "A Hearty Steak before a quest? Smart move, adventurer.",
         "Stock up now — you'll thank me when you're deep in a dungeon.",
     ]
     
@@ -51,9 +51,9 @@ struct ShopkeeperDialogue {
     static let premiumGreetings: [String] = [
         "Ah, the gem collection. Only the rarest items here.",
         "Gems unlock power you can't buy with gold alone.",
-        "That Revive Token has saved many a party from a total wipe.",
+        "That Revival Elixir has saved many a party from a total wipe.",
         "These are my finest wares. Gem-worthy, every one of 'em.",
-        "The Loot Reroll? Turns a common blade into a legendary one.",
+        "The Fate Idol? Turns a common blade into a legendary one.",
         "Instant Mission Scroll — for the adventurer who values their time.",
         "Premium items, premium results. You get what you pay for.",
         "Only the most dedicated adventurers earn enough gems for these.",
@@ -78,7 +78,7 @@ struct ShopkeeperDialogue {
             } else if template.effectValue >= 50 {
                 return "Solid healing draught right there. Reliable in any dungeon run."
             } else {
-                return "Herbal Tea — gentle but effective. Perfect for a new adventurer starting out."
+                return "A Minor Healing Potion — gentle but effective. Perfect for a new adventurer starting out."
             }
             
         case .expBoost:
@@ -96,14 +96,14 @@ struct ShopkeeperDialogue {
             } else if template.effectValue >= 5 {
                 return "Fortune Stone. Five tasks of gold bonuses. Invest in yourself, adventurer."
             } else {
-                return "Lucky Coin — a little extra gold never hurt anyone. Three tasks' worth!"
+                return "Fortune Tonic — a little extra gold never hurt anyone. Three tasks' worth!"
             }
             
         case .missionSpeedUp:
             if template.gemCost > 0 {
                 return "That scroll? Poof — mission done instantly. Time is the one thing gold can't buy... but gems can."
             } else {
-                return "Espresso Shot — cuts your mission time in half. For the adventurer in a hurry."
+                return "Swiftness Potion — cuts your mission time in half. For the adventurer in a hurry."
             }
             
         case .streakShield:
@@ -120,28 +120,31 @@ struct ShopkeeperDialogue {
             return "Stat food — gives you a temporary edge. Every point counts in tough battles."
             
         case .dungeonRevive:
-            return "The Revive Token — a phoenix feather that brings your whole party back. A true lifesaver."
+            return "The Revival Elixir — golden phoenix essence that brings your whole party back. A true lifesaver."
             
         case .lootReroll:
-            return "The Loot Reroll. Got a piece of gear with bad stats? Give it another spin. Could turn trash into treasure."
+            return "The Fate Idol. Got a piece of gear with bad stats? Give it another spin. Could turn trash into treasure."
             
         case .materialMagnet:
-            return "The Material Magnet — double your crafting material drops for the next few tasks. Forgers love this one."
+            return "The Lodestone Crystal — double your crafting material drops for the next few tasks. Forgers love this one."
             
         case .luckElixir:
             return "Luck Elixir. Shimmering fortune in a bottle. Better drops in your next dungeon, guaranteed."
             
         case .partyBeacon:
-            return "The Party Beacon — strengthens bonds between allies. Your party will grow closer, faster."
+            return "The Bond Totem — strengthens bonds between allies. Your party will grow closer, faster."
             
         case .affixScroll:
-            return "Affix Scrolls are rare and powerful. Apply one at the Forge to guarantee magical properties on your gear."
+            return "Enchantment Elixirs are rare and powerful. Drink one to guarantee magical properties on your next gear drop."
+            
+        case .dutyScroll:
+            return "A Duty Scroll — unroll it and a hidden duty reveals itself. Found these deep in the dungeons."
             
         case .forgeCatalyst:
-            return "Forge Catalyst — volatile but effective. Doubles your enhancement success chance for one attempt. Handle with care!"
+            return "Forge Tonic — volatile but effective. Doubles your enhancement success chance for one attempt. Handle with care!"
             
         case .expeditionCompass:
-            return "An Expedition Compass — peer ahead and see what rewards await at the next stage. Knowledge is power, adventurer."
+            return "A Wayfinder Vial — peer ahead and see what rewards await at the next stage. Knowledge is power, adventurer."
             
         case .regenBuff:
             return "A Regen Buff — your body mends itself over time. Perfect for the long haul between dungeon runs."
@@ -174,6 +177,41 @@ struct ShopkeeperDialogue {
         "Milestone gear is forged for your class. No one else can wield it like you.",
         "Level up and new gear becomes available. That's how legends are made.",
         "Each milestone piece is hand-crafted for your path. Earn it, then buy it.",
+    ]
+    
+    // MARK: - Purchase Reactions
+    
+    /// Lines spoken by the shopkeeper after a successful equipment purchase
+    static let equipmentPurchaseReactions: [String] = [
+        "Great choice! That piece will serve you well out there.",
+        "Ah, a fine pick. I'll wrap that up for you!",
+        "You've got good taste, adventurer. That's quality craftsmanship.",
+        "Sold! I knew that one had your name on it.",
+        "Excellent! You're going to look unstoppable in that.",
+        "That gear has been waiting for a worthy owner. It's yours now!",
+        "A wise investment. You won't regret this one.",
+        "I'll miss that piece, but it's in good hands now.",
+    ]
+    
+    /// Lines spoken by the shopkeeper after a successful consumable purchase
+    static let consumablePurchaseReactions: [String] = [
+        "Stocked up and ready for action! Smart move.",
+        "A well-prepared adventurer is a surviving adventurer!",
+        "Good call — you'll thank yourself later for that one.",
+        "Potions packed and ready to go. Stay safe out there!",
+        "Another satisfied customer! Use those wisely, now.",
+        "That'll give you the edge when you need it most.",
+        "I always say — better to have it and not need it!",
+        "Restocked! Now get back out there and do great things.",
+    ]
+    
+    /// Lines spoken after buying in bulk
+    static let bulkPurchaseReactions: [String] = [
+        "Buying in bulk? Now that's an adventurer who thinks ahead!",
+        "Stocking the shelves of your inventory, eh? Love to see it!",
+        "A whole haul! I should give you a loyalty discount... maybe next time.",
+        "That's a serious supply run. You must have big plans!",
+        "Bulk buyer! You remind me of the great adventurers of old.",
     ]
     
     // MARK: - Welcome / Default

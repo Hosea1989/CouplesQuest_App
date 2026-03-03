@@ -184,7 +184,7 @@ create table if not exists public.equipment (
     -- Core identity
     name                text not null,
     description         text not null default '',
-    slot                text not null check (slot in ('Weapon', 'Armor', 'Accessory')),
+    slot                text not null check (slot in ('Weapon', 'Armor', 'Accessory', 'Trinket', 'Cloak')),
     rarity              text not null check (rarity in ('Common', 'Uncommon', 'Rare', 'Epic', 'Legendary')),
 
     -- Stats

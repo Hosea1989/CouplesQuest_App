@@ -38,6 +38,13 @@ struct LevelUpChestGenerator {
             contents.equipmentDrops.append(item)
         }
 
+        // --- Milestone consumable rewards at key levels ---
+        let milestoneConsumables = ConsumableDropTable.milestoneReward(level: level, characterID: characterID)
+        for consumable in milestoneConsumables {
+            contents.rewards.append(.consumable(consumable.name))
+            contents.consumableDrops.append(consumable)
+        }
+
         // --- 1-2 random bonus picks from weighted pool ---
         let pickCount = level % 10 == 0 ? 2 : 1
         for _ in 0..<pickCount {
@@ -137,6 +144,9 @@ struct LootGenerator {
         // Maximum level requirement for drops when player level is known
         let maxLevelReq = playerLevel.map { $0 + 5 }
         
+        // Armor weight filtering based on class proficiency
+        let allowedWeights: Set<ArmorWeight>? = (slot == .armor) ? characterClass?.armorProficiency : nil
+        
         var item: Equipment
         
         // 80% chance: pull a curated item from server-driven content or static catalog
@@ -154,6 +164,19 @@ struct LootGenerator {
                     // Filter by player level range when known
                     if let cap = maxLevelReq {
                         candidates = candidates.filter { $0.levelRequirement <= cap }
+                    }
+                    
+                    // Filter server-driven armor by class proficiency
+                    if let weights = allowedWeights {
+                        candidates = candidates.filter { candidate in
+                            let tempEquip = Equipment(
+                                name: candidate.name, description: candidate.description,
+                                slot: slot, rarity: rarity,
+                                primaryStat: StatType(rawValue: candidate.primaryStat.capitalized) ?? .strength,
+                                statBonus: candidate.statBonus
+                            )
+                            return weights.contains(tempEquip.armorWeight)
+                        }
                     }
                     
                     if let pick = candidates.randomElement() {
@@ -175,8 +198,8 @@ struct LootGenerator {
                 }
             }
             
-            // Fallback to static catalog
-            if let template = EquipmentCatalog.random(slot: slot, rarity: rarity, maxLevel: maxLevelReq) {
+            // Fallback to static catalog (with weight filtering)
+            if let template = EquipmentCatalog.random(slot: slot, rarity: rarity, maxLevel: maxLevelReq, allowedWeights: allowedWeights) {
                 item = template.toEquipment()
                 rollAndApplyAffixes(to: item, characterClass: characterClass)
                 return item
@@ -187,9 +210,11 @@ struct LootGenerator {
         let primaryStat = StatType.allCases.randomElement()!
         let primaryBonus = rollStatBonus(rarity: rarity)
         let secondary = rollSecondaryStat(rarity: rarity, excluding: primaryStat)
-        let name = generateName(slot: slot, rarity: rarity, primaryStat: primaryStat)
+        let generated = generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights)
         let description = generateDescription(slot: slot, rarity: rarity)
-        var levelReq = max(1, (tier - 1) * 5 + primaryBonus / 2)
+        let tierBase = (tier - 1) * 5
+        let bonusContrib = Int((primaryBonus / 2.0).rounded())
+        var levelReq = max(1, tierBase + bonusContrib)
         
         // Cap level requirement to player level + 5 when known
         if let cap = maxLevelReq {
@@ -197,7 +222,7 @@ struct LootGenerator {
         }
         
         item = Equipment(
-            name: name,
+            name: generated.name,
             description: description,
             slot: slot,
             rarity: rarity,
@@ -205,7 +230,8 @@ struct LootGenerator {
             statBonus: primaryBonus,
             levelRequirement: levelReq,
             secondaryStat: secondary?.stat,
-            secondaryStatBonus: secondary?.bonus ?? 0
+            secondaryStatBonus: secondary?.bonus ?? 0,
+            baseType: generated.baseType
         )
         
         // Roll affixes
@@ -272,8 +298,8 @@ struct LootGenerator {
         // Each successful room has a chance to drop loot (capped by difficulty)
         let difficultyCap = dungeonDifficulty.dropChanceCap
         for result in roomResults where result.success {
-            let baseChance = 0.15 + (Double(tier) * 0.05) + classLootBonus + cardLootBonus
-            let luckBonus = Double(luck) * 0.005
+            let baseChance = 0.18 + (Double(tier) * 0.06) + classLootBonus + cardLootBonus
+            let luckBonus = Double(luck) * 0.007
             let dropChance = min(difficultyCap, baseChance + luckBonus + (result.lootDropped ? 0.3 : 0.0))
             
             if Double.random(in: 0...1) <= dropChance {
@@ -299,16 +325,16 @@ struct LootGenerator {
     ///   Luck stat directly boosts the chance of keeping an epic drop.
     static func rollRarity(tier: Int, luck: Int) -> ItemRarity {
         let roll = Double.random(in: 0...100)
-        let luckBonus = Double(luck) * 0.5
-        let tierBonus = Double(tier) * 3.0
+        let luckBonus = Double(luck) * 0.7
+        let tierBonus = Double(tier) * 4.0
         let adjustedRoll = roll + luckBonus + tierBonus
         
         var rarity: ItemRarity
         switch adjustedRoll {
         case 95...: rarity = .legendary
-        case 82...: rarity = .epic
-        case 65...: rarity = .rare
-        case 40...: rarity = .uncommon
+        case 78...: rarity = .epic
+        case 60...: rarity = .rare
+        case 35...: rarity = .uncommon
         default: rarity = .common
         }
         
@@ -343,35 +369,35 @@ struct LootGenerator {
     // MARK: - Stat Rolling
     
     /// Roll primary stat bonus based on rarity
-    static func rollStatBonus(rarity: ItemRarity) -> Int {
+    static func rollStatBonus(rarity: ItemRarity) -> Double {
         switch rarity {
-        case .common: return Int.random(in: 1...3)
-        case .uncommon: return Int.random(in: 2...5)
-        case .rare: return Int.random(in: 4...8)
-        case .epic: return Int.random(in: 7...12)
-        case .legendary: return Int.random(in: 10...18)
+        case .common: return Double.random(in: 1.0...3.0)
+        case .uncommon: return Double.random(in: 2.0...5.0)
+        case .rare: return Double.random(in: 4.0...8.0)
+        case .epic: return Double.random(in: 7.0...12.0)
+        case .legendary: return Double.random(in: 10.0...18.0)
         }
     }
     
     /// Roll secondary stat (chance depends on rarity)
-    static func rollSecondaryStat(rarity: ItemRarity, excluding primary: StatType) -> (stat: StatType, bonus: Int)? {
+    static func rollSecondaryStat(rarity: ItemRarity, excluding primary: StatType) -> (stat: StatType, bonus: Double)? {
         let chance: Double
-        let bonusRange: ClosedRange<Int>
+        let bonusRange: ClosedRange<Double>
         
         switch rarity {
         case .common: return nil
         case .uncommon:
             chance = 0.3
-            bonusRange = 1...2
+            bonusRange = 1.0...2.0
         case .rare:
             chance = 0.6
-            bonusRange = 2...4
+            bonusRange = 2.0...4.0
         case .epic:
             chance = 0.8
-            bonusRange = 3...6
+            bonusRange = 3.0...6.0
         case .legendary:
             chance = 1.0
-            bonusRange = 5...10
+            bonusRange = 5.0...10.0
         }
         
         guard Double.random(in: 0...1) <= chance else { return nil }
@@ -379,21 +405,26 @@ struct LootGenerator {
         let availableStats = StatType.allCases.filter { $0 != primary }
         guard let stat = availableStats.randomElement() else { return nil }
         
-        return (stat, Int.random(in: bonusRange))
+        return (stat, Double.random(in: bonusRange))
     }
     
     // MARK: - Name Generation
     
     /// Generate a thematic equipment name
-    static func generateName(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType) -> String {
+    static func generateName(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil) -> String {
+        generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights).name
+    }
+    
+    /// Returns both the generated name and the raw base type for sprite mapping.
+    static func generateNameAndBase(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil) -> (name: String, baseType: String) {
         let prefix = prefixes(for: rarity).randomElement() ?? ""
-        let base = bases(for: slot).randomElement() ?? slot.rawValue
+        let base = bases(for: slot, allowedWeights: allowedWeights).randomElement() ?? slot.rawValue
         let suffix = suffixes(for: primaryStat).randomElement() ?? ""
         
-        if rarity == .common {
-            return "\(prefix) \(base)"
-        }
-        return "\(prefix) \(base) \(suffix)"
+        let name = rarity == .common
+            ? "\(prefix) \(base)"
+            : "\(prefix) \(base) \(suffix)"
+        return (name, base.lowercased())
     }
     
     /// Generate a flavor description
@@ -440,12 +471,20 @@ struct LootGenerator {
         }
     }
     
-    private static func bases(for slot: EquipmentSlot) -> [String] {
+    private static func bases(for slot: EquipmentSlot, allowedWeights: Set<ArmorWeight>? = nil) -> [String] {
         switch slot {
-        case .weapon: return ["Sword", "Axe", "Staff", "Dagger", "Bow", "Wand", "Mace", "Spear", "Shield", "Crossbow", "Tome", "Halberd"]
-        case .armor: return ["Plate", "Chainmail", "Robes", "Leather Armor", "Breastplate", "Helm", "Gauntlets", "Boots", "Pauldrons", "Cape"]
-        case .accessory: return ["Ring", "Amulet", "Pendant", "Earring", "Brooch", "Talisman"]
-        case .trinket: return ["Cloak", "Bracelet", "Charm", "Belt"]
+        case .weapon: return ["Sword", "Axe", "Staff", "Dagger", "Bow", "Orb", "Mace", "Spear", "Shield", "Crossbow", "Tome", "Halberd"]
+        case .armor:
+            let heavyBases = ["Plate", "Chainmail", "Breastplate", "Pauldrons", "Heavy Helm", "Heavy Gauntlets", "Heavy Boots"]
+            let lightBases = ["Robes", "Leather Armor", "Helm", "Gauntlets", "Boots"]
+            guard let weights = allowedWeights else { return heavyBases + lightBases }
+            var result: [String] = []
+            if weights.contains(.heavy) { result += heavyBases }
+            if weights.contains(.light) { result += lightBases }
+            return result.isEmpty ? lightBases : result
+        case .accessory: return ["Ring", "Amulet", "Earring", "Talisman", "Brooch", "Pendant"]
+        case .trinket: return ["Charm", "Belt", "Bracelet"]
+        case .cloak: return ["Cloak", "Mantle", "Shroud", "Cape"]
         }
     }
     

@@ -113,8 +113,8 @@ struct SudokuRewardTier {
                 icon: "sparkles",
                 color: "AccentGreen",
                 gold: 150,
-                consumableName: "Green Tea",
-                consumableIcon: "leaf.fill",
+                consumableName: "Mystic Mushroom",
+                consumableIcon: "sparkle",
                 consumableCount: 2,
                 wisdomBonus: 1
             )
@@ -146,7 +146,7 @@ struct SudokuRewardTier {
     /// All tiers for preview display
     static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
         ("Lightning Solve", "< 5 min", 200, "3× Brain Elixir"),
-        ("Sharp Mind", "5–10 min", 150, "2× Green Tea"),
+        ("Sharp Mind", "5–10 min", 150, "2× Mystic Mushroom"),
         ("Steady Solve", "10–15 min", 100, "1× Apple Juice"),
         ("Completed", "> 15 min", 50, "—"),
     ]
@@ -186,6 +186,7 @@ private struct SudokuTimerView: View {
 struct SudokuGameView: View {
     /// Callback with elapsed seconds on successful completion
     let onComplete: (Int) -> Void
+    var onFail: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     
     @State private var puzzle: SudokuPuzzle
@@ -211,8 +212,9 @@ struct SudokuGameView: View {
         SudokuRewardTier.tier(for: elapsedSeconds)
     }
     
-    init(onComplete: @escaping (Int) -> Void) {
+    init(onComplete: @escaping (Int) -> Void, onFail: (() -> Void)? = nil) {
         self.onComplete = onComplete
+        self.onFail = onFail
         let p = SudokuPuzzle.generate(blanks: 38)
         _puzzle = State(initialValue: p)
         _grid = State(initialValue: p.puzzle)
@@ -691,6 +693,7 @@ struct SudokuGameView: View {
                     .multilineTextAlignment(.center)
                 
                 Button {
+                    onFail?()
                     dismiss()
                 } label: {
                     Text("Close")

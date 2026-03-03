@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 // MARK: - Gear Set Definition
 
@@ -35,11 +36,25 @@ struct GearSetPiece: Identifiable {
     let slot: EquipmentSlot
     let rarity: ItemRarity
     let primaryStat: StatType
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: StatType?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let goldCost: Int
     let baseType: String
+    
+    /// Rounded display value for base stat bonus
+    var statBonusDisplay: Int { Int(statBonus.rounded()) }
+    /// Rounded display value for secondary stat bonus
+    var secondaryStatBonusDisplay: Int { Int(secondaryStatBonus.rounded()) }
+    
+    /// Resolved image asset name based on baseType and rarity (e.g. "equip-bow-epic")
+    var imageName: String? {
+        let base = "equip-\(baseType.lowercased().replacingOccurrences(of: " ", with: "-"))"
+        let tinted = "\(base)-\(rarity.rawValue.lowercased())"
+        if UIImage(named: tinted) != nil { return tinted }
+        if UIImage(named: base) != nil { return base }
+        return nil
+    }
     
     /// Create an Equipment instance from this set piece
     func toEquipment(ownerID: UUID) -> Equipment {
@@ -53,7 +68,8 @@ struct GearSetPiece: Identifiable {
             levelRequirement: 1,
             secondaryStat: secondaryStat,
             secondaryStatBonus: secondaryStatBonus,
-            ownerID: ownerID
+            ownerID: ownerID,
+            baseType: baseType
         )
         equip.catalogID = id
         return equip
@@ -151,7 +167,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "sword"
+            goldCost: 1200, baseType: "sword"
         ),
         armor: GearSetPiece(
             id: "set_warrior_armor",
@@ -160,7 +176,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .defense, statBonus: 8,
             secondaryStat: .strength, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "plate"
+            goldCost: 1200, baseType: "plate"
         ),
         accessory: GearSetPiece(
             id: "set_warrior_accessory",
@@ -169,7 +185,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .defense, statBonus: 7,
             secondaryStat: .charisma, secondaryStatBonus: 2,
-            goldCost: 350, baseType: "amulet"
+            goldCost: 800, baseType: "amulet"
         ),
         bonusStat: .defense,
         bonusAmount: 7,
@@ -191,7 +207,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "staff"
+            goldCost: 1200, baseType: "staff"
         ),
         armor: GearSetPiece(
             id: "set_mage_armor",
@@ -200,7 +216,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "robes"
+            goldCost: 1200, baseType: "robes"
         ),
         accessory: GearSetPiece(
             id: "set_mage_accessory",
@@ -209,7 +225,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .wisdom, statBonus: 7,
             secondaryStat: .luck, secondaryStatBonus: 2,
-            goldCost: 350, baseType: "charm"
+            goldCost: 800, baseType: "charm"
         ),
         bonusStat: .wisdom,
         bonusAmount: 7,
@@ -231,7 +247,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "bow"
+            goldCost: 1200, baseType: "bow"
         ),
         armor: GearSetPiece(
             id: "set_archer_armor",
@@ -240,7 +256,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
-            goldCost: 400, baseType: "leather armor"
+            goldCost: 1200, baseType: "leather armor"
         ),
         accessory: GearSetPiece(
             id: "set_archer_accessory",
@@ -249,7 +265,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .dexterity, statBonus: 7,
             secondaryStat: .luck, secondaryStatBonus: 2,
-            goldCost: 350, baseType: "ring"
+            goldCost: 800, baseType: "ring"
         ),
         bonusStat: .dexterity,
         bonusAmount: 7,
@@ -275,7 +291,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "axe"
+            goldCost: 8000, baseType: "axe"
         ),
         armor: GearSetPiece(
             id: "set_berserker_armor",
@@ -284,7 +300,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .strength, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
-            goldCost: 600, baseType: "plate"
+            goldCost: 7000, baseType: "plate"
         ),
         accessory: GearSetPiece(
             id: "set_berserker_accessory",
@@ -293,7 +309,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .strength, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
-            goldCost: 500, baseType: "ring"
+            goldCost: 5000, baseType: "ring"
         ),
         bonusStat: .strength,
         bonusAmount: 10,
@@ -315,7 +331,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 9,
             secondaryStat: .charisma, secondaryStatBonus: 5,
-            goldCost: 600, baseType: "mace"
+            goldCost: 8000, baseType: "mace"
         ),
         armor: GearSetPiece(
             id: "set_paladin_armor",
@@ -324,7 +340,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .defense, statBonus: 11,
             secondaryStat: .strength, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "plate"
+            goldCost: 7000, baseType: "plate"
         ),
         accessory: GearSetPiece(
             id: "set_paladin_accessory",
@@ -333,7 +349,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .defense, statBonus: 8,
             secondaryStat: .charisma, secondaryStatBonus: 4,
-            goldCost: 500, baseType: "ring"
+            goldCost: 5000, baseType: "ring"
         ),
         bonusStat: .defense,
         bonusAmount: 10,
@@ -355,7 +371,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "staff"
+            goldCost: 8000, baseType: "staff"
         ),
         armor: GearSetPiece(
             id: "set_sorcerer_armor",
@@ -364,7 +380,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .wisdom, statBonus: 10,
             secondaryStat: .defense, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "robes"
+            goldCost: 7000, baseType: "robes"
         ),
         accessory: GearSetPiece(
             id: "set_sorcerer_accessory",
@@ -373,7 +389,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 4,
-            goldCost: 500, baseType: "ring"
+            goldCost: 5000, baseType: "ring"
         ),
         bonusStat: .wisdom,
         bonusAmount: 10,
@@ -395,7 +411,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .charisma, statBonus: 10,
             secondaryStat: .wisdom, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "wand"
+            goldCost: 8000, baseType: "wand"
         ),
         armor: GearSetPiece(
             id: "set_enchanter_armor",
@@ -404,16 +420,16 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .charisma, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
-            goldCost: 600, baseType: "robes"
+            goldCost: 7000, baseType: "robes"
         ),
         accessory: GearSetPiece(
             id: "set_enchanter_accessory",
-            name: "Resonance Pendant",
-            description: "A pendant that glows brighter with each ally nearby. Isolation dims it completely.",
+            name: "Resonance Amulet",
+            description: "An amulet that glows brighter with each ally nearby. Isolation dims it completely.",
             slot: .accessory, rarity: .epic,
             primaryStat: .charisma, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 4,
-            goldCost: 500, baseType: "pendant"
+            goldCost: 5000, baseType: "amulet"
         ),
         bonusStat: .charisma,
         bonusAmount: 10,
@@ -435,7 +451,7 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 10,
             secondaryStat: .luck, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "bow"
+            goldCost: 8000, baseType: "bow"
         ),
         armor: GearSetPiece(
             id: "set_ranger_armor",
@@ -444,7 +460,7 @@ struct GearSetCatalog {
             slot: .armor, rarity: .epic,
             primaryStat: .dexterity, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
-            goldCost: 600, baseType: "leather armor"
+            goldCost: 7000, baseType: "leather armor"
         ),
         accessory: GearSetPiece(
             id: "set_ranger_trinket",
@@ -453,7 +469,7 @@ struct GearSetCatalog {
             slot: .trinket, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
-            goldCost: 500, baseType: "charm"
+            goldCost: 5000, baseType: "charm"
         ),
         bonusStat: .dexterity,
         bonusAmount: 10,
@@ -475,16 +491,16 @@ struct GearSetCatalog {
             slot: .weapon, rarity: .epic,
             primaryStat: .luck, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
-            goldCost: 600, baseType: "dagger"
+            goldCost: 8000, baseType: "dagger"
         ),
         armor: GearSetPiece(
             id: "set_trickster_armor",
             name: "Shadow Gambit Cloak",
             description: "A cloak that shifts probability. Blows meant to connect somehow miss.",
-            slot: .trinket, rarity: .epic,
+            slot: .cloak, rarity: .epic,
             primaryStat: .luck, statBonus: 9,
             secondaryStat: .dexterity, secondaryStatBonus: 5,
-            goldCost: 600, baseType: "cloak"
+            goldCost: 7000, baseType: "cloak"
         ),
         accessory: GearSetPiece(
             id: "set_trickster_accessory",
@@ -493,7 +509,7 @@ struct GearSetCatalog {
             slot: .accessory, rarity: .epic,
             primaryStat: .luck, statBonus: 8,
             secondaryStat: .charisma, secondaryStatBonus: 4,
-            goldCost: 500, baseType: "ring"
+            goldCost: 5000, baseType: "ring"
         ),
         bonusStat: .luck,
         bonusAmount: 10,
@@ -564,10 +580,10 @@ struct BundleCatalog {
             BundleEquipmentItem(catalogID: "wep_sword_common_01", name: "Worn Training Sword", slot: .weapon, rarity: .common),
         ],
         consumables: [
-            BundleConsumableItem(templateName: "Herbal Tea", quantity: 2),
-            BundleConsumableItem(templateName: "Energy Bar", quantity: 1),
+            BundleConsumableItem(templateName: "Minor Healing Potion", quantity: 2),
+            BundleConsumableItem(templateName: "Arcane Star", quantity: 1),
         ],
-        goldCost: 80,
+        goldCost: 250,
         gemCost: 0,
         originalValue: 120,
         levelRequirement: 1
@@ -583,9 +599,9 @@ struct BundleCatalog {
         ],
         consumables: [
             BundleConsumableItem(templateName: "Healing Draught", quantity: 2),
-            BundleConsumableItem(templateName: "Cozy Blanket", quantity: 1),
+            BundleConsumableItem(templateName: "Guardian Flask", quantity: 1),
         ],
-        goldCost: 200,
+        goldCost: 750,
         gemCost: 0,
         originalValue: 300,
         levelRequirement: 5
@@ -601,9 +617,9 @@ struct BundleCatalog {
         ],
         consumables: [
             BundleConsumableItem(templateName: "Greater Healing Draught", quantity: 1),
-            BundleConsumableItem(templateName: "Power Bar", quantity: 1),
+            BundleConsumableItem(templateName: "Arcane Star", quantity: 1),
         ],
-        goldCost: 400,
+        goldCost: 1500,
         gemCost: 0,
         originalValue: 530,
         levelRequirement: 15
@@ -616,8 +632,8 @@ struct BundleCatalog {
         icon: "diamond.fill",
         equipmentPieces: [],
         consumables: [
-            BundleConsumableItem(templateName: "Revive Token", quantity: 1),
-            BundleConsumableItem(templateName: "Loot Reroll", quantity: 1),
+            BundleConsumableItem(templateName: "Revival Elixir", quantity: 1),
+            BundleConsumableItem(templateName: "Fate Idol", quantity: 1),
         ],
         goldCost: 0,
         gemCost: 6,

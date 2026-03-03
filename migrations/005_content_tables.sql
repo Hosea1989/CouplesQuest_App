@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.content_equipment (
     id                      TEXT PRIMARY KEY,       -- e.g. "sword_common_01"
     name                    TEXT NOT NULL,
     description             TEXT NOT NULL DEFAULT '',
-    slot                    TEXT NOT NULL CHECK (slot IN ('weapon', 'armor', 'accessory', 'trinket')),
+    slot                    TEXT NOT NULL CHECK (slot IN ('weapon', 'armor', 'accessory', 'trinket', 'cloak')),
     base_type               TEXT NOT NULL,           -- e.g. "sword", "axe", "plate", "ring", "cloak"
     rarity                  TEXT NOT NULL CHECK (rarity IN ('common', 'uncommon', 'rare', 'epic', 'legendary')),
     primary_stat            TEXT NOT NULL CHECK (primary_stat IN ('strength', 'wisdom', 'charisma', 'dexterity', 'luck', 'defense')),
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS public.content_milestone_gear (
     id                      TEXT PRIMARY KEY,       -- e.g. "warrior_lv5_sword"
     name                    TEXT NOT NULL,
     description             TEXT NOT NULL DEFAULT '',
-    slot                    TEXT NOT NULL CHECK (slot IN ('weapon', 'armor', 'accessory', 'trinket')),
+    slot                    TEXT NOT NULL CHECK (slot IN ('weapon', 'armor', 'accessory', 'trinket', 'cloak')),
     base_type               TEXT NOT NULL,
     rarity                  TEXT NOT NULL CHECK (rarity IN ('common', 'uncommon', 'rare', 'epic', 'legendary')),
     primary_stat            TEXT NOT NULL CHECK (primary_stat IN ('strength', 'wisdom', 'charisma', 'dexterity', 'luck', 'defense')),

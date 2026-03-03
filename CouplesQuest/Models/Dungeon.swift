@@ -97,9 +97,10 @@ final class Dungeon {
         roomCount * difficulty.secondsPerRoom
     }
     
-    /// HP cost to start this dungeon run (1 HP per minute of duration)
+    /// HP cost to enter this dungeon (~0.5 HP per minute of duration, min 5).
+    /// In-dungeon damage from failed rooms is the primary HP drain.
     var hpCost: Int {
-        max(10, durationSeconds / 60)
+        max(5, (durationSeconds / 60 + 1) / 2)
     }
     
     /// Duration formatted as string
@@ -1426,6 +1427,18 @@ enum DungeonTheme: String, Codable, CaseIterable {
     case fortress = "Fortress"
     case volcano = "Volcano"
     case abyss = "Abyss"
+    case aquatic = "Aquatic"
+    case volcanic = "Volcanic"
+    case phantom = "Phantom"
+    case jungle = "Jungle"
+    case crystal = "Crystal"
+    case storm = "Storm"
+    case shadow = "Shadow"
+    case celestial = "Celestial"
+    case mountain = "Mountain"
+    case mushroom = "Mushroom"
+    case desert = "Desert"
+    case grove = "Grove"
     
     var icon: String {
         switch self {
@@ -1435,6 +1448,18 @@ enum DungeonTheme: String, Codable, CaseIterable {
         case .fortress: return "building.fill"
         case .volcano: return "flame.fill"
         case .abyss: return "tornado"
+        case .aquatic: return "drop.fill"
+        case .volcanic: return "flame.circle.fill"
+        case .phantom: return "eye.fill"
+        case .jungle: return "tree.fill"
+        case .crystal: return "diamond.fill"
+        case .storm: return "cloud.bolt.fill"
+        case .shadow: return "moon.fill"
+        case .celestial: return "sparkles"
+        case .mountain: return "snowflake"
+        case .mushroom: return "aqi.medium"
+        case .desert: return "sun.max.fill"
+        case .grove: return "leaf.circle.fill"
         }
     }
     
@@ -1447,6 +1472,18 @@ enum DungeonTheme: String, Codable, CaseIterable {
         case .fortress: return "dungeon_fortress"
         case .volcano: return "dungeon_volcano"
         case .abyss: return "dungeon_abyss"
+        case .aquatic: return "dungeon_aquatic"
+        case .volcanic: return "dungeon_volcanic"
+        case .phantom: return "dungeon_phantom"
+        case .jungle: return "dungeon_jungle"
+        case .crystal: return "dungeon_crystal"
+        case .storm: return "dungeon_storm"
+        case .shadow: return "dungeon_shadow"
+        case .celestial: return "dungeon_celestial"
+        case .mountain: return "dungeon_mountain"
+        case .mushroom: return "dungeon_mushroom"
+        case .desert: return "dungeon_desert"
+        case .grove: return "dungeon_grove"
         }
     }
 }
@@ -1464,7 +1501,7 @@ enum DungeonRunStatus: String, Codable {
 
 struct SampleDungeons {
     static var all: [Dungeon] {
-        [goblinCaves, ancientRuins, shadowForest, ironFortress, dragonsPeak, theAbyss]
+        [emeraldCanopy, goblinCaves, ancientRuins, shadowForest, myceliumDepths, ironFortress, frostpeakSummit, dragonsPeak, scorchedWastes, theAbyss]
     }
     
     static var goblinCaves: Dungeon {
@@ -1627,6 +1664,114 @@ struct SampleDungeons {
                 StatRequirement(stat: .charisma, minimum: 15),
                 StatRequirement(stat: .luck, minimum: 12),
                 StatRequirement(stat: .defense, minimum: 15)
+            ]
+        )
+    }
+    
+    static var emeraldCanopy: Dungeon {
+        Dungeon(
+            name: "Emerald Canopy",
+            description: "A sunlit grove where mischievous sprites guard nature's treasures. A gentle test for new adventurers.",
+            theme: .grove,
+            difficulty: .normal,
+            rooms: [
+                DungeonRoom(name: "Mossy Trail", description: "Vines tug at your ankles. The forest is sizing you up.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 8),
+                DungeonRoom(name: "Sprite Hollow", description: "Giggling sprites pelt you with acorns and riddles.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 10),
+                DungeonRoom(name: "The Great Oak", description: "An ancient treant awakens to test your worth.", encounterType: .boss, primaryStat: .charisma, difficultyRating: 14, isBossRoom: true, bonusLootChance: 0.25)
+            ],
+            levelRequirement: 3,
+            recommendedStatTotal: 25,
+            baseExpReward: 100,
+            baseGoldReward: 55,
+            lootTier: 1,
+            minHPRequired: 40,
+            statRequirements: [
+                StatRequirement(stat: .dexterity, minimum: 4),
+                StatRequirement(stat: .wisdom, minimum: 3)
+            ]
+        )
+    }
+    
+    static var myceliumDepths: Dungeon {
+        Dungeon(
+            name: "Mycelium Depths",
+            description: "Bioluminescent fungi light a sprawling underground network. The spores whisper secrets to those who listen.",
+            theme: .mushroom,
+            difficulty: .hard,
+            rooms: [
+                DungeonRoom(name: "Spore Tunnel", description: "Clouds of glowing spores obscure the path. Breathe carefully.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 18),
+                DungeonRoom(name: "Fungal Garden", description: "Towering mushrooms hum with strange energy. Rare ingredients grow here.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 14, bonusLootChance: 0.3),
+                DungeonRoom(name: "Myconid Colony", description: "Sentient mushroom-folk block the way. They can be reasoned with... maybe.", encounterType: .puzzle, primaryStat: .charisma, difficultyRating: 20),
+                DungeonRoom(name: "Rot Beetle Nest", description: "Armoured beetles swarm from the decaying walls!", encounterType: .combat, primaryStat: .strength, difficultyRating: 22),
+                DungeonRoom(name: "The Spormother", description: "A massive fungal entity pulses at the heart of the depths.", encounterType: .boss, primaryStat: .wisdom, difficultyRating: 26, isBossRoom: true, bonusLootChance: 0.35)
+            ],
+            levelRequirement: 12,
+            recommendedStatTotal: 55,
+            baseExpReward: 450,
+            baseGoldReward: 250,
+            lootTier: 2,
+            minHPRequired: 125,
+            statRequirements: [
+                StatRequirement(stat: .wisdom, minimum: 10),
+                StatRequirement(stat: .dexterity, minimum: 8),
+                StatRequirement(stat: .charisma, minimum: 6)
+            ]
+        )
+    }
+    
+    static var frostpeakSummit: Dungeon {
+        Dungeon(
+            name: "Frostpeak Summit",
+            description: "A treacherous ascent through blinding snowstorms and ancient ice caverns. Only the resilient reach the top.",
+            theme: .mountain,
+            difficulty: .heroic,
+            rooms: [
+                DungeonRoom(name: "Avalanche Pass", description: "The mountain rumbles. Time your crossing or be buried.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 28),
+                DungeonRoom(name: "Ice Bridge", description: "A shimmering bridge of solid ice spans a bottomless crevasse.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 30),
+                DungeonRoom(name: "Frost Wolf Den", description: "A pack of dire wolves guards their territory with fang and fury.", encounterType: .combat, primaryStat: .strength, difficultyRating: 32),
+                DungeonRoom(name: "Frozen Shrine", description: "An ancient shrine encased in ice. Offerings still glitter within.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 22, bonusLootChance: 0.4),
+                DungeonRoom(name: "Storm Plateau", description: "Winds howl at speeds that could tear flesh from bone.", encounterType: .trap, primaryStat: .defense, difficultyRating: 34),
+                DungeonRoom(name: "The Frost Wyrm", description: "Atop the summit, a dragon of living ice spreads its crystalline wings.", encounterType: .boss, primaryStat: .strength, difficultyRating: 40, isBossRoom: true, bonusLootChance: 0.5)
+            ],
+            levelRequirement: 20,
+            recommendedStatTotal: 85,
+            baseExpReward: 1100,
+            baseGoldReward: 650,
+            lootTier: 3,
+            minHPRequired: 275,
+            statRequirements: [
+                StatRequirement(stat: .strength, minimum: 14),
+                StatRequirement(stat: .defense, minimum: 12),
+                StatRequirement(stat: .dexterity, minimum: 10)
+            ]
+        )
+    }
+    
+    static var scorchedWastes: Dungeon {
+        Dungeon(
+            name: "Scorched Wastes",
+            description: "An endless expanse of burning sands where a buried civilization hides terrible power. The heat alone can kill.",
+            theme: .desert,
+            difficulty: .heroic,
+            rooms: [
+                DungeonRoom(name: "Sandstorm Gauntlet", description: "Walls of sand roar across the dunes. Visibility is zero.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 34),
+                DungeonRoom(name: "Mirage Oasis", description: "Is it real? The shimmering pool could be salvation or a trap.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 32),
+                DungeonRoom(name: "Scorpion Pit", description: "Giant scorpions erupt from the sand, stingers poised to strike.", encounterType: .combat, primaryStat: .strength, difficultyRating: 36),
+                DungeonRoom(name: "Buried Temple", description: "Half-swallowed by sand, ancient treasures peek through the dunes.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 26, bonusLootChance: 0.45),
+                DungeonRoom(name: "Sun Altar", description: "Blinding light pours from a stone altar. A puzzle of reflections.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 38),
+                DungeonRoom(name: "The Sand Pharaoh", description: "An undead king rises from his sarcophagus, wreathed in golden flame.", encounterType: .boss, primaryStat: .charisma, difficultyRating: 44, isBossRoom: true, bonusLootChance: 0.55)
+            ],
+            levelRequirement: 35,
+            recommendedStatTotal: 120,
+            baseExpReward: 2000,
+            baseGoldReward: 1200,
+            lootTier: 4,
+            minHPRequired: 400,
+            statRequirements: [
+                StatRequirement(stat: .strength, minimum: 18),
+                StatRequirement(stat: .wisdom, minimum: 16),
+                StatRequirement(stat: .dexterity, minimum: 14),
+                StatRequirement(stat: .charisma, minimum: 10)
             ]
         )
     }

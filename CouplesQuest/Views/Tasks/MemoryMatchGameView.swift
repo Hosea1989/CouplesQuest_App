@@ -32,8 +32,8 @@ struct MemoryMatchRewardTier {
                 icon: "sparkles",
                 color: "AccentGreen",
                 gold: 150,
-                consumableName: "Green Tea",
-                consumableIcon: "leaf.fill",
+                consumableName: "Mystic Mushroom",
+                consumableIcon: "sparkle",
                 consumableCount: 2,
                 wisdomBonus: 1
             )
@@ -64,7 +64,7 @@ struct MemoryMatchRewardTier {
     
     static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
         ("Perfect Recall", "< 1 min", 200, "3× Memory Tonic"),
-        ("Sharp Memory", "1–2 min", 150, "2× Green Tea"),
+        ("Sharp Memory", "1–2 min", 150, "2× Mystic Mushroom"),
         ("Steady Recall", "2–3 min", 100, "1× Apple Juice"),
         ("Completed", "> 3 min", 50, "—"),
     ]
@@ -113,6 +113,7 @@ private struct MemoryTimerView: View {
 
 struct MemoryMatchGameView: View {
     let onComplete: (Int) -> Void
+    var onFail: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     
     // Card symbols — 8 RPG-themed pairs
@@ -147,8 +148,9 @@ struct MemoryMatchGameView: View {
         MemoryMatchRewardTier.tier(for: elapsedSeconds)
     }
     
-    init(onComplete: @escaping (Int) -> Void) {
+    init(onComplete: @escaping (Int) -> Void, onFail: (() -> Void)? = nil) {
         self.onComplete = onComplete
+        self.onFail = onFail
         // Build and shuffle cards — start face-up for preview phase
         var deck: [MemoryCard] = []
         for (i, sym) in Self.symbolPool.enumerated() {
@@ -482,6 +484,7 @@ struct MemoryMatchGameView: View {
                     .multilineTextAlignment(.center)
                 
                 Button {
+                    onFail?()
                     dismiss()
                 } label: {
                     Text("Close")

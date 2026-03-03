@@ -10,11 +10,24 @@ struct EquipmentTemplate: Identifiable {
     let slot: EquipmentSlot
     let rarity: ItemRarity
     let primaryStat: StatType
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: StatType?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let levelRequirement: Int
     let baseType: String              // keyword for image mapping ("sword", "axe", etc.)
+    
+    /// Armor weight derived from base type
+    var armorWeight: ArmorWeight {
+        switch baseType {
+        case "plate", "chainmail", "breastplate", "pauldrons",
+             "heavy helm", "heavy gauntlets", "heavy boots":
+            return .heavy
+        case "robes", "leather armor", "helm", "gauntlets", "boots":
+            return .light
+        default:
+            return .universal
+        }
+    }
     
     /// Stamp out a real Equipment instance from this template
     func toEquipment(ownerID: UUID? = nil) -> Equipment {
@@ -28,7 +41,8 @@ struct EquipmentTemplate: Identifiable {
             levelRequirement: levelRequirement,
             secondaryStat: secondaryStat,
             secondaryStatBonus: secondaryStatBonus,
-            ownerID: ownerID
+            ownerID: ownerID,
+            baseType: baseType
         )
     }
 }
@@ -42,7 +56,7 @@ struct EquipmentCatalog {
     // MARK: - Public API
     
     /// Every item in the game
-    static let all: [EquipmentTemplate] = weapons + armor + accessories + trinkets
+    static let all: [EquipmentTemplate] = weapons + armor + accessories + trinkets + cloaks
     
     /// Filter by slot
     static func items(for slot: EquipmentSlot) -> [EquipmentTemplate] {
@@ -61,11 +75,13 @@ struct EquipmentCatalog {
     
     /// Pick a random catalog item matching the given criteria.
     /// When `maxLevel` is provided, only items with `levelRequirement <= maxLevel` are considered.
-    static func random(slot: EquipmentSlot? = nil, rarity: ItemRarity? = nil, maxLevel: Int? = nil) -> EquipmentTemplate? {
+    /// When `allowedWeights` is provided, only armor matching those weights is included.
+    static func random(slot: EquipmentSlot? = nil, rarity: ItemRarity? = nil, maxLevel: Int? = nil, allowedWeights: Set<ArmorWeight>? = nil) -> EquipmentTemplate? {
         var pool = all
         if let slot = slot { pool = pool.filter { $0.slot == slot } }
         if let rarity = rarity { pool = pool.filter { $0.rarity == rarity } }
         if let maxLevel = maxLevel { pool = pool.filter { $0.levelRequirement <= maxLevel } }
+        if let weights = allowedWeights { pool = pool.filter { weights.contains($0.armorWeight) } }
         return pool.randomElement()
     }
     
@@ -78,7 +94,7 @@ struct EquipmentCatalog {
     // MARK: - WEAPONS  (60 items: 12 base types × 5 rarities)
     // =========================================================================
     
-    static let weapons: [EquipmentTemplate] = swords + axes + staves + daggers + bows + wands + maces + spears + shields + crossbows + tomes + halberds
+    static let weapons: [EquipmentTemplate] = swords + axes + staves + daggers + bows + wands + maces + spears + shields + crossbows + tomes
     
     // MARK: Swords
     
@@ -489,7 +505,7 @@ struct EquipmentCatalog {
     // MARK: - ARMOR  (50 items: 10 base types × 5 rarities)
     // =========================================================================
     
-    static let armor: [EquipmentTemplate] = plates + chainmails + robes + leatherArmors + breastplates + helms + gauntlets + boots + pauldrons + capes
+    static let armor: [EquipmentTemplate] = plates + chainmails + robes + leatherArmors + breastplates + helms + gauntlets + boots + pauldrons + heavyHelms + heavyGauntlets + heavyBoots
     
     // MARK: Plate
     
@@ -845,7 +861,7 @@ struct EquipmentCatalog {
     // MARK: - ACCESSORIES  (30 items: 6 base types × 5 rarities)
     // =========================================================================
     
-    static let accessories: [EquipmentTemplate] = rings + amulets + pendants + earrings + brooches + talismans
+    static let accessories: [EquipmentTemplate] = rings + amulets + earrings + talismans
     
     // MARK: Rings
     
@@ -954,7 +970,7 @@ struct EquipmentCatalog {
             id: "trk_cloak_common_01",
             name: "Moth-Eaten Travel Cape",
             description: "It keeps the rain off. Some of the rain. Okay, a little of the rain.",
-            slot: .trinket, rarity: .common,
+            slot: .cloak, rarity: .common,
             primaryStat: .defense, statBonus: 1,
             secondaryStat: nil, secondaryStatBonus: 0,
             levelRequirement: 1, baseType: "cloak"
@@ -963,7 +979,7 @@ struct EquipmentCatalog {
             id: "trk_cloak_uncommon_01",
             name: "Twilight Mantle",
             description: "A deep-blue cloak that seems to absorb light. Perfect for blending into evening shadows.",
-            slot: .trinket, rarity: .uncommon,
+            slot: .cloak, rarity: .uncommon,
             primaryStat: .dexterity, statBonus: 3,
             secondaryStat: .defense, secondaryStatBonus: 1,
             levelRequirement: 5, baseType: "cloak"
@@ -972,7 +988,7 @@ struct EquipmentCatalog {
             id: "trk_cloak_rare_01",
             name: "Windweaver's Shroud",
             description: "The air itself moves around this cloak, making its wearer lighter and faster.",
-            slot: .trinket, rarity: .rare,
+            slot: .cloak, rarity: .rare,
             primaryStat: .dexterity, statBonus: 5,
             secondaryStat: .luck, secondaryStatBonus: 3,
             levelRequirement: 13, baseType: "cloak"
@@ -981,7 +997,7 @@ struct EquipmentCatalog {
             id: "trk_cloak_epic_01",
             name: "Cloak of Many Stars",
             description: "The interior shows a different constellation each night. It whispers star-charts to its wearer.",
-            slot: .trinket, rarity: .epic,
+            slot: .cloak, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .dexterity, secondaryStatBonus: 5,
             levelRequirement: 21, baseType: "cloak"
@@ -990,60 +1006,10 @@ struct EquipmentCatalog {
             id: "trk_cloak_legendary_01",
             name: "Mantle of the Unseen",
             description: "Woven from pure possibility. Its wearer can be anywhere and nowhere simultaneously.",
-            slot: .trinket, rarity: .legendary,
+            slot: .cloak, rarity: .legendary,
             primaryStat: .dexterity, statBonus: 13,
             secondaryStat: .luck, secondaryStatBonus: 10,
             levelRequirement: 36, baseType: "cloak"
-        ),
-    ]
-    
-    // MARK: Bracelets
-    
-    static let bracelets: [EquipmentTemplate] = [
-        EquipmentTemplate(
-            id: "trk_bracelet_common_01",
-            name: "Woven Friendship Band",
-            description: "A colorful thread bracelet. Its magic comes from the love put into making it.",
-            slot: .trinket, rarity: .common,
-            primaryStat: .charisma, statBonus: 1,
-            secondaryStat: nil, secondaryStatBonus: 0,
-            levelRequirement: 1, baseType: "bracelet"
-        ),
-        EquipmentTemplate(
-            id: "trk_bracelet_uncommon_01",
-            name: "Iron Willpower Cuff",
-            description: "A heavy cuff inscribed with discipline mantras. It keeps you focused when willpower wavers.",
-            slot: .trinket, rarity: .uncommon,
-            primaryStat: .strength, statBonus: 3,
-            secondaryStat: .defense, secondaryStatBonus: 1,
-            levelRequirement: 4, baseType: "bracelet"
-        ),
-        EquipmentTemplate(
-            id: "trk_bracelet_rare_01",
-            name: "Oathbound Bangle",
-            description: "One of a bonded pair. When your ally is near, the gems glow bright.",
-            slot: .trinket, rarity: .rare,
-            primaryStat: .charisma, statBonus: 5,
-            secondaryStat: .luck, secondaryStatBonus: 4,
-            levelRequirement: 11, baseType: "bracelet"
-        ),
-        EquipmentTemplate(
-            id: "trk_bracelet_epic_01",
-            name: "Temporal Armlet",
-            description: "A bracelet that exists slightly out of sync with time. Reactions feel... anticipated.",
-            slot: .trinket, rarity: .epic,
-            primaryStat: .dexterity, statBonus: 8,
-            secondaryStat: .wisdom, secondaryStatBonus: 5,
-            levelRequirement: 21, baseType: "bracelet"
-        ),
-        EquipmentTemplate(
-            id: "trk_bracelet_legendary_01",
-            name: "Infinity Loop",
-            description: "A bracelet with no beginning and no end. Time, space, and limits mean nothing to its wearer.",
-            slot: .trinket, rarity: .legendary,
-            primaryStat: .luck, statBonus: 14,
-            secondaryStat: .dexterity, secondaryStatBonus: 9,
-            levelRequirement: 37, baseType: "bracelet"
         ),
     ]
     
@@ -1097,61 +1063,11 @@ struct EquipmentCatalog {
         ),
     ]
     
-    // MARK: Pendants
-    
-    static let pendants: [EquipmentTemplate] = [
-        EquipmentTemplate(
-            id: "acc_pendant_common_01",
-            name: "Polished Stone Pendant",
-            description: "A smooth river stone on a leather thong. Simple and grounding.",
-            slot: .accessory, rarity: .common,
-            primaryStat: .defense, statBonus: 1,
-            secondaryStat: nil, secondaryStatBonus: 0,
-            levelRequirement: 1, baseType: "pendant"
-        ),
-        EquipmentTemplate(
-            id: "acc_pendant_uncommon_01",
-            name: "Moonstone Pendant",
-            description: "A pendant that glows softly in darkness. It brings peaceful dreams and steady nerves.",
-            slot: .accessory, rarity: .uncommon,
-            primaryStat: .wisdom, statBonus: 3,
-            secondaryStat: .defense, secondaryStatBonus: 1,
-            levelRequirement: 5, baseType: "pendant"
-        ),
-        EquipmentTemplate(
-            id: "acc_pendant_rare_01",
-            name: "Locket of Memories",
-            description: "This locket replays cherished memories when opened. The nostalgia strengthens resolve.",
-            slot: .accessory, rarity: .rare,
-            primaryStat: .charisma, statBonus: 5,
-            secondaryStat: .wisdom, secondaryStatBonus: 3,
-            levelRequirement: 12, baseType: "pendant"
-        ),
-        EquipmentTemplate(
-            id: "acc_pendant_epic_01",
-            name: "Soulbinder's Locket",
-            description: "Contains a fragment of a bonded partner's essence. Distance cannot weaken this connection.",
-            slot: .accessory, rarity: .epic,
-            primaryStat: .charisma, statBonus: 9,
-            secondaryStat: .strength, secondaryStatBonus: 4,
-            levelRequirement: 22, baseType: "pendant"
-        ),
-        EquipmentTemplate(
-            id: "acc_pendant_legendary_01",
-            name: "Aether Heart",
-            description: "A pendant containing a miniature universe. Its wearer commands the fundamental forces.",
-            slot: .accessory, rarity: .legendary,
-            primaryStat: .wisdom, statBonus: 14,
-            secondaryStat: .charisma, secondaryStatBonus: 10,
-            levelRequirement: 38, baseType: "pendant"
-        ),
-    ]
-    
     // =========================================================================
     // MARK: - TRINKETS  (20 items: 4 base types × 5 rarities)
     // =========================================================================
     
-    static let trinkets: [EquipmentTemplate] = cloaks + bracelets + charms + belts
+    static let trinkets: [EquipmentTemplate] = charms + belts
     
     // MARK: Belts
     
@@ -1357,56 +1273,6 @@ struct EquipmentCatalog {
         ),
     ]
     
-    // MARK: Halberds
-    
-    static let halberds: [EquipmentTemplate] = [
-        EquipmentTemplate(
-            id: "wep_halberd_common_01",
-            name: "Rusty Halberd",
-            description: "Part axe, part spear, entirely unreliable. The head wobbles with every swing.",
-            slot: .weapon, rarity: .common,
-            primaryStat: .strength, statBonus: 3,
-            secondaryStat: nil, secondaryStatBonus: 0,
-            levelRequirement: 1, baseType: "halberd"
-        ),
-        EquipmentTemplate(
-            id: "wep_halberd_uncommon_01",
-            name: "Steel Halberd",
-            description: "A properly forged polearm with a keen edge. Reach and power in one elegant package.",
-            slot: .weapon, rarity: .uncommon,
-            primaryStat: .strength, statBonus: 5,
-            secondaryStat: .dexterity, secondaryStatBonus: 2,
-            levelRequirement: 6, baseType: "halberd"
-        ),
-        EquipmentTemplate(
-            id: "wep_halberd_rare_01",
-            name: "War Halberd",
-            description: "Battle-tested and blood-stained. Its sweeping strikes can hold an entire corridor alone.",
-            slot: .weapon, rarity: .rare,
-            primaryStat: .strength, statBonus: 7,
-            secondaryStat: .defense, secondaryStatBonus: 3,
-            levelRequirement: 14, baseType: "halberd"
-        ),
-        EquipmentTemplate(
-            id: "wep_halberd_epic_01",
-            name: "Runic Halberd",
-            description: "Ancient runes spiral up the haft, empowering every strike with elemental fury.",
-            slot: .weapon, rarity: .epic,
-            primaryStat: .strength, statBonus: 11,
-            secondaryStat: .wisdom, secondaryStatBonus: 5,
-            levelRequirement: 25, baseType: "halberd"
-        ),
-        EquipmentTemplate(
-            id: "wep_halberd_legendary_01",
-            name: "Worldsplitter Halberd",
-            description: "The weapon of the titan who carved the continents apart. Each swing reshapes the land beneath it.",
-            slot: .weapon, rarity: .legendary,
-            primaryStat: .strength, statBonus: 17,
-            secondaryStat: .dexterity, secondaryStatBonus: 8,
-            levelRequirement: 39, baseType: "halberd"
-        ),
-    ]
-    
     // =========================================================================
     // MARK: - NEW ARMOR  (15 items: 3 base types × 5 rarities)
     // =========================================================================
@@ -1511,53 +1377,153 @@ struct EquipmentCatalog {
         ),
     ]
     
-    // MARK: Capes
+    // MARK: Heavy Helms
     
-    static let capes: [EquipmentTemplate] = [
+    static let heavyHelms: [EquipmentTemplate] = [
         EquipmentTemplate(
-            id: "arm_cape_common_01",
-            name: "Traveler's Cape",
-            description: "A simple travel cape that keeps the wind at bay. It billows dramatically in doorways.",
+            id: "arm_hhhelm_common_01",
+            name: "Dented Heavy Helm",
+            description: "A battered full-face helm with limited visibility. What it lacks in sight, it makes up in skull protection.",
             slot: .armor, rarity: .common,
-            primaryStat: .charisma, statBonus: 1,
+            primaryStat: .defense, statBonus: 2,
             secondaryStat: nil, secondaryStatBonus: 0,
-            levelRequirement: 1, baseType: "cape"
+            levelRequirement: 3, baseType: "heavy helm"
         ),
         EquipmentTemplate(
-            id: "arm_cape_uncommon_01",
-            name: "Silk Cape",
-            description: "Fine silk dyed in rich colors. It commands attention and respect in equal measure.",
+            id: "arm_hhhelm_uncommon_01",
+            name: "Iron Heavy Helm",
+            description: "A solid iron greathelm forged for the front lines. The visor slits glow faintly at dusk.",
             slot: .armor, rarity: .uncommon,
-            primaryStat: .charisma, statBonus: 3,
-            secondaryStat: .defense, secondaryStatBonus: 1,
-            levelRequirement: 5, baseType: "cape"
+            primaryStat: .defense, statBonus: 4,
+            secondaryStat: .strength, secondaryStatBonus: 2,
+            levelRequirement: 8, baseType: "heavy helm"
         ),
         EquipmentTemplate(
-            id: "arm_cape_rare_01",
-            name: "Battle Cape",
-            description: "Reinforced with chain links, this cape deflects strikes aimed at the back while looking magnificent.",
+            id: "arm_hhhelm_rare_01",
+            name: "Steel Heavy Helm",
+            description: "Masterwork steel plating with reinforced cheek guards. Swords bounce off like rain.",
             slot: .armor, rarity: .rare,
-            primaryStat: .charisma, statBonus: 5,
-            secondaryStat: .defense, secondaryStatBonus: 3,
-            levelRequirement: 12, baseType: "cape"
+            primaryStat: .defense, statBonus: 6,
+            secondaryStat: .strength, secondaryStatBonus: 4,
+            levelRequirement: 15, baseType: "heavy helm"
         ),
         EquipmentTemplate(
-            id: "arm_cape_epic_01",
-            name: "Royal Cape",
-            description: "Trimmed with ermine and enchanted with authority. People instinctively step aside.",
+            id: "arm_hhhelm_epic_01",
+            name: "Warlord's Heavy Helm",
+            description: "A crowned greathelm etched with battle runes. Its wearer commands respect on any battlefield.",
             slot: .armor, rarity: .epic,
-            primaryStat: .charisma, statBonus: 9,
-            secondaryStat: .wisdom, secondaryStatBonus: 5,
-            levelRequirement: 23, baseType: "cape"
+            primaryStat: .defense, statBonus: 9,
+            secondaryStat: .charisma, secondaryStatBonus: 6,
+            levelRequirement: 25, baseType: "heavy helm"
         ),
         EquipmentTemplate(
-            id: "arm_cape_legendary_01",
-            name: "Sovereign's Mantle",
-            description: "The cape of the last true sovereign. It grants the bearing of a born ruler and the will to match.",
+            id: "arm_hhhelm_legendary_01",
+            name: "Helm of the Immortal",
+            description: "Legend says no warrior wearing this helm has ever fallen in battle. Whether that's skill or magic, nobody knows.",
             slot: .armor, rarity: .legendary,
-            primaryStat: .charisma, statBonus: 14,
-            secondaryStat: .wisdom, secondaryStatBonus: 9,
-            levelRequirement: 37, baseType: "cape"
+            primaryStat: .defense, statBonus: 14,
+            secondaryStat: .strength, secondaryStatBonus: 10,
+            levelRequirement: 38, baseType: "heavy helm"
+        ),
+    ]
+    
+    // MARK: Heavy Gauntlets
+    
+    static let heavyGauntlets: [EquipmentTemplate] = [
+        EquipmentTemplate(
+            id: "arm_hgauntlets_common_01",
+            name: "Rusty Heavy Gauntlets",
+            description: "Thick iron gauntlets that make a fist feel like a warhammer. Rusty, but they'll do.",
+            slot: .armor, rarity: .common,
+            primaryStat: .strength, statBonus: 2,
+            secondaryStat: nil, secondaryStatBonus: 0,
+            levelRequirement: 3, baseType: "heavy gauntlets"
+        ),
+        EquipmentTemplate(
+            id: "arm_hgauntlets_uncommon_01",
+            name: "Plated Heavy Gauntlets",
+            description: "Articulated steel plates over chainmail gloves. Each finger moves like a tiny battering ram.",
+            slot: .armor, rarity: .uncommon,
+            primaryStat: .strength, statBonus: 4,
+            secondaryStat: .defense, secondaryStatBonus: 2,
+            levelRequirement: 8, baseType: "heavy gauntlets"
+        ),
+        EquipmentTemplate(
+            id: "arm_hgauntlets_rare_01",
+            name: "Forgemaster's Heavy Gauntlets",
+            description: "Built for smiths who work with dragon-fire. They can grip molten steel without flinching.",
+            slot: .armor, rarity: .rare,
+            primaryStat: .strength, statBonus: 6,
+            secondaryStat: .defense, secondaryStatBonus: 4,
+            levelRequirement: 14, baseType: "heavy gauntlets"
+        ),
+        EquipmentTemplate(
+            id: "arm_hgauntlets_epic_01",
+            name: "Siegebreaker Heavy Gauntlets",
+            description: "Enchanted to amplify grip strength tenfold. Castle gates crumble in their grasp.",
+            slot: .armor, rarity: .epic,
+            primaryStat: .strength, statBonus: 10,
+            secondaryStat: .defense, secondaryStatBonus: 6,
+            levelRequirement: 24, baseType: "heavy gauntlets"
+        ),
+        EquipmentTemplate(
+            id: "arm_hgauntlets_legendary_01",
+            name: "Fists of the Mountain King",
+            description: "Carved from living stone and bound with adamantine. One punch reshapes the landscape.",
+            slot: .armor, rarity: .legendary,
+            primaryStat: .strength, statBonus: 15,
+            secondaryStat: .defense, secondaryStatBonus: 10,
+            levelRequirement: 38, baseType: "heavy gauntlets"
+        ),
+    ]
+    
+    // MARK: Heavy Boots
+    
+    static let heavyBoots: [EquipmentTemplate] = [
+        EquipmentTemplate(
+            id: "arm_hboots_common_01",
+            name: "Iron Heavy Boots",
+            description: "Clunky iron-soled boots that leave dents in wooden floors. Slow, but nothing gets through.",
+            slot: .armor, rarity: .common,
+            primaryStat: .defense, statBonus: 2,
+            secondaryStat: nil, secondaryStatBonus: 0,
+            levelRequirement: 3, baseType: "heavy boots"
+        ),
+        EquipmentTemplate(
+            id: "arm_hboots_uncommon_01",
+            name: "Steel Heavy Boots",
+            description: "Reinforced steel boots with shin guards. Every step sounds like a war drum.",
+            slot: .armor, rarity: .uncommon,
+            primaryStat: .defense, statBonus: 4,
+            secondaryStat: .dexterity, secondaryStatBonus: 1,
+            levelRequirement: 8, baseType: "heavy boots"
+        ),
+        EquipmentTemplate(
+            id: "arm_hboots_rare_01",
+            name: "Warplate Heavy Boots",
+            description: "Full-coverage plate boots with enchanted soles. They grip any surface — ice, mud, or blood.",
+            slot: .armor, rarity: .rare,
+            primaryStat: .defense, statBonus: 6,
+            secondaryStat: .dexterity, secondaryStatBonus: 3,
+            levelRequirement: 14, baseType: "heavy boots"
+        ),
+        EquipmentTemplate(
+            id: "arm_hboots_epic_01",
+            name: "Earthshaker Heavy Boots",
+            description: "Each stomp sends tremors through the ground. Enemies stumble; allies hold firm.",
+            slot: .armor, rarity: .epic,
+            primaryStat: .defense, statBonus: 9,
+            secondaryStat: .strength, secondaryStatBonus: 5,
+            levelRequirement: 24, baseType: "heavy boots"
+        ),
+        EquipmentTemplate(
+            id: "arm_hboots_legendary_01",
+            name: "Colossus Treads",
+            description: "Forged from the same metal as the ancient war colossus. The ground itself bows beneath them.",
+            slot: .armor, rarity: .legendary,
+            primaryStat: .defense, statBonus: 14,
+            secondaryStat: .strength, secondaryStatBonus: 9,
+            levelRequirement: 38, baseType: "heavy boots"
         ),
     ]
     
@@ -1612,56 +1578,6 @@ struct EquipmentCatalog {
             primaryStat: .luck, statBonus: 15,
             secondaryStat: .charisma, secondaryStatBonus: 9,
             levelRequirement: 36, baseType: "earring"
-        ),
-    ]
-    
-    // MARK: Brooches
-    
-    static let brooches: [EquipmentTemplate] = [
-        EquipmentTemplate(
-            id: "acc_brooch_common_01",
-            name: "Plain Brooch",
-            description: "A simple metal pin that holds your cloak in place. Functional, unremarkable, dependable.",
-            slot: .accessory, rarity: .common,
-            primaryStat: .charisma, statBonus: 1,
-            secondaryStat: nil, secondaryStatBonus: 0,
-            levelRequirement: 1, baseType: "brooch"
-        ),
-        EquipmentTemplate(
-            id: "acc_brooch_uncommon_01",
-            name: "Ornate Brooch",
-            description: "Filigree silver work shaped like a blooming rose. It marks its wearer as someone of taste.",
-            slot: .accessory, rarity: .uncommon,
-            primaryStat: .charisma, statBonus: 3,
-            secondaryStat: .defense, secondaryStatBonus: 1,
-            levelRequirement: 5, baseType: "brooch"
-        ),
-        EquipmentTemplate(
-            id: "acc_brooch_rare_01",
-            name: "Crystal Brooch",
-            description: "A brooch housing a living crystal that refracts light into mesmerizing patterns. Hard to look away.",
-            slot: .accessory, rarity: .rare,
-            primaryStat: .charisma, statBonus: 6,
-            secondaryStat: .wisdom, secondaryStatBonus: 3,
-            levelRequirement: 12, baseType: "brooch"
-        ),
-        EquipmentTemplate(
-            id: "acc_brooch_epic_01",
-            name: "Royal Brooch",
-            description: "Bearing the crest of a dynasty long passed. Its authority transcends time and lineage.",
-            slot: .accessory, rarity: .epic,
-            primaryStat: .charisma, statBonus: 9,
-            secondaryStat: .luck, secondaryStatBonus: 5,
-            levelRequirement: 22, baseType: "brooch"
-        ),
-        EquipmentTemplate(
-            id: "acc_brooch_legendary_01",
-            name: "Brooch of the Eternal Court",
-            description: "Worn by the immortal emissaries of the fey court. Mortals bow without knowing why.",
-            slot: .accessory, rarity: .legendary,
-            primaryStat: .charisma, statBonus: 15,
-            secondaryStat: .luck, secondaryStatBonus: 10,
-            levelRequirement: 38, baseType: "brooch"
         ),
     ]
     

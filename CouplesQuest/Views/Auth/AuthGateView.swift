@@ -63,6 +63,9 @@ struct AuthGateView: View {
             }
         }
         .task {
+            let splashStart = ContinuousClock.now
+            let minimumSplashDuration = Duration.milliseconds(2500)
+            
             // #region agent log
             _debugLog("AuthGateView .task: calling restoreSession()", hyp: "H-A")
             // #endregion
@@ -72,8 +75,6 @@ struct AuthGateView: View {
             // #endregion
             isAuthenticated = supabase.isAuthenticated
             
-            try? await Task.sleep(for: .milliseconds(300))
-            
             if isAuthenticated, let userID = supabase.currentUserID {
                 PushNotificationService.shared.login(userID: userID.uuidString)
             }
@@ -81,6 +82,12 @@ struct AuthGateView: View {
             if isAuthenticated && !hasCharacterForCurrentUser && !cloudRestoreAttempted {
                 cloudRestoreAttempted = true
                 await restoreCharacterFromCloud()
+            }
+            
+            // Wait for the splash animation to finish before transitioning
+            let elapsed = ContinuousClock.now - splashStart
+            if elapsed < minimumSplashDuration {
+                try? await Task.sleep(for: minimumSplashDuration - elapsed)
             }
             
             if isAuthenticated && hasCharacter && !cloudRestoreFailed {
@@ -282,6 +289,7 @@ struct AuthGateView: View {
                     case .armor: character.equipment.armor = item
                     case .accessory: character.equipment.accessory = item
                     case .trinket: character.equipment.trinket = item
+                    case .cloak: character.equipment.cloak = item
                     }
                     item.isEquipped = true
                 }

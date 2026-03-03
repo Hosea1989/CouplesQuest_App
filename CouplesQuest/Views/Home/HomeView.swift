@@ -47,8 +47,8 @@ struct HomeView: View {
     @State private var showDailyQuestCelebration = false
     @State private var claimedDailyQuest: DailyQuest? = nil
     
-    // Card entrance animation
-    @State private var cardsVisible: [Bool] = Array(repeating: false, count: 14)
+    // Card entrance animation — single trigger to avoid 14 separate body re-evaluations
+    @State private var cardsAppeared = false
     
     // Phased rendering: defer the full 3300-line body + animations until after
     // the view has appeared and the main thread has had a chance to settle.
@@ -67,7 +67,7 @@ struct HomeView: View {
             Group {
                 if let character = character, contentReady {
                     ScrollView {
-                        VStack(spacing: 24) {
+                        LazyVStack(spacing: 24) {
                             // Level Up Banner (always visible immediately, no entrance delay)
                             if character.canLevelUp {
                                 LevelUpBanner {
@@ -100,48 +100,48 @@ struct HomeView: View {
                             
                             // 1. Character Summary Card (with avatar — compact)
                             CharacterSummaryCard(character: character)
-                                .cardEntrance(visible: cardsVisible[0], delay: 0)
+                                .cardEntrance(visible: cardsAppeared, delay: 0)
                             
                             // 1.25. Party Bar (shows allies when in a party)
                             if character.isInParty {
                                 PartyBarCard(character: character, bond: bonds.first)
-                                    .cardEntrance(visible: cardsVisible[13], delay: 0)
+                                    .cardEntrance(visible: cardsAppeared, delay: 0)
                             }
                             
                             // 1.5. Breadcrumb Quest Log (first 7 days only)
                             if character.shouldShowBreadcrumbs {
                                 BreadcrumbQuestLogCard(character: character)
-                                    .cardEntrance(visible: cardsVisible[0], delay: 0)
+                                    .cardEntrance(visible: cardsAppeared, delay: 0)
                             }
                             
                             // 2. Mood Check-In Card
                             MoodCheckInCard(character: character)
-                                .cardEntrance(visible: cardsVisible[1], delay: 1)
+                                .cardEntrance(visible: cardsAppeared, delay: 1)
                             
                             // 3. Active Duties Card (shows the user's current duties)
                             ActiveDutiesHomeCard(tasks: activeDuties)
-                                .cardEntrance(visible: cardsVisible[2], delay: 2)
+                                .cardEntrance(visible: cardsAppeared, delay: 2)
                             
                             // 3.5 Goals Summary Card (shows active goals with progress)
                             if !activeGoals.isEmpty {
                                 GoalsSummaryHomeCard(goals: activeGoals, allTasks: allTasks)
-                                    .cardEntrance(visible: cardsVisible[2], delay: 2)
+                                    .cardEntrance(visible: cardsAppeared, delay: 2)
                             }
                             
                             // 4. Productivity Overview Card
                             ProductivityCard(completedTasks: allTasks.filter { $0.status == .completed })
-                                .cardEntrance(visible: cardsVisible[3], delay: 3)
+                                .cardEntrance(visible: cardsAppeared, delay: 3)
                             
                             // 4.5. Weekly Progress Summary Card
                             NavigationLink(destination: TasksView(isEmbedded: true)) {
                                 WeeklyProgressCard(allTasks: allTasks, character: character)
                             }
                             .buttonStyle(.plain)
-                            .cardEntrance(visible: cardsVisible[10], delay: 3)
+                            .cardEntrance(visible: cardsAppeared, delay: 3)
                             
                             // 5. Quick Actions Grid (lead with "New Task")
                             QuickActionsGrid(showCreateTask: $showCreateTask)
-                                .cardEntrance(visible: cardsVisible[4], delay: 4)
+                                .cardEntrance(visible: cardsAppeared, delay: 4)
                             
                             // 6. Daily Quests Card
                             DailyQuestsCard(
@@ -154,11 +154,11 @@ struct HomeView: View {
                                     withAnimation { showDailyQuestCelebration = true }
                                 }
                             )
-                            .cardEntrance(visible: cardsVisible[5], delay: 5)
+                            .cardEntrance(visible: cardsAppeared, delay: 5)
                             
                             // 7. Meditation Card
                             MeditationHomeCard(character: character)
-                                .cardEntrance(visible: cardsVisible[6], delay: 6)
+                                .cardEntrance(visible: cardsAppeared, delay: 6)
                             
                             // 8. Active Training Card (conditional)
                             if let activeMission = gameEngine.activeMission {
@@ -166,23 +166,23 @@ struct HomeView: View {
                                     mission: activeMission,
                                     onClaim: { claimMissionFromHome() }
                                 )
-                                .cardEntrance(visible: cardsVisible[7], delay: 7)
+                                .cardEntrance(visible: cardsAppeared, delay: 7)
                             }
                             
                             // 9. Quick Stats
                             QuickStatsGrid(character: character)
-                                .cardEntrance(visible: cardsVisible[8], delay: 8)
+                                .cardEntrance(visible: cardsAppeared, delay: 8)
                             
                             // 9.5. Leaderboard Summary Card
                             NavigationLink(destination: TasksView(isEmbedded: true)) {
                                 LeaderboardSummaryCard(allTasks: allTasks, character: character)
                             }
                             .buttonStyle(.plain)
-                            .cardEntrance(visible: cardsVisible[11], delay: 8)
+                            .cardEntrance(visible: cardsAppeared, delay: 8)
                             
                             // 10. Daily Tip
                             DailyTipCard()
-                                .cardEntrance(visible: cardsVisible[9], delay: 9)
+                                .cardEntrance(visible: cardsAppeared, delay: 9)
                         }
                         .padding()
                         .onAppear { triggerCardEntrance() }
@@ -291,13 +291,8 @@ struct HomeView: View {
     // MARK: - Card Entrance Animation
     
     private func triggerCardEntrance() {
-        // #region agent log
-        _debugLog("triggerCardEntrance: firing 14 animations", hyp: "H-C")
-        // #endregion
-        for i in 0..<cardsVisible.count {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(Double(i) * 0.05)) {
-                cardsVisible[i] = true
-            }
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            cardsAppeared = true
         }
     }
     
@@ -446,18 +441,20 @@ struct HomeView: View {
               let activeMission = gameEngine.activeMission,
               let mission = missions.first(where: { $0.id == activeMission.missionID }) else { return }
         
-        if let result = gameEngine.checkMissionCompletion(mission: mission, character: character) {
-            lastMissionResult = result
-            showMissionCompletionResult = true
-            AudioManager.shared.play(.claimReward)
+        if var result = gameEngine.checkMissionCompletion(mission: mission, character: character) {
             
             if result.success {
-                gameEngine.awardMaterialsForMission(
+                let herbDrop = gameEngine.awardMaterialsForMission(
                     missionRarity: mission.rarity,
                     character: character,
                     context: modelContext
                 )
+                result.materialDrops = [herbDrop]
             }
+            
+            lastMissionResult = result
+            showMissionCompletionResult = true
+            AudioManager.shared.play(.claimReward)
         }
     }
 }
@@ -1435,6 +1432,8 @@ struct ActiveDutiesHomeCard: View {
     @State private var wordSearchDuty: GameTask?
     @State private var show2048 = false
     @State private var game2048Duty: GameTask?
+    @State private var timerTick: Int = 0
+    @State private var deleteTrigger: Int = 0
     
     private var character: PlayerCharacter? { characters.first }
     private var bond: Bond? { bonds.first }
@@ -1517,12 +1516,34 @@ struct ActiveDutiesHomeCard: View {
                 }
             } else {
                 ForEach(tasks, id: \.id) { task in
-                    ActiveDutyRow(task: task, isMiniGame: miniGameType(for: task) != nil, characterLevel: character?.level ?? 1) {
-                        if let gameType = miniGameType(for: task) {
-                            openMiniGame(task, type: gameType)
-                        } else {
-                            completeTask(task)
+                    if miniGameType(for: task) != nil && !task.isDeadlineExpired && task.status != .expired {
+                        Button {
+                            if let gameType = miniGameType(for: task) {
+                                openMiniGame(task, type: gameType)
+                            }
+                        } label: {
+                            TaskCard(
+                                task: task,
+                                onComplete: {
+                                    if let gameType = miniGameType(for: task) {
+                                        openMiniGame(task, type: gameType)
+                                    }
+                                },
+                                onDelete: { deleteTask(task) },
+                                timerTick: timerTick,
+                                isMiniGame: true,
+                                characterLevel: character?.level ?? 1
+                            )
                         }
+                        .buttonStyle(.plain)
+                    } else {
+                        TaskCard(
+                            task: task,
+                            onComplete: { completeTask(task) },
+                            onDelete: { deleteTask(task) },
+                            timerTick: timerTick,
+                            characterLevel: character?.level ?? 1
+                        )
                     }
                 }
             }
@@ -1533,6 +1554,9 @@ struct ActiveDutiesHomeCard: View {
                 .fill(Color("CardBackground"))
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 4)
         )
+        .onAppear {
+            startTimerTick()
+        }
         .sheet(isPresented: $showCompletionCelebration) {
             if let result = lastCompletionResult {
                 TaskCompletionCelebration(result: result)
@@ -1585,6 +1609,20 @@ struct ActiveDutiesHomeCard: View {
                 )
                 game2048Duty = nil
             }
+        }
+    }
+    
+    private func deleteTask(_ task: GameTask) {
+        let taskID = task.id
+        modelContext.delete(task)
+        AudioManager.shared.play(.taskDelete)
+        deleteTrigger += 1
+        Task { try? await SupabaseService.shared.deleteTask(localID: taskID) }
+    }
+    
+    private func startTimerTick() {
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            timerTick += 1
         }
     }
     
@@ -2583,17 +2621,23 @@ struct FloatingParticles: View {
 
 struct CardEntranceModifier: ViewModifier {
     let visible: Bool
-    
+    let delay: Int
+
     func body(content: Content) -> some View {
         content
             .opacity(visible ? 1 : 0)
             .offset(y: visible ? 0 : 20)
+            .animation(
+                .spring(response: 0.5, dampingFraction: 0.8)
+                .delay(Double(delay) * 0.05),
+                value: visible
+            )
     }
 }
 
 extension View {
     func cardEntrance(visible: Bool, delay: Int) -> some View {
-        modifier(CardEntranceModifier(visible: visible))
+        modifier(CardEntranceModifier(visible: visible, delay: delay))
     }
 }
 

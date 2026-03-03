@@ -97,7 +97,9 @@ struct TaskDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
+                let taskID = task.id
                 modelContext.delete(task)
+                Task { try? await SupabaseService.shared.deleteTask(localID: taskID) }
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
@@ -515,12 +517,11 @@ struct TaskDetailView: View {
         // Play success sound
         AudioManager.shared.play(.success)
         
-        let result = gameEngine.completeTask(
+        var result = gameEngine.completeTask(
             task,
             character: character,
             context: modelContext
         )
-        lastCompletionResult = result
         
         // Delayed celebration haptic (after card animates in)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -535,12 +536,13 @@ struct TaskDetailView: View {
             }
         }
         
-        showCompletionCelebration = true
-        
         gameEngine.updateStreak(for: character, completedTaskToday: true)
         
         // Award crafting materials
-        gameEngine.awardMaterialsForTask(task: task, character: character, context: modelContext)
+        let matDrops = gameEngine.awardMaterialsForTask(task: task, character: character, context: modelContext)
+        result.materialDrops = matDrops
+        lastCompletionResult = result
+        showCompletionCelebration = true
     }
     
     // MARK: - Due Date Urgency

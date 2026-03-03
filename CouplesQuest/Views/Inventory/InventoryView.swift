@@ -301,7 +301,9 @@ struct InventoryView: View {
                                     showItemDetail = true
                                 }
                                 .contextMenu {
-                                    if let character = character, character.level >= item.levelRequirement {
+                                    if let character = character,
+                                       character.level >= item.levelRequirement,
+                                       character.characterClass?.canEquip(item) != false {
                                         Button {
                                             equipItem(item)
                                         } label: {
@@ -341,6 +343,7 @@ struct InventoryView: View {
     
     private func equipItem(_ item: Equipment) {
         guard let character = character else { return }
+        guard character.characterClass?.canEquip(item) != false else { return }
         
         // Unequip current item in that slot and sync the old item
         if let current = character.equipment.item(for: item.slot) {
@@ -535,9 +538,7 @@ struct ConsumableInventoryRow: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(consumable.consumableType.color).opacity(0.2))
                     .frame(width: 46, height: 46)
-                Image(systemName: consumable.icon)
-                    .font(.title3)
-                    .foregroundColor(Color(consumable.consumableType.color))
+                ConsumableIconView(consumableType: consumable.consumableType, size: 46, imageName: consumable.imageName)
             }
             
             VStack(alignment: .leading, spacing: 3) {
@@ -605,9 +606,7 @@ struct MaterialCard: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Image(systemName: material.icon)
-                    .font(.title3)
-                    .foregroundColor(Color(material.materialType.color))
+                MaterialIconView(materialType: material.materialType, rarity: material.rarity, size: 32)
                 Spacer()
                 Text("×\(material.quantity)")
                     .font(.custom("Avenir-Heavy", size: 22))
@@ -662,7 +661,18 @@ struct ItemDetailView: View {
     
     private var canEquip: Bool {
         guard let character = character else { return false }
-        return character.level >= item.levelRequirement && !item.isEquipped
+        return character.level >= item.levelRequirement
+            && !item.isEquipped
+            && (character.characterClass?.canEquip(item) ?? true)
+    }
+    
+    private var equipBlockedReason: String? {
+        guard let character = character,
+              let charClass = character.characterClass else { return nil }
+        if !charClass.canEquip(item) {
+            return "\(charClass.rawValue) cannot equip \(item.armorWeight.label)"
+        }
+        return nil
     }
     
     var body: some View {
@@ -698,6 +708,19 @@ struct ItemDetailView: View {
                                 Text(item.slot.rawValue)
                                     .font(.custom("Avenir-Medium", size: 14))
                                     .foregroundColor(.secondary)
+                                
+                                if item.slot == .armor && item.armorWeight != .universal {
+                                    Text(item.armorWeight.label)
+                                        .font(.custom("Avenir-Heavy", size: 12))
+                                        .foregroundColor(item.armorWeight == .heavy ? .orange : .cyan)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule().fill(
+                                                (item.armorWeight == .heavy ? Color.orange : Color.cyan).opacity(0.15)
+                                            )
+                                        )
+                                }
                             }
                         }
                         
@@ -721,7 +744,7 @@ struct ItemDetailView: View {
                                 Text(item.primaryStat.rawValue)
                                     .font(.custom("Avenir-Medium", size: 14))
                                 Spacer()
-                                Text("+\(item.statBonus)")
+                                Text("+\(item.statBonusDisplay)")
                                     .font(.custom("Avenir-Heavy", size: 20))
                                     .foregroundColor(Color("AccentGreen"))
                             }
@@ -734,7 +757,7 @@ struct ItemDetailView: View {
                                     Text(secondary.rawValue)
                                         .font(.custom("Avenir-Medium", size: 14))
                                     Spacer()
-                                    Text("+\(item.secondaryStatBonus)")
+                                    Text("+\(item.secondaryStatBonusDisplay)")
                                         .font(.custom("Avenir-Heavy", size: 20))
                                         .foregroundColor(Color("AccentGreen"))
                                 }
@@ -857,6 +880,17 @@ struct ItemDetailView: View {
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                                 }
+                            } else if let reason = equipBlockedReason {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "lock.fill")
+                                    Text(reason)
+                                }
+                                .font(.custom("Avenir-Medium", size: 14))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             
                             if let onDismantle = onDismantle {
@@ -921,6 +955,7 @@ struct EquipmentIconView: View {
     var body: some View {
         if let imageName = item?.imageName, UIImage(named: imageName) != nil {
             Image(imageName)
+                .interpolation(.none)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size * 0.8, height: size * 0.8)
@@ -928,6 +963,97 @@ struct EquipmentIconView: View {
             Image(systemName: slot.icon)
                 .font(.system(size: size * 0.45))
                 .foregroundColor(item != nil ? Color(item!.rarity.color) : .secondary)
+        }
+    }
+}
+
+// MARK: - Consumable Icon View
+
+struct ConsumableIconView: View {
+    let consumableType: ConsumableType
+    let size: CGFloat
+    let overrideImageName: String?
+    
+    init(consumableType: ConsumableType, size: CGFloat = 46, imageName: String? = nil) {
+        self.consumableType = consumableType
+        self.size = size
+        self.overrideImageName = imageName
+    }
+    
+    private var resolvedImageName: String? {
+        if let name = overrideImageName, UIImage(named: name) != nil { return name }
+        return consumableType.imageName
+    }
+    
+    var body: some View {
+        if let imgName = resolvedImageName {
+            Image(imgName)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size * 0.8, height: size * 0.8)
+        } else {
+            Image(systemName: consumableType.icon)
+                .font(.system(size: size * 0.45))
+                .foregroundColor(Color(consumableType.color))
+        }
+    }
+}
+
+// MARK: - Material Icon View
+
+struct MaterialIconView: View {
+    let materialType: MaterialType
+    let rarity: ItemRarity
+    let size: CGFloat
+    
+    init(materialType: MaterialType, rarity: ItemRarity, size: CGFloat = 46) {
+        self.materialType = materialType
+        self.rarity = rarity
+        self.size = size
+    }
+    
+    var body: some View {
+        if let imgName = materialType.imageName(rarity: rarity), UIImage(named: imgName) != nil {
+            Image(imgName)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size * 0.8, height: size * 0.8)
+        } else {
+            Image(systemName: materialType.icon)
+                .font(.system(size: size * 0.45))
+                .foregroundColor(Color(materialType.color))
+        }
+    }
+}
+
+// MARK: - Material Loot Row (reusable reward row with pixel art)
+
+struct MaterialLootRow: View {
+    let drop: MaterialDrop
+    var size: CGFloat = 40
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(drop.rarity.color).opacity(0.15))
+                    .frame(width: size, height: size)
+                MaterialIconView(materialType: drop.type, rarity: drop.rarity, size: size * 0.85)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(drop.type.displayName)
+                    .font(.custom("Avenir-Heavy", size: 14))
+                    .foregroundColor(.white)
+                Text(drop.rarity.rawValue)
+                    .font(.custom("Avenir-Medium", size: 11))
+                    .foregroundColor(Color(drop.rarity.color))
+            }
+            Spacer()
+            Text("+\(drop.amount)")
+                .font(.custom("Avenir-Heavy", size: 18))
+                .foregroundColor(Color(drop.rarity.color))
         }
     }
 }
@@ -958,8 +1084,8 @@ struct EquipmentComparisonCard: View {
     private func bonusFor(item: Equipment?, stat: StatType) -> Int {
         guard let item = item else { return 0 }
         var total = 0
-        if item.primaryStat == stat { total += item.statBonus }
-        if item.secondaryStat == stat { total += item.secondaryStatBonus }
+        if item.primaryStat == stat { total += Int(item.statBonus.rounded()) }
+        if item.secondaryStat == stat { total += Int(item.secondaryStatBonus.rounded()) }
         return total
     }
     

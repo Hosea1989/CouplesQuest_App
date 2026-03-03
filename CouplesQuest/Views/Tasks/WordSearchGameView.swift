@@ -32,8 +32,8 @@ struct WordSearchRewardTier {
                 icon: "sparkles",
                 color: "AccentGreen",
                 gold: 150,
-                consumableName: "Green Tea",
-                consumableIcon: "leaf.fill",
+                consumableName: "Mystic Mushroom",
+                consumableIcon: "sparkle",
                 consumableCount: 2,
                 wisdomBonus: 1
             )
@@ -64,7 +64,7 @@ struct WordSearchRewardTier {
     
     static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
         ("Eagle Eye", "< 2 min", 200, "3× Hawk Potion"),
-        ("Sharp Scout", "2–4 min", 150, "2× Green Tea"),
+        ("Sharp Scout", "2–4 min", 150, "2× Mystic Mushroom"),
         ("Steady Search", "4–6 min", 100, "1× Apple Juice"),
         ("Completed", "> 6 min", 50, "—"),
     ]

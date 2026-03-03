@@ -1581,6 +1581,16 @@ final class SupabaseService: ObservableObject {
     }
     
     /// Remove an equipment item from the cloud.
+    func deleteTask(localID: UUID) async throws {
+        guard let userID = currentUserID else { return }
+        try await client
+            .from("player_tasks")
+            .delete()
+            .eq("player_id", value: userID.uuidString)
+            .eq("local_id", value: localID.uuidString)
+            .execute()
+    }
+    
     func deleteEquipment(id: UUID) async throws {
         try await client
             .from("equipment")
@@ -1902,9 +1912,9 @@ struct CloudEquipment: Codable, Identifiable {
     let slot: String
     let rarity: String
     let primaryStat: String
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: String?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let levelRequirement: Int
     let enhancementLevel: Int
     let isEquipped: Bool
@@ -1938,9 +1948,9 @@ struct CloudEquipmentUpsert: Encodable {
     let slot: String
     let rarity: String
     let primaryStat: String
-    let statBonus: Int
+    let statBonus: Double
     let secondaryStat: String?
-    let secondaryStatBonus: Int
+    let secondaryStatBonus: Double
     let levelRequirement: Int
     let enhancementLevel: Int
     let isEquipped: Bool

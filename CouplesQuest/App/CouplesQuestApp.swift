@@ -8,23 +8,10 @@ private let startupLog = OSLog(subsystem: "com.damienhosea.DuoCraft", category: 
 private let appStartTime = CFAbsoluteTimeGetCurrent()
 
 // #region agent log
-private let _debugLogPath = "/Users/damienhosea/Desktop/Project-Goals/CouplesQuest/.cursor/debug.log"
 func _debugLog(_ msg: String, hyp: String = "", file: String = #fileID, line: Int = #line) {
     let loc = "\(file):\(line)"
-    let ts = Int(Date().timeIntervalSince1970 * 1000)
     let elapsed = Int((CFAbsoluteTimeGetCurrent() - appStartTime) * 1000)
     print("[DBG|\(hyp) +\(elapsed)ms] \(loc) — \(msg)")
-    let escaped = msg.replacingOccurrences(of: "\"", with: "'")
-    let json = "{\"timestamp\":\(ts),\"elapsed_ms\":\(elapsed),\"location\":\"\(loc)\",\"message\":\"\(escaped)\",\"hypothesisId\":\"\(hyp)\"}\n"
-    if let d = json.data(using: .utf8) {
-        if FileManager.default.fileExists(atPath: _debugLogPath) {
-            if let fh = FileHandle(forWritingAtPath: _debugLogPath) { fh.seekToEndOfFile(); fh.write(d); fh.closeFile() }
-        } else {
-            let dir = (_debugLogPath as NSString).deletingLastPathComponent
-            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: _debugLogPath, contents: d)
-        }
-    }
 }
 // #endregion
 
@@ -129,7 +116,8 @@ struct SwordsAndChoresApp: App {
             MoodEntry.self,
             Goal.self,
             MonsterCard.self,
-            PartyChallenge.self
+            PartyChallenge.self,
+            EquipmentQuirk.self
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -214,6 +202,8 @@ struct SwordsAndChoresApp: App {
                 .onAppear {
                     os_log(.fault, log: startupLog, "⏱ AuthGateView.onAppear (+%.0fms)", (CFAbsoluteTimeGetCurrent() - appStartTime) * 1000)
                     PushNotificationService.shared.cancelDailyReset()
+                    
+                    gameEngine.migrateEnhancementsToEquipmentEXP(context: modelContainer.mainContext)
                     
                     // #region agent log
                     _debugLog("onAppear: about to call loadContent()", hyp: "A")

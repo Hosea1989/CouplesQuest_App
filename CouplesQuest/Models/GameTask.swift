@@ -270,13 +270,13 @@ final class GameTask {
     static let baseEXP: Int = 20
     
     /// Base Gold reward (flat, before level scaling and verification multiplier)
-    static let baseGold: Int = 10
+    static let baseGold: Int = 20
     
-    /// Level scaling factor: +10% per level above 1, so high-level tasks stay rewarding
+    /// Level scaling factor: +12% per level above 1, so high-level tasks stay rewarding
     /// against the exponential EXP curve.
-    /// - Level 1: 1.0x  - Level 10: 1.9x  - Level 20: 2.9x  - Level 50: 5.9x
+    /// - Level 1: 1.0x  - Level 10: 2.08x  - Level 20: 3.28x  - Level 50: 6.88x
     static func levelScaleFactor(level: Int) -> Double {
-        max(1.0, 1.0 + Double(level - 1) * 0.1)
+        max(1.0, 1.0 + Double(level - 1) * 0.12)
     }
     
     /// Base EXP reward for this task (before level scaling and verification)

@@ -343,11 +343,7 @@ struct MissionsView: View {
     private func claimMissionRewards(mission: AFKMission) {
         guard let character = character else { return }
         
-        if let result = gameEngine.checkMissionCompletion(mission: mission, character: character) {
-            lastMissionResult = result
-            showCompletionResult = true
-            claimTrigger += 1
-            AudioManager.shared.play(.claimReward)
+        if var result = gameEngine.checkMissionCompletion(mission: mission, character: character) {
             
             if result.success {
                 var subtitle = "+\(result.expGained) EXP, +\(result.goldGained) Gold"
@@ -365,11 +361,12 @@ struct MissionsView: View {
                     subtitle: subtitle
                 )
                 // Award crafting materials (Herbs from missions) on success
-                gameEngine.awardMaterialsForMission(
+                let herbDrop = gameEngine.awardMaterialsForMission(
                     missionRarity: mission.rarity,
                     character: character,
                     context: modelContext
                 )
+                result.materialDrops = [herbDrop]
                 // Award Research Tokens (mission-exclusive drop)
                 if result.researchTokensDropped > 0 {
                     gameEngine.awardResearchTokens(
@@ -400,6 +397,11 @@ struct MissionsView: View {
                     subtitle: "Consolation: +\(result.expGained) EXP"
                 )
             }
+            
+            lastMissionResult = result
+            showCompletionResult = true
+            claimTrigger += 1
+            AudioManager.shared.play(.claimReward)
         }
     }
     
@@ -1191,8 +1193,10 @@ struct TrainingDetailView: View {
                     
                     Spacer()
                     
-                    UseHPPotionButton(character: character)
-                        .environmentObject(gameEngine)
+                    if gameEngine.activeMission == nil && !hasActiveDungeonRun {
+                        UseHPPotionButton(character: character)
+                            .environmentObject(gameEngine)
+                    }
                 }
                 .padding(.bottom, 8)
             }
@@ -1704,6 +1708,14 @@ struct MissionCompletionView: View {
                     valueColor: Color("AccentPurple")
                 )
                 .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
+            }
+            
+            // Material drops
+            if !result.materialDrops.isEmpty {
+                ForEach(result.materialDrops) { drop in
+                    MaterialLootRow(drop: drop, size: 36)
+                        .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
+                }
             }
         }
         .padding(20)

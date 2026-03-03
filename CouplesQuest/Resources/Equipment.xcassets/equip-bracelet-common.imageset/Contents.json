@@ -6,10 +6,12 @@
       "scale": "1x"
     },
     {
+      "filename": "equip-bracelet-common@2x.png",
       "idiom": "universal",
       "scale": "2x"
     },
     {
+      "filename": "equip-bracelet-common@3x.png",
       "idiom": "universal",
       "scale": "3x"
     }

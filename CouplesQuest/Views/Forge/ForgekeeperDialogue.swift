@@ -72,6 +72,17 @@ struct ForgekeeperDialogue {
         "Another legendary craft from this forge! Well done!",
     ]
     
+    // MARK: - Herb Crafting Success
+    
+    /// Lines shown after successfully crafting a consumable from herbs
+    static let herbCraftSuccessLines: [String] = [
+        "A fine brew! The herbs have yielded their secrets to you.",
+        "Perfectly crafted! That concoction will serve you well on your journey.",
+        "The aroma alone tells me that's a potent one. Well done!",
+        "Another masterful potion from the workshop! Use it wisely, adventurer.",
+        "Herbs to elixir — the old art lives on through you!",
+    ]
+    
     // MARK: - Currency / Material Explanations
     
     /// Detailed explanation of Essence (shown when tapping for info)

@@ -546,7 +546,8 @@ struct RaidBossView: View {
             // Determine party size for HP scaling
             let partyCount = max(1, (character.partyMembers.count > 0 ? character.partyMembers.count + 1 : (character.hasPartner ? 2 : 1)))
             
-            // TODO: Load template from ContentManager when available
+            // ContentManager doesn't carry raid boss templates yet (no server table).
+            // Once content_raid_bosses is added, pull the template here instead of generating.
             let newBoss = WeeklyRaidBoss.generate(tier: tier, weekStart: weekStart, weekEnd: weekEnd, partyMemberCount: partyCount)
             modelContext.insert(newBoss)
         }

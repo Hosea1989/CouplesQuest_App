@@ -43,8 +43,8 @@ struct Game2048RewardTier {
                 icon: "checkmark.seal.fill",
                 color: "AccentOrange",
                 gold: 100,
-                consumableName: "Green Tea",
-                consumableIcon: "leaf.fill",
+                consumableName: "Mystic Mushroom",
+                consumableIcon: "sparkle",
                 consumableCount: 1,
                 wisdomBonus: 1
             )
@@ -65,7 +65,7 @@ struct Game2048RewardTier {
     static let allTiers: [(label: String, threshold: String, gold: Int, loot: String)] = [
         ("Legendary Mind", "Reach 2048", 250, "3× Ancient Tome"),
         ("Strategic Genius", "Reach 1024", 175, "2× Focus Scroll"),
-        ("Sharp Planner", "Reach 512", 100, "1× Green Tea"),
+        ("Sharp Planner", "Reach 512", 100, "1× Mystic Mushroom"),
         ("Good Effort", "Below 512", 50, "—"),
     ]
 }

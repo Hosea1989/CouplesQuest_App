@@ -227,6 +227,50 @@ final class PlayerCharacter {
     /// Number of active streak freeze charges (consumed from Streak Shield items)
     var streakFreezeCharges: Int
     
+    // MARK: - Consumable Buff Tracking
+    
+    /// Remaining task completions that grant +50% EXP (from EXP Boost consumable)
+    var expBoostTasksRemaining: Int = 0
+    
+    /// Remaining task completions that grant +50% Gold (from Gold Boost consumable)
+    var goldBoostTasksRemaining: Int = 0
+    
+    /// Remaining task completions that double material drops (from Material Magnet)
+    var materialMagnetTasksRemaining: Int = 0
+    
+    /// Whether the next dungeon run benefits from +20% rare drop chance (Luck Elixir)
+    var luckElixirActive: Bool = false
+    
+    /// Whether the next equipment drop is guaranteed at least one affix (Affix Scroll)
+    var affixScrollActive: Bool = false
+    
+    /// Whether the next forge enhancement has doubled success chance (Forge Catalyst)
+    var forgeCatalystActive: Bool = false
+    
+    /// When the Party Beacon buff expires (+25% bond EXP; nil = inactive)
+    var partyBeaconExpiresAt: Date?
+    
+    /// Whether the Party Beacon bond EXP buff is currently active
+    var hasActivePartyBeacon: Bool {
+        guard let expiry = partyBeaconExpiresAt else { return false }
+        return Date() < expiry
+    }
+    
+    /// Temporary stat food buff: the stat type being boosted (nil = no active food buff)
+    var statFoodBuffStat: StatType?
+    
+    /// Temporary stat food buff: the bonus amount
+    var statFoodBuffAmount: Int = 0
+    
+    /// When the stat food buff expires (nil = inactive)
+    var statFoodBuffExpiresAt: Date?
+    
+    /// Whether a stat food buff is currently active
+    var hasActiveStatFoodBuff: Bool {
+        guard let expiry = statFoodBuffExpiresAt else { return false }
+        return Date() < expiry
+    }
+    
     // MARK: - Pity Counters (Bad Luck Protection)
     
     /// JSON-encoded pity counters per content type: {"tasks": 5, "dungeons": 3, "missions": 2}
@@ -664,9 +708,12 @@ final class PlayerCharacter {
         }
     }
     
-    /// Meditation EXP reward (with streak bonus)
+    /// Meditation EXP reward (with streak bonus).
+    /// NOTE: Do NOT call checkMeditationStreak() here — mutating a @Model
+    /// inside a computed property that SwiftUI reads during body evaluation
+    /// causes an infinite re-render loop. The streak is validated in
+    /// GameEngine.meditate() before rewards are granted.
     var meditationExpReward: Int {
-        checkMeditationStreak()
         let base = level * 8
         let streakMultiplier = 1.0 + min(0.5, Double(meditationStreak) * 0.05)
         return Int(Double(base) * streakMultiplier)
@@ -674,7 +721,7 @@ final class PlayerCharacter {
     
     /// Meditation gold reward
     var meditationGoldReward: Int {
-        level * 3
+        level * 5
     }
     
     // MARK: - Mood Helpers
@@ -894,16 +941,19 @@ final class PlayerCharacter {
     
     // MARK: - Arena Helpers
     
-    /// Check and reset daily arena attempts
+    /// Check and reset daily arena attempts (call from action handlers only, never from computed properties)
     func checkArenaReset() {
         if let lastDate = lastArenaDate, !Calendar.current.isDateInToday(lastDate) {
+            guard arenaAttemptsToday != 0 else { return }
             arenaAttemptsToday = 0
         }
     }
     
-    /// Whether the player gets a free arena run today
+    /// Whether the player gets a free arena run today (read-only to avoid SwiftData re-render loops)
     var hasFreeArenaAttempt: Bool {
-        checkArenaReset()
+        if let lastDate = lastArenaDate, !Calendar.current.isDateInToday(lastDate) {
+            return true
+        }
         return arenaAttemptsToday == 0
     }
     
@@ -1163,12 +1213,12 @@ final class PlayerCharacter {
             defense: stats.defense
         )
         
-        // Add equipment bonuses (primary + enhancement + secondary) — all 4 slots
-        let equippedItems = [equipment.weapon, equipment.armor, equipment.accessory, equipment.trinket].compactMap { $0 }
+        // Add equipment bonuses (primary + enhancement + secondary) — all 5 slots
+        let equippedItems = [equipment.weapon, equipment.armor, equipment.accessory, equipment.trinket, equipment.cloak].compactMap { $0 }
         for item in equippedItems {
-            effective.increase(item.primaryStat, by: item.effectivePrimaryBonus)
+            effective.increase(item.primaryStat, by: Int(item.effectivePrimaryBonus.rounded()))
             if let secondary = item.secondaryStat {
-                effective.increase(secondary, by: item.secondaryStatBonus)
+                effective.increase(secondary, by: Int(item.secondaryStatBonus.rounded()))
             }
         }
         
@@ -1323,8 +1373,8 @@ final class PlayerCharacter {
         func itemBonus(_ item: Equipment?) -> Int {
             guard let item = item else { return 0 }
             var total = 0
-            if item.primaryStat == statType { total += item.statBonus }
-            if item.secondaryStat == statType { total += item.secondaryStatBonus }
+            if item.primaryStat == statType { total += Int(item.statBonus.rounded()) }
+            if item.secondaryStat == statType { total += Int(item.secondaryStatBonus.rounded()) }
             return total
         }
         
@@ -1332,6 +1382,7 @@ final class PlayerCharacter {
         let armorBonus = itemBonus(equipment.armor)
         let accessoryBonus = itemBonus(equipment.accessory)
         let trinketBonus = itemBonus(equipment.trinket)
+        let cloakBonus = itemBonus(equipment.cloak)
         
         let classBonus: Int = (characterClass?.primaryStat == statType) ? 2 : 0
         let zodiacBonus: Int = (zodiacSign?.boostedStat == statType) ? 2 : 0
@@ -1346,6 +1397,8 @@ final class PlayerCharacter {
             accessoryName: equipment.accessory?.name,
             trinketBonus: trinketBonus,
             trinketName: equipment.trinket?.name,
+            cloakBonus: cloakBonus,
+            cloakName: equipment.cloak?.name,
             classBonus: classBonus,
             className: characterClass?.rawValue,
             zodiacBonus: zodiacBonus,
@@ -1353,13 +1406,13 @@ final class PlayerCharacter {
         )
     }
     
-    /// Aggregate hero power score (all 4 equipment slots + affixes)
+    /// Aggregate hero power score (all 5 equipment slots + affixes)
     var heroPower: Int {
         let statPower = effectiveStats.total * 10
         let levelPower = level * 5
         
-        let equipmentItems = [equipment.weapon, equipment.armor, equipment.accessory, equipment.trinket].compactMap { $0 }
-        let equipPower = equipmentItems.reduce(0) { $0 + $1.totalStatBonus } * 8
+        let equipmentItems = [equipment.weapon, equipment.armor, equipment.accessory, equipment.trinket, equipment.cloak].compactMap { $0 }
+        let equipPower = equipmentItems.reduce(0) { $0 + $1.totalStatBonusDisplay } * 8
         
         // Affix power: each affix adds a small bonus to hero power
         let affixPower = equipmentItems.reduce(0) { total, item in
@@ -1467,7 +1520,7 @@ final class PlayerCharacter {
         rewards.append(.statPoint)
         
         // Gold bonus
-        let goldReward = level * 15
+        let goldReward = level * 25
         gold += goldReward
         rewards.append(.gold(goldReward))
         
@@ -1758,6 +1811,20 @@ enum CharacterClass: String, Codable, CaseIterable {
         case .mage, .sorcerer, .enchanter:  return .mage
         case .archer, .ranger, .trickster:  return .archer
         }
+    }
+    
+    /// Armor weights this class is proficient with
+    var armorProficiency: Set<ArmorWeight> {
+        switch classLine {
+        case .warrior: return [.heavy, .light, .universal]
+        case .mage:    return [.light, .universal]
+        case .archer:  return [.light, .universal]
+        }
+    }
+    
+    /// Whether this class can equip the given item
+    func canEquip(_ equipment: Equipment) -> Bool {
+        armorProficiency.contains(equipment.armorWeight)
     }
     
     /// Only the 3 starter classes for character creation
@@ -2071,13 +2138,15 @@ struct StatBreakdown {
     let accessoryName: String?
     let trinketBonus: Int
     let trinketName: String?
+    let cloakBonus: Int
+    let cloakName: String?
     let classBonus: Int
     let className: String?
     let zodiacBonus: Int
     let zodiacName: String?
     
     var total: Int {
-        base + weaponBonus + armorBonus + accessoryBonus + trinketBonus + classBonus + zodiacBonus
+        base + weaponBonus + armorBonus + accessoryBonus + trinketBonus + cloakBonus + classBonus + zodiacBonus
     }
     
     var totalBonus: Int {
@@ -2085,7 +2154,7 @@ struct StatBreakdown {
     }
 }
 
-/// Equipment loadout container (4 slots: Weapon, Armor, Accessory, Trinket)
+/// Equipment loadout container (5 slots: Weapon, Armor, Accessory, Trinket, Cloak)
 @Model
 final class EquipmentLoadout {
     @Relationship(deleteRule: .nullify)
@@ -2100,11 +2169,15 @@ final class EquipmentLoadout {
     @Relationship(deleteRule: .nullify)
     var trinket: Equipment?
     
-    init(weapon: Equipment? = nil, armor: Equipment? = nil, accessory: Equipment? = nil, trinket: Equipment? = nil) {
+    @Relationship(deleteRule: .nullify)
+    var cloak: Equipment?
+    
+    init(weapon: Equipment? = nil, armor: Equipment? = nil, accessory: Equipment? = nil, trinket: Equipment? = nil, cloak: Equipment? = nil) {
         self.weapon = weapon
         self.armor = armor
         self.accessory = accessory
         self.trinket = trinket
+        self.cloak = cloak
     }
     
     /// Get the equipped item for a given slot
@@ -2114,6 +2187,7 @@ final class EquipmentLoadout {
         case .armor: return armor
         case .accessory: return accessory
         case .trinket: return trinket
+        case .cloak: return cloak
         }
     }
     
@@ -2124,12 +2198,13 @@ final class EquipmentLoadout {
         case .armor: armor = item
         case .accessory: accessory = item
         case .trinket: trinket = item
+        case .cloak: cloak = item
         }
     }
     
     /// All equipped items (non-nil)
     var allEquipped: [Equipment] {
-        [weapon, armor, accessory, trinket].compactMap { $0 }
+        [weapon, armor, accessory, trinket, cloak].compactMap { $0 }
     }
 }
 

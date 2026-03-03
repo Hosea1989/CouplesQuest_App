@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 
 /// Crafting materials collected from IRL tasks, dungeons, missions, and dismantling equipment
 @Model
@@ -85,6 +86,14 @@ enum MaterialType: String, Codable, CaseIterable {
         }
     }
     
+    func imageName(rarity: ItemRarity) -> String? {
+        let base = "material-\(rawValue.lowercased().replacingOccurrences(of: " ", with: ""))"
+        let tinted = "\(base)-\(rarity.rawValue.lowercased())"
+        if UIImage(named: tinted) != nil { return tinted }
+        if UIImage(named: base) != nil { return base }
+        return nil
+    }
+    
     var color: String {
         switch self {
         case .essence: return "AccentGold"
@@ -108,6 +117,26 @@ enum MaterialType: String, Codable, CaseIterable {
         case .fragment: return "Obtained by dismantling equipment"
         case .researchToken: return "Earned exclusively from AFK missions"
         }
+    }
+}
+
+// MARK: - Material Drop (lightweight reward descriptor)
+
+struct MaterialDrop: Identifiable {
+    let id = UUID()
+    let type: MaterialType
+    let rarity: ItemRarity
+    let amount: Int
+    
+    var displayName: String {
+        if rarity == .common {
+            return "\(amount)x \(type.displayName)"
+        }
+        return "\(amount)x \(rarity.rawValue) \(type.displayName)"
+    }
+    
+    var imageName: String? {
+        type.imageName(rarity: rarity)
     }
 }
 

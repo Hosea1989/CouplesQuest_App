@@ -543,8 +543,8 @@ struct ArenaView: View {
     }
     
     private func loadWeeklyModifier() {
-        // TODO: Load from ContentManager when available
-        // For now, use standard modifier as fallback
+        // ContentManager doesn't carry arena modifiers yet (no server table).
+        // Once content_arena_modifiers is added, load the current week's modifier here.
         weeklyModifier = .standard
     }
 }

@@ -676,6 +676,24 @@ struct OnboardingView: View {
         }
     }
     
+    private var starterWeaponBaseType: String {
+        switch character.characterClass {
+        case .warrior, .berserker, .paladin: return "sword"
+        case .mage, .sorcerer, .enchanter: return "staff"
+        case .archer, .ranger, .trickster: return "bow"
+        default: return "sword"
+        }
+    }
+    
+    private var starterArmorBaseType: String {
+        switch character.characterClass {
+        case .warrior, .berserker, .paladin: return "plate"
+        case .mage, .sorcerer, .enchanter: return "robes"
+        case .archer, .ranger, .trickster: return "leather armor"
+        default: return "plate"
+        }
+    }
+    
     // MARK: - Actions
     
     /// Create and complete the onboarding task — this is a real GameTask
@@ -737,7 +755,8 @@ struct OnboardingView: View {
             primaryStat: primaryStat,
             statBonus: 3,
             levelRequirement: 1,
-            ownerID: character.id
+            ownerID: character.id,
+            baseType: starterWeaponBaseType
         )
         modelContext.insert(weapon)
         character.equipment.weapon = weapon
@@ -752,7 +771,8 @@ struct OnboardingView: View {
             primaryStat: .defense,
             statBonus: 2,
             levelRequirement: 1,
-            ownerID: character.id
+            ownerID: character.id,
+            baseType: starterArmorBaseType
         )
         modelContext.insert(armor)
         character.equipment.armor = armor

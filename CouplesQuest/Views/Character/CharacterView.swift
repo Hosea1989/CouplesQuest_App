@@ -863,6 +863,9 @@ struct StatSourceBreakdown: View {
             if breakdown.trinketBonus > 0, let name = breakdown.trinketName {
                 breakdownRow(label: "Trinket (\(name))", value: breakdown.trinketBonus)
             }
+            if breakdown.cloakBonus > 0, let name = breakdown.cloakName {
+                breakdownRow(label: "Cloak (\(name))", value: breakdown.cloakBonus)
+            }
             if breakdown.classBonus > 0, let name = breakdown.className {
                 breakdownRow(label: "Class (\(name))", value: breakdown.classBonus)
             }
@@ -1092,8 +1095,8 @@ struct EquipmentSlotPickerView: View {
     private func bonusFor(item: Equipment?, stat: StatType) -> Int {
         guard let item = item else { return 0 }
         var total = 0
-        if item.primaryStat == stat { total += item.statBonus }
-        if item.secondaryStat == stat { total += item.secondaryStatBonus }
+        if item.primaryStat == stat { total += Int(item.statBonus.rounded()) }
+        if item.secondaryStat == stat { total += Int(item.secondaryStatBonus.rounded()) }
         return total
     }
     

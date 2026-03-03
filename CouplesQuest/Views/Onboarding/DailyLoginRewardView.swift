@@ -201,6 +201,17 @@ struct DailyLoginRewardView: View {
         // Advance the login cycle
         character.claimDailyLoginReward()
         
+        // Award streak milestone consumables at notable thresholds
+        let streakRewards = ConsumableDropTable.streakReward(
+            streakDay: character.currentStreak,
+            level: character.level,
+            characterID: character.id
+        )
+        for consumable in streakRewards {
+            modelContext.insert(consumable)
+            Task { try? await SupabaseService.shared.syncConsumable(consumable) }
+        }
+        
         do {
             try modelContext.save()
         } catch {

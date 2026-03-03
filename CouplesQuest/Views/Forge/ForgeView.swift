@@ -5,16 +5,16 @@ import SwiftData
 
 enum ForgeStation: String, CaseIterable {
     case craft = "Craft"
-    case enhance = "Enhance"
+    case temper = "Temper"
+    case reforge = "Reforge"
     case salvage = "Salvage"
-    case affix = "Affix"
     
     var icon: String {
         switch self {
         case .craft: return "hammer.fill"
-        case .enhance: return "arrow.up.forward.circle.fill"
+        case .temper: return "flame.fill"
+        case .reforge: return "arrow.trianglehead.2.counterclockwise"
         case .salvage: return "scissors"
-        case .affix: return "scroll.fill"
         }
     }
 }
@@ -39,12 +39,16 @@ struct ForgeView: View {
     @State private var isCrafting = false
     @State private var craftTrigger = 0
     
-    // Enhance state
-    @State private var selectedEnhanceItem: Equipment?
-    @State private var showEnhanceConfirm = false
-    @State private var useCatalyst = false
-    @State private var enhanceResult: GameEngine.EnhancementResult?
-    @State private var showEnhanceResult = false
+    // Temper state
+    @State private var selectedTemperItem: Equipment?
+    @State private var temperResult: GameEngine.TemperResult?
+    @State private var showTemperResult = false
+    
+    // Reforge state
+    @State private var selectedReforgeItem: Equipment?
+    @State private var selectedQuirkIndex: Int?
+    @State private var showPurifyConfirm = false
+    @State private var reforgeResult: GameEngine.ReforgeResult?
     
     // Salvage state
     @State private var selectedSalvageItem: Equipment?
@@ -102,9 +106,14 @@ struct ForgeView: View {
         return allEquipment.filter { $0.ownerID == character.id && !$0.isEquipped }
     }
     
-    private var enhanceableItems: [Equipment] {
+    private var temperableItems: [Equipment] {
         guard let character = character else { return [] }
-        return allEquipment.filter { $0.ownerID == character.id && $0.enhancementLevel < Equipment.maxEnhancementLevel }
+        return allEquipment.filter { $0.ownerID == character.id && $0.isEquipped && $0.canLevelUp }
+    }
+    
+    private var reforgeableItems: [Equipment] {
+        guard let character = character else { return [] }
+        return allEquipment.filter { $0.ownerID == character.id && $0.isEquipped && !$0.quirks.isEmpty }
     }
     
     var body: some View {
@@ -134,22 +143,33 @@ struct ForgeView: View {
                     .padding(.top, 8)
                 
                 // Station Content
-                ScrollView {
-                    VStack(spacing: 20) {
-                        switch selectedStation {
-                        case .craft:
-                            craftStationContent
-                        case .enhance:
-                            enhanceStationContent
-                        case .salvage:
-                            salvageStationContent
-                        case .affix:
-                            affixStationContent
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 20) {
+                            switch selectedStation {
+                            case .craft:
+                                craftStationContent
+                            case .temper:
+                                temperStationContent
+                            case .reforge:
+                                reforgeStationContent
+                            case .salvage:
+                                salvageStationContent
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                        .padding(.top, 12)
+                    }
+                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                    .onChange(of: selectedTier) { _, newTier in
+                        guard newTier != nil else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            withAnimation {
+                                proxy.scrollTo("forgeButton", anchor: .bottom)
+                            }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 32)
-                    .padding(.top, 12)
                 }
             }
         }
@@ -284,6 +304,7 @@ struct ForgeView: View {
             
             if selectedSlot != nil && selectedTier != nil {
                 forgeButton
+                    .id("forgeButton")
                     .transition(.scale.combined(with: .opacity))
             }
             
@@ -458,6 +479,7 @@ struct ForgeView: View {
                 ToastManager.shared.showReward("Crafted: \(consumable.name)", subtitle: consumable.effectSummary, icon: recipe.icon)
                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                 impactFeedback.impactOccurred()
+                forgekeeperTip = ForgekeeperDialogue.random(from: ForgekeeperDialogue.herbCraftSuccessLines, name: character.name)
             }
         } label: {
             HStack(spacing: 12) {
@@ -465,9 +487,7 @@ struct ForgeView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color(recipe.consumableType.color).opacity(0.15))
                         .frame(width: 42, height: 42)
-                    Image(systemName: recipe.icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(Color(recipe.consumableType.color))
+                    ConsumableIconView(consumableType: recipe.consumableType, size: 42, imageName: recipe.imageName)
                 }
                 
                 VStack(alignment: .leading, spacing: 3) {
@@ -512,48 +532,42 @@ struct ForgeView: View {
         .disabled(!canAfford)
     }
     
-    // MARK: - Enhance Station
+    // MARK: - Temper Station
     
-    private var enhanceStationContent: some View {
+    private var temperStationContent: some View {
         VStack(spacing: 16) {
-            // Info card
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.up.forward.circle.fill")
+                    Image(systemName: "flame.fill")
                         .foregroundColor(Color("ForgeEmber"))
-                    Text("Enhancement Station")
+                    Text("Tempering Station")
                         .font(.custom("Avenir-Heavy", size: 18))
                 }
                 
-                Text("Boost your equipment's stats. Higher levels risk failure but grant bigger bonuses. 10% chance for a critical enhancement (double stats)!")
+                Text("Inject EXP into your equipped gear to level it up. Each level grants a random quirk — a small trait that shapes your equipment's identity.")
                     .font(.custom("Avenir-Medium", size: 13))
                     .foregroundColor(.secondary)
                 
-                // Enhancement tier legend
                 HStack(spacing: 16) {
-                    enhanceLegendPill(text: "+1–3: 100%", color: Color("AccentGreen"))
-                    enhanceLegendPill(text: "+4–6: 80%", color: Color("AccentGold"))
-                    enhanceLegendPill(text: "+7–8: 60%", color: Color("AccentOrange"))
-                }
-                HStack(spacing: 16) {
-                    enhanceLegendPill(text: "+9: 40%", color: Color("DifficultyHard"))
-                    enhanceLegendPill(text: "+10: 25%", color: Color("RarityLegendary"))
+                    temperLegendPill(text: "Max Lv. 5", color: Color("AccentGold"))
+                    temperLegendPill(text: "1 Quirk / Level", color: Color("AccentPurple"))
+                    temperLegendPill(text: "Equipped Only", color: Color("AccentGreen"))
                 }
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
             
-            if enhanceableItems.isEmpty {
-                emptyStateView(icon: "hammer.fill", title: "No items to enhance", subtitle: "Acquire equipment from dungeons, missions, or the forge to enhance it here.")
+            if temperableItems.isEmpty {
+                emptyStateView(icon: "flame", title: "Nothing to temper", subtitle: "Equip gear that hasn't reached max level to temper it here.")
             } else {
-                ForEach(enhanceableItems, id: \.id) { item in
-                    enhanceItemRow(item: item)
+                ForEach(temperableItems, id: \.id) { item in
+                    temperItemRow(item: item)
                 }
             }
         }
     }
     
-    private func enhanceLegendPill(text: String, color: Color) -> some View {
+    private func temperLegendPill(text: String, color: Color) -> some View {
         Text(text)
             .font(.custom("Avenir-Heavy", size: 10))
             .foregroundColor(color)
@@ -562,12 +576,15 @@ struct ForgeView: View {
             .background(Capsule().fill(color.opacity(0.12)))
     }
     
-    private func enhanceItemRow(item: Equipment) -> some View {
-        let cost = gameEngine.enhancementCost(for: item)
-        let canAfford = (character?.gold ?? 0) >= cost
-        let isMaxed = item.enhancementLevel >= Equipment.maxEnhancementLevel
-        let successRate = gameEngine.enhancementSuccessRate(for: item)
-        let hasCatalyst = character.map { gameEngine.hasForgeCatalyst(characterID: $0.id, context: modelContext) } ?? false
+    private func temperItemRow(item: Equipment) -> some View {
+        let goldCost = GameEngine.temperGoldCost(item: item)
+        let matCost = GameEngine.temperMaterialCost(item: item)
+        let matType = GameEngine.temperMaterialType(for: item)
+        let canAffordGold = (character?.gold ?? 0) >= goldCost
+        let matHave = ownedMaterials.filter { $0.materialType == matType }.reduce(0) { $0 + $1.quantity }
+        let canAffordMat = matHave >= matCost
+        let canAfford = canAffordGold && canAffordMat
+        let expGrant = GameEngine.temperEXPGrant(item: item)
         
         return VStack(spacing: 0) {
             HStack(spacing: 14) {
@@ -578,89 +595,101 @@ struct ForgeView: View {
                         Text(item.name)
                             .font(.custom("Avenir-Heavy", size: 14))
                             .foregroundColor(Color(item.rarity.color))
-                        if item.enhancementLevel > 0 {
-                            Text("+\(item.enhancementLevel)")
-                                .font(.custom("Avenir-Heavy", size: 11))
-                                .foregroundColor(Color("AccentGreen"))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color("AccentGreen").opacity(0.2)))
-                        }
+                        Text("Lv.\(item.equipmentLevel)")
+                            .font(.custom("Avenir-Heavy", size: 11))
+                            .foregroundColor(Color("ForgeEmber"))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color("ForgeEmber").opacity(0.2)))
                     }
                     Text(item.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(.secondary)
                     
-                    if !isMaxed {
-                        HStack(spacing: 6) {
-                            Text("Success: \(Int(successRate * 100))%")
-                                .font(.custom("Avenir-Medium", size: 11))
-                                .foregroundColor(successRate >= 0.8 ? Color("AccentGreen") : successRate >= 0.5 ? Color("AccentOrange") : .red)
-                            Text("•")
-                                .foregroundColor(.secondary)
-                            Text("+\(gameEngine.enhancementStatGain(forLevel: item.enhancementLevel + 1)) stat")
-                                .font(.custom("Avenir-Medium", size: 11))
-                                .foregroundColor(Color("AccentGold"))
+                    // EXP progress bar
+                    HStack(spacing: 6) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.secondary.opacity(0.15))
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color("ForgeEmber"))
+                                    .frame(width: geo.size.width * item.levelProgress)
+                            }
+                        }
+                        .frame(height: 6)
+                        
+                        Text("\(item.equipmentEXP)/\(item.expToNextLevel)")
+                            .font(.custom("Avenir-Medium", size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Quirk summary
+                    if !item.quirks.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(item.quirks, id: \.id) { quirk in
+                                quirkMiniPill(quirk: quirk)
+                            }
                         }
                     }
                 }
                 
                 Spacer()
                 
-                if isMaxed {
-                    Text("PERFECTED")
-                        .font(.custom("Avenir-Heavy", size: 11))
-                        .foregroundColor(Color("AccentGold"))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color("AccentGold").opacity(0.15)))
-                } else {
-                    Button {
-                        selectedEnhanceItem = item
-                        useCatalyst = false
-                        performEnhance(item: item, withCatalyst: false)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "dollarsign.circle.fill").font(.caption)
-                            Text("\(cost)")
-                                .font(.custom("Avenir-Heavy", size: 13))
-                        }
-                        .foregroundColor(canAfford ? Color("AccentGold") : .red)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule().fill(Color("AccentGold").opacity(canAfford ? 0.15 : 0.05))
-                        )
-                    }
-                    .disabled(!canAfford)
-                }
-            }
-            
-            // Catalyst button (if available and item is enhanceable)
-            if !isMaxed && hasCatalyst {
                 Button {
-                    performEnhance(item: item, withCatalyst: true)
+                    performTemper(item: item)
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.trianglebadge.exclamationmark.fill")
-                            .font(.system(size: 11))
-                        Text("Use Forge Catalyst (2x success)")
-                            .font(.custom("Avenir-Heavy", size: 11))
+                    VStack(spacing: 3) {
+                        Text("+\(expGrant) EXP")
+                            .font(.custom("Avenir-Heavy", size: 12))
+                            .foregroundColor(Color("ForgeEmber"))
+                        HStack(spacing: 3) {
+                            Image(systemName: "dollarsign.circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(canAffordGold ? Color("AccentGold") : .red)
+                            Text("\(goldCost)")
+                                .font(.custom("Avenir-Heavy", size: 11))
+                                .foregroundColor(canAffordGold ? Color("AccentGold") : .red)
+                        }
+                        HStack(spacing: 3) {
+                            Image(systemName: matType.icon)
+                                .font(.system(size: 8))
+                                .foregroundColor(canAffordMat ? Color(matType.color) : .red)
+                            Text("\(matCost)")
+                                .font(.custom("Avenir-Heavy", size: 11))
+                                .foregroundColor(canAffordMat ? Color(matType.color) : .red)
+                        }
                     }
-                    .foregroundColor(Color("ForgeEmber"))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color("ForgeEmber").opacity(0.08))
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color("ForgeEmber").opacity(canAfford ? 0.12 : 0.05))
                     )
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 6)
+                .disabled(!canAfford)
             }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
+    }
+    
+    private func quirkMiniPill(quirk: EquipmentQuirk) -> some View {
+        let color: Color = {
+            switch quirk.category {
+            case .positive: return Color("AccentGreen")
+            case .negative: return .red
+            case .mixed: return Color("AccentOrange")
+            case .legendary: return Color("RarityLegendary")
+            }
+        }()
+        
+        return Text(quirk.name)
+            .font(.custom("Avenir-Heavy", size: 9))
+            .foregroundColor(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.12)))
     }
     
     // MARK: - Salvage Station
@@ -675,7 +704,7 @@ struct ForgeView: View {
                     Text("Salvage Station")
                         .font(.custom("Avenir-Heavy", size: 18))
                 }
-                Text("Break down unwanted equipment into crafting materials, fragments, and gold. Higher rarity items yield more resources. Items with affixes have a chance to recover an Affix Scroll!")
+                Text("Break down unwanted equipment into crafting materials, fragments, and gold. Higher rarity items yield more resources. Items with affixes have a chance to recover an Enchantment Elixir!")
                     .font(.custom("Avenir-Medium", size: 13))
                     .foregroundColor(.secondary)
             }
@@ -780,99 +809,130 @@ struct ForgeView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
     }
     
-    // MARK: - Affix Station
+    // MARK: - Reforge Station
     
-    private var affixStationContent: some View {
+    private var reforgeStationContent: some View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "scroll.fill")
-                        .foregroundColor(Color("AccentGold"))
-                    Text("Affix Station")
+                    Image(systemName: "arrow.trianglehead.2.counterclockwise")
+                        .foregroundColor(Color("AccentPurple"))
+                    Text("Reforge Station")
                         .font(.custom("Avenir-Heavy", size: 18))
                 }
-                Text("Apply Affix Scrolls to add magical properties to your equipment, or spend gold to re-roll existing affixes. The endgame gold sink for perfectionists.")
+                Text("Reroll quirks on leveled equipment for better effects, or purify negative quirks to remove them entirely.")
                     .font(.custom("Avenir-Medium", size: 13))
                     .foregroundColor(.secondary)
                 
-                // Show affix scroll count
-                let scrollCount = affixScrollCount
-                HStack(spacing: 6) {
-                    Image(systemName: "scroll.fill")
-                        .font(.caption)
-                        .foregroundColor(Color("AccentGold"))
-                    Text("\(scrollCount) Affix Scroll\(scrollCount == 1 ? "" : "s") available")
-                        .font(.custom("Avenir-Heavy", size: 13))
-                        .foregroundColor(scrollCount > 0 ? Color("AccentGold") : .secondary)
+                HStack(spacing: 16) {
+                    temperLegendPill(text: "Reroll: Any Quirk", color: Color("AccentPurple"))
+                    temperLegendPill(text: "Purify: Negatives Only", color: .red)
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color("AccentGold").opacity(0.08)))
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
             
-            // Coming soon message (Affix system depends on Agent 3's EquipmentAffix model)
-            VStack(spacing: 12) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 40))
-                    .foregroundColor(Color("AccentGold").opacity(0.5))
-                Text("Affix application and re-rolling will activate once the affix system is fully online.")
-                    .font(.custom("Avenir-Medium", size: 14))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                Text("Collect Affix Scrolls from salvaging or expeditions in the meantime!")
-                    .font(.custom("Avenir-Medium", size: 13))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+            if reforgeableItems.isEmpty {
+                emptyStateView(icon: "sparkles", title: "No quirks to reforge", subtitle: "Level up your equipped gear at the Temper station first. Each level grants a quirk that can be reforged here.")
+            } else {
+                ForEach(reforgeableItems, id: \.id) { item in
+                    reforgeItemSection(item: item)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(24)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
-            
-            // Re-roll cost preview
-            affixRerollCostPreview
         }
     }
     
-    private var affixScrollCount: Int {
-        guard let character = character else { return 0 }
-        return allConsumables.filter {
-            $0.characterID == character.id && $0.consumableType == .affixScroll && $0.remainingUses > 0
-        }.count
-    }
-    
-    private var affixRerollCostPreview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Re-roll Cost Curve")
-                .font(.custom("Avenir-Heavy", size: 14))
-            
-            let costs = (1...5).map { n in
-                (n, ContentManager.shared.affixRerollCost(forReroll: n))
-            }
-            
-            HStack(spacing: 8) {
-                ForEach(costs, id: \.0) { (num, cost) in
-                    VStack(spacing: 2) {
-                        Text("#\(num)")
-                            .font(.custom("Avenir-Heavy", size: 11))
-                            .foregroundColor(.secondary)
-                        Text("\(cost)g")
-                            .font(.custom("Avenir-Heavy", size: 12))
-                            .foregroundColor(Color("AccentGold"))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color("AccentGold").opacity(0.06)))
+    private func reforgeItemSection(item: Equipment) -> some View {
+        let rerollGold = GameEngine.reforgeGoldCost(item: item)
+        let rerollMat = GameEngine.reforgeMaterialCost(item: item)
+        let purifyGold = GameEngine.purifyGoldCost(item: item)
+        let purifyMat = GameEngine.purifyMaterialCost(item: item)
+        let matType = GameEngine.temperMaterialType(for: item)
+        let matHave = ownedMaterials.filter { $0.materialType == matType }.reduce(0) { $0 + $1.quantity }
+        let gold = character?.gold ?? 0
+        
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                EquipmentIconView(item: item, slot: item.slot, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(Color(item.rarity.color))
+                    Text("Lv.\(item.equipmentLevel) \(item.slot.rawValue)")
+                        .font(.custom("Avenir-Medium", size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Reroll: \(rerollGold)g + \(rerollMat) \(matType.rawValue)")
+                        .font(.custom("Avenir-Medium", size: 10))
+                        .foregroundColor(.secondary)
+                    Text("Purify: \(purifyGold)g + \(purifyMat) \(matType.rawValue)")
+                        .font(.custom("Avenir-Medium", size: 10))
+                        .foregroundColor(.secondary)
                 }
             }
             
-            Text("Cost escalates with each re-roll on the same item")
-                .font(.custom("Avenir-Medium", size: 11))
-                .foregroundColor(.secondary)
+            ForEach(Array(item.quirks.enumerated()), id: \.element.id) { index, quirk in
+                reforgeQuirkRow(item: item, quirk: quirk, index: index, gold: gold, matHave: matHave, rerollGold: rerollGold, rerollMat: rerollMat, purifyGold: purifyGold, purifyMat: purifyMat)
+            }
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color("CardBackground")))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color("CardBackground")))
+    }
+    
+    private func reforgeQuirkRow(item: Equipment, quirk: EquipmentQuirk, index: Int, gold: Int, matHave: Int, rerollGold: Int, rerollMat: Int, purifyGold: Int, purifyMat: Int) -> some View {
+        let quirkColor: Color = {
+            switch quirk.category {
+            case .positive: return Color("AccentGreen")
+            case .negative: return .red
+            case .mixed: return Color("AccentOrange")
+            case .legendary: return Color("RarityLegendary")
+            }
+        }()
+        let canReroll = gold >= rerollGold && matHave >= rerollMat && quirk.category != .legendary
+        let canPurify = quirk.category == .negative && gold >= purifyGold && matHave >= purifyMat
+        
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(quirk.name)
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(quirkColor)
+                Text(quirk.displayText)
+                    .font(.custom("Avenir-Medium", size: 11))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            if quirk.category != .legendary {
+                Button {
+                    performReforge(item: item, quirkIndex: index)
+                } label: {
+                    Image(systemName: "arrow.trianglehead.2.counterclockwise")
+                        .font(.system(size: 12))
+                        .foregroundColor(canReroll ? Color("AccentPurple") : .secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color("AccentPurple").opacity(canReroll ? 0.12 : 0.05)))
+                }
+                .disabled(!canReroll)
+            }
+            
+            if quirk.category == .negative {
+                Button {
+                    performPurify(item: item, quirkIndex: index)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(canPurify ? .red : .secondary)
+                        .padding(8)
+                        .background(Circle().fill(Color.red.opacity(canPurify ? 0.12 : 0.05)))
+                }
+                .disabled(!canPurify)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(quirkColor.opacity(0.05)))
     }
     
     // MARK: - Material Inventory Section
@@ -953,54 +1013,86 @@ struct ForgeView: View {
         var subtitle = "+\(result.goldReturned)g"
         if result.materialsReturned > 0 { subtitle += " +\(result.materialsReturned) materials" }
         if result.fragmentsReturned > 0 { subtitle += " +\(result.fragmentsReturned) fragments" }
-        if result.recoveredAffixScroll { subtitle += " +Affix Scroll!" }
+        if result.recoveredAffixScroll { subtitle += " +Enchantment Elixir!" }
         ToastManager.shared.showReward("Salvaged!", subtitle: subtitle, icon: "scissors")
     }
     
-    private func performEnhance(item: Equipment, withCatalyst: Bool) {
+    private func performTemper(item: Equipment) {
         guard let character = character else { return }
-        let result = gameEngine.enhanceEquipment(
-            item,
-            character: character,
-            useCatalyst: withCatalyst,
-            context: modelContext
-        )
-        enhanceResult = result
+        guard let result = gameEngine.temperEquipment(item, character: character, context: modelContext) else {
+            forgekeeperMessage = "You don't have enough resources for that. Gather more materials!"
+            return
+        }
+        temperResult = result
         craftTrigger += 1
         
-        if result.success {
-            if result.critical {
-                AudioManager.shared.play(.forgeCritical)
-                let feedback = UINotificationFeedbackGenerator()
-                feedback.notificationOccurred(.success)
-                ToastManager.shared.showLoot("CRITICAL! \(item.name) +\(result.newLevel) (+\(result.statGained) stats!)", rarity: item.rarity.rawValue)
-                forgekeeperMessage = "By the flames! A critical enhancement! The stars aligned for that one!"
+        if result.leveledUp {
+            AudioManager.shared.play(.forgeAnvilRing)
+            let feedback = UINotificationFeedbackGenerator()
+            feedback.notificationOccurred(.success)
+            if let quirk = result.quirkGained {
+                let quirkLabel = quirk.category == .negative ? "But beware..." : "A fine trait!"
+                ToastManager.shared.showLoot("\(item.name) reached Lv.\(result.newLevel)! Quirk: \(quirk.name)", rarity: item.rarity.rawValue)
+                forgekeeperMessage = "Level up! Your \(item.name) gained the \"\(quirk.name)\" quirk. \(quirkLabel)"
             } else {
-                AudioManager.shared.play(.forgeEnhance)
-                let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
-                impactFeedback.impactOccurred()
-                ToastManager.shared.showLoot("Enhanced: \(item.name) +\(result.newLevel)", rarity: item.rarity.rawValue)
-                forgekeeperMessage = "Enhancement successful! Your \(item.name) grows stronger."
+                ToastManager.shared.showLoot("\(item.name) reached Lv.\(result.newLevel)!", rarity: item.rarity.rawValue)
+                forgekeeperMessage = "Your \(item.name) grows in power! Level \(result.newLevel)."
             }
         } else {
-            AudioManager.shared.play(.forgeEnhanceFail)
-            let feedback = UINotificationFeedbackGenerator()
-            feedback.notificationOccurred(.error)
-            ToastManager.shared.showReward("Enhancement Failed", subtitle: "-\(result.goldSpent) gold consumed", icon: "xmark.circle.fill")
-            forgekeeperMessage = "The enhancement failed... the materials were consumed, but your item is unharmed. Try again!"
+            AudioManager.shared.play(.forgeHammer)
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
+            ToastManager.shared.showReward("Tempered!", subtitle: "+\(result.expGranted) EXP to \(item.name)", icon: "flame.fill")
+            forgekeeperMessage = "The metal absorbs the heat. \(result.expGranted) EXP infused into \(item.name)."
         }
+    }
+    
+    private func performReforge(item: Equipment, quirkIndex: Int) {
+        guard let character = character else { return }
+        guard let result = gameEngine.reforgeQuirk(item, quirkIndex: quirkIndex, character: character, context: modelContext) else {
+            forgekeeperMessage = "Not enough resources to reforge that quirk."
+            return
+        }
+        reforgeResult = result
+        craftTrigger += 1
+        
+        AudioManager.shared.play(.forgeMagicSwirl)
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        
+        if let newQuirk = result.newQuirk {
+            ToastManager.shared.showReward("Reforged!", subtitle: "\(result.oldQuirk.name) → \(newQuirk.name)", icon: "arrow.trianglehead.2.counterclockwise")
+            forgekeeperMessage = "The quirk shifts... \"\(result.oldQuirk.name)\" becomes \"\(newQuirk.name)\". Fate is fickle!"
+        }
+    }
+    
+    private func performPurify(item: Equipment, quirkIndex: Int) {
+        guard let character = character else { return }
+        guard let result = gameEngine.purifyQuirk(item, quirkIndex: quirkIndex, character: character, context: modelContext) else {
+            forgekeeperMessage = "Not enough resources to purify that quirk."
+            return
+        }
+        reforgeResult = result
+        craftTrigger += 1
+        
+        AudioManager.shared.play(.forgeMagicSwirl)
+        let feedback = UINotificationFeedbackGenerator()
+        feedback.notificationOccurred(.success)
+        
+        ToastManager.shared.showReward("Purified!", subtitle: "Removed: \(result.oldQuirk.name)", icon: "xmark.circle.fill")
+        forgekeeperMessage = "The darkness fades... \"\(result.oldQuirk.name)\" has been cleansed from your \(item.name)."
     }
     
     private func updateForgekeeperForStation(_ station: ForgeStation) {
         switch station {
         case .craft:
             forgekeeperMessage = "Ready to forge something new? Pick a slot and tier!"
-        case .enhance:
-            forgekeeperMessage = "Enhancement is an art of patience. Higher levels carry risk, but the reward is immense."
+        case .temper:
+            forgekeeperMessage = "Tempering infuses raw energy into your gear. Each level awakens a new quirk — for better or worse."
+        case .reforge:
+            forgekeeperMessage = "Don't like a quirk? Reforge it into something new, or purify the darkness from your equipment."
         case .salvage:
             forgekeeperMessage = "Every item has value — even the ones you don't need. Salvage returns materials directly now!"
-        case .affix:
-            forgekeeperMessage = "Affixes are the mark of a true craftsman. Apply scrolls or re-roll for the perfect stats."
         }
     }
 }
@@ -1297,9 +1389,7 @@ private struct ForgeMaterialCard: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(material.materialType.color).opacity(0.12))
                     .frame(width: 36, height: 36)
-                Image(systemName: material.icon)
-                    .font(.system(size: 15))
-                    .foregroundColor(Color(material.materialType.color))
+                MaterialIconView(materialType: material.materialType, rarity: material.rarity, size: 36)
             }
             
             VStack(alignment: .leading, spacing: 2) {

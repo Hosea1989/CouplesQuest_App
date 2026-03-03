@@ -644,7 +644,20 @@ struct ExpeditionView: View {
                                 Spacer()
                             }
                         }
-                        if result.materialDropped {
+                        if result.materialDropped,
+                           let typeName = result.materialTypeName,
+                           let rarityName = result.materialRarityName,
+                           let matType = MaterialType(rawValue: typeName),
+                           let matRarity = ItemRarity(rawValue: rarityName.lowercased()) {
+                            MaterialLootRow(
+                                drop: MaterialDrop(
+                                    type: matType,
+                                    rarity: matRarity,
+                                    amount: result.materialAmount ?? 1
+                                ),
+                                size: 36
+                            )
+                        } else if result.materialDropped {
                             HStack {
                                 Image(systemName: "cube.fill")
                                     .foregroundColor(Color("AccentPurple"))
@@ -910,6 +923,21 @@ struct ExpeditionView: View {
         )
         
         latestStageResult = result
+        
+        // Award materials if they dropped
+        if result.materialDropped,
+           let typeName = result.materialTypeName,
+           let rarityName = result.materialRarityName,
+           let matType = MaterialType(rawValue: typeName),
+           let matRarity = ItemRarity(rawValue: rarityName.lowercased()) {
+            gameEngine.addMaterialPublic(
+                matType,
+                rarity: matRarity,
+                amount: result.materialAmount ?? 1,
+                characterID: character.id,
+                context: modelContext
+            )
+        }
         
         // Collect card if one dropped
         if result.cardDropped {
