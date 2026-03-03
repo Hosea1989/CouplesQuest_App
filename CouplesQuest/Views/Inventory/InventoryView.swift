@@ -1028,32 +1028,167 @@ struct MaterialIconView: View {
     }
 }
 
+// MARK: - Gem Icon View
+
+/// Displays a color-coded gem sprite based on quantity.
+/// Tiers:  1–2 → blue,  3–4 → green,  5–9 → purple (default),  10–24 → red,  25+ → gold
+struct GemIconView: View {
+    let amount: Int
+    var size: CGFloat = 24
+    
+    private var assetName: String {
+        switch amount {
+        case ...2:    return "gem-blue"
+        case 3...4:   return "gem-green"
+        case 5...9:   return "gem-purple"
+        case 10...24:  return "gem-red"
+        default:       return "gem-gold"
+        }
+    }
+    
+    /// The default purple gem asset (use when showing the currency icon without a specific amount)
+    static let currencyAsset = "gem-purple"
+    
+    var body: some View {
+        if UIImage(named: assetName) != nil {
+            Image(assetName)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "diamond.fill")
+                .font(.system(size: size * 0.65))
+                .foregroundColor(Color("AccentPurple"))
+        }
+    }
+}
+
+/// Static gem currency icon (always purple, no quantity logic)
+struct GemCurrencyIcon: View {
+    var size: CGFloat = 18
+    
+    var body: some View {
+        if UIImage(named: GemIconView.currencyAsset) != nil {
+            Image(GemIconView.currencyAsset)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "diamond.fill")
+                .font(.system(size: size * 0.65))
+                .foregroundColor(Color("AccentPurple"))
+        }
+    }
+}
+
+/// Pixel-art gold coin icon for currency displays
+struct GoldCoinIcon: View {
+    var size: CGFloat = 18
+    
+    var body: some View {
+        if UIImage(named: "gold-coin") != nil {
+            Image("gold-coin")
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "dollarsign.circle.fill")
+                .font(.system(size: size * 0.65))
+                .foregroundColor(Color("AccentGold"))
+        }
+    }
+}
+
+/// Pixel-art purple gem for EXP displays
+struct ExpGemIcon: View {
+    var size: CGFloat = 18
+    
+    var body: some View {
+        if UIImage(named: "exp-gem") != nil {
+            Image("exp-gem")
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "sparkle")
+                .font(.system(size: size * 0.65))
+                .foregroundColor(Color("AccentPurple"))
+        }
+    }
+}
+
+/// Pixel-art gold pile for reward/result screens
+struct GoldPileIcon: View {
+    var size: CGFloat = 48
+    
+    var body: some View {
+        if UIImage(named: "gold-pile") != nil {
+            Image("gold-pile")
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "dollarsign.circle.fill")
+                .font(.system(size: size * 0.65))
+                .foregroundColor(Color("AccentGold"))
+        }
+    }
+}
+
 // MARK: - Material Loot Row (reusable reward row with pixel art)
 
 struct MaterialLootRow: View {
     let drop: MaterialDrop
     var size: CGFloat = 40
+    @State private var showTooltip = false
     
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(drop.rarity.color).opacity(0.15))
-                    .frame(width: size, height: size)
-                MaterialIconView(materialType: drop.type, rarity: drop.rarity, size: size * 0.85)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(drop.type.displayName)
-                    .font(.custom("Avenir-Heavy", size: 14))
-                    .foregroundColor(.white)
-                Text(drop.rarity.rawValue)
-                    .font(.custom("Avenir-Medium", size: 11))
+        Button {
+            showTooltip.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(drop.rarity.color).opacity(0.15))
+                        .frame(width: size, height: size)
+                    MaterialIconView(materialType: drop.type, rarity: drop.rarity, size: size * 0.85)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(drop.type.displayName)
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(.white)
+                    Text(drop.rarity.rawValue)
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(Color(drop.rarity.color))
+                }
+                Spacer()
+                Text("+\(drop.amount)")
+                    .font(.custom("Avenir-Heavy", size: 18))
                     .foregroundColor(Color(drop.rarity.color))
             }
-            Spacer()
-            Text("+\(drop.amount)")
-                .font(.custom("Avenir-Heavy", size: 18))
-                .foregroundColor(Color(drop.rarity.color))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showTooltip) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(drop.type.displayName)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color(drop.type.color))
+                Divider()
+                Text(drop.type.sourceDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+                Text(drop.type.usedForDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .frame(width: 260)
+            .presentationCompactAdaptation(.popover)
         }
     }
 }

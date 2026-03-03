@@ -395,8 +395,7 @@ struct MemoryMatchGameView: View {
                         .tracking(1.5)
                     
                     HStack {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .foregroundColor(Color("AccentGold"))
+                        GoldCoinIcon(size: 16)
                         Text("Gold")
                             .font(.custom("Avenir-Medium", size: 15))
                         Spacer()

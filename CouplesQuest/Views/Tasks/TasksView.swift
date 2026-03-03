@@ -1,6 +1,26 @@
 import SwiftUI
 import SwiftData
 
+private enum TaskTab: String, CaseIterable {
+    case board, active, history
+    
+    var label: String {
+        switch self {
+        case .board: "Board"
+        case .active: "Active"
+        case .history: "History"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .board: "mappin.circle.fill"
+        case .active: "checklist"
+        case .history: "checkmark.circle"
+        }
+    }
+}
+
 struct TasksView: View {
     /// When true, the view is pushed inside an existing NavigationStack and should not create its own.
     var isEmbedded: Bool = false
@@ -10,12 +30,12 @@ struct TasksView: View {
     @Query(sort: \GameTask.createdAt, order: .reverse) private var allTasks: [GameTask]
     @Query private var characters: [PlayerCharacter]
     @Query private var bonds: [Bond]
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     @State private var showCreateTask = false
     @State private var showCompletionCelebration = false
     @State private var lastCompletionResult: TaskCompletionResult?
     @State private var deleteTrigger = 0
-    @State private var showCompleted = false
     @State private var dailyDuties: [GameTask] = []
     @State private var showVerification = false
     @State private var taskPendingVerification: GameTask?
@@ -39,6 +59,7 @@ struct TasksView: View {
     @State private var dutyPendingCoopChoice: GameTask?
     @State private var showRefreshConfirm = false
     @State private var refreshRotation: Double = 0
+    @State private var selectedTaskTab: TaskTab = .active
     
     private var character: PlayerCharacter? {
         characters.first
@@ -46,6 +67,10 @@ struct TasksView: View {
     
     private var bond: Bond? {
         bonds.first
+    }
+    
+    private var activeRaidBoss: WeeklyRaidBoss? {
+        raidBosses.first(where: { $0.isActive })
     }
     
     /// Partner quests: tasks from partner that aren't completed
@@ -113,7 +138,6 @@ struct TasksView: View {
     @ViewBuilder
     private var tasksListContent: some View {
             ZStack {
-                // Background
                 LinearGradient(
                     colors: [
                         Color("BackgroundTop"),
@@ -124,26 +148,17 @@ struct TasksView: View {
                 )
                 .ignoresSafeArea()
                 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // 0. Daily Habits (above everything)
-                        if !habits.isEmpty {
-                            dailyHabitsSection
-                        }
-                        
-                        // 1. Duty Board (front and center)
-                        dutyBoardSection
-                        
-                        // 2. Partner Quests (if any or if partnered)
-                        partnerQuestsSection
-                        
-                        // 3. Active Duties
-                        myTasksSection
-                        
-                        // 4. View Completed
-                        viewCompletedButton
+                VStack(spacing: 0) {
+                    taskTabPicker
+                    
+                    switch selectedTaskTab {
+                    case .board:
+                        boardTabContent
+                    case .active:
+                        activeTabContent
+                    case .history:
+                        historyTabContent
                     }
-                    .padding()
                 }
             }
             .navigationTitle("Daily Tasks")
@@ -174,9 +189,6 @@ struct TasksView: View {
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                 }
-            }
-            .sheet(isPresented: $showCompleted) {
-                CompletedTasksSheet(tasks: completedTasks)
             }
             .sheet(isPresented: $showVerification) {
                 if let task = taskPendingVerification {
@@ -325,6 +337,135 @@ struct TasksView: View {
             }
     }
     
+    // MARK: - Tab Picker
+    
+    private func tabCount(for tab: TaskTab) -> Int {
+        switch tab {
+        case .board:
+            return dailyDuties.filter { $0.status == .pending }.count
+        case .active:
+            return myTasks.count + partnerQuests.count
+        case .history:
+            return completedTasks.count
+        }
+    }
+    
+    private var taskTabPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(TaskTab.allCases, id: \.self) { tab in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedTaskTab = tab
+                        }
+                        AudioManager.shared.play(.tabSwitch)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 12))
+                            Text(tab.label)
+                                .font(.custom("Avenir-Heavy", size: 13))
+                            
+                            let count = tabCount(for: tab)
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.custom("Avenir-Heavy", size: 11))
+                                    .foregroundColor(selectedTaskTab == tab ? Color("AccentGold") : .secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule().fill(
+                                            selectedTaskTab == tab
+                                                ? Color.black.opacity(0.15)
+                                                : Color.secondary.opacity(0.12)
+                                        )
+                                    )
+                            }
+                        }
+                        .foregroundColor(selectedTaskTab == tab ? .black : .secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule().fill(
+                                selectedTaskTab == tab
+                                    ? Color("AccentGold")
+                                    : Color("CardBackground")
+                            )
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+    
+    // MARK: - Board Tab
+    
+    private var boardTabContent: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                dutyBoardSection
+                
+                if !habits.isEmpty {
+                    dailyHabitsSection
+                }
+            }
+            .padding()
+        }
+    }
+    
+    // MARK: - Active Tab
+    
+    private var activeTabContent: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                myTasksSection
+                
+                partnerQuestsSection
+            }
+            .padding()
+        }
+    }
+    
+    // MARK: - History Tab
+    
+    private var historyTabContent: some View {
+        ScrollView {
+            if completedTasks.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer().frame(height: 60)
+                    
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary.opacity(0.4))
+                    
+                    Text("No Completed Tasks")
+                        .font(.custom("Avenir-Heavy", size: 17))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Tasks you complete will appear here.")
+                        .font(.custom("Avenir-Medium", size: 14))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(completedTasks, id: \.id) { task in
+                        CompletedTaskRow(task: task, characterLevel: character?.level ?? 1)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color("CardBackground"))
+                            )
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+    
     // MARK: - Daily Habits Section
     
     private var dailyHabitsSection: some View {
@@ -401,6 +542,20 @@ struct TasksView: View {
             context: modelContext
         )
         result.materialDrops = matDrops
+        
+        if let boss = activeRaidBoss {
+            if let raidResult = gameEngine.dealRaidDamage(
+                character: character,
+                boss: boss,
+                activityType: .habit,
+                activityValue: habit.habitStreak,
+                sourceLabel: "Habit: \(habit.title)"
+            ) {
+                result.raidDamageDealt = raidResult.damage
+                result.raidRetaliationTaken = raidResult.retaliationDamage
+            }
+        }
+        
         lastCompletionResult = result
         showCompletionCelebration = true
     }
@@ -722,33 +877,6 @@ struct TasksView: View {
                 .fill(Color("CardBackground"))
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         )
-    }
-    
-    // MARK: - View Completed Button
-    
-    private var viewCompletedButton: some View {
-        Group {
-            if !completedTasks.isEmpty {
-                Button(action: { showCompleted = true }) {
-                    HStack {
-                        Image(systemName: "checkmark.circle")
-                            .foregroundColor(.secondary)
-                        Text("View \(completedTasks.count) Completed")
-                            .font(.custom("Avenir-Medium", size: 14))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color("CardBackground").opacity(0.5))
-                    )
-                }
-            }
-        }
     }
     
     // MARK: - Actions
@@ -1133,6 +1261,20 @@ struct TasksView: View {
             context: modelContext
         )
         result.materialDrops = matDrops
+        
+        if let boss = activeRaidBoss {
+            if let raidResult = gameEngine.dealRaidDamage(
+                character: character,
+                boss: boss,
+                activityType: .task,
+                activityValue: task.expReward,
+                sourceLabel: "Task: \(task.title)"
+            ) {
+                result.raidDamageDealt = raidResult.damage
+                result.raidRetaliationTaken = raidResult.retaliationDamage
+            }
+        }
+        
         lastCompletionResult = result
         showCompletionCelebration = true
         
@@ -1311,8 +1453,7 @@ struct DutyNoteCard: View {
             .foregroundColor(Color("AccentGold"))
             
             HStack(spacing: 2) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 9))
+                GoldCoinIcon(size: 11)
                 Text("+\(task.scaledGoldReward(characterLevel: characterLevel))")
                     .font(.custom("Avenir-Heavy", size: 11))
             }
@@ -1527,16 +1668,14 @@ struct HabitRow: View {
                             .foregroundColor(.red)
                         } else {
                             HStack(spacing: 3) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 9))
+                                ExpGemIcon(size: 11)
                                 Text("+\(habit.scaledExpReward(characterLevel: characterLevel)) EXP")
                                     .font(.custom("Avenir-Heavy", size: 11))
                             }
                             .foregroundColor(isDone ? Color("AccentGreen") : Color("AccentGold"))
                             
                             HStack(spacing: 3) {
-                                Image(systemName: "dollarsign.circle.fill")
-                                    .font(.system(size: 9))
+                                GoldCoinIcon(size: 11)
                                 Text("+\(habit.scaledGoldReward(characterLevel: characterLevel)) Gold")
                                     .font(.custom("Avenir-Heavy", size: 11))
                             }
@@ -1939,8 +2078,7 @@ struct TaskCard: View {
                 HStack(spacing: 12) {
                     // EXP Reward
                     HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                            .font(.caption)
+                        ExpGemIcon(size: 12)
                         Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                             .font(.custom("Avenir-Heavy", size: 12))
                     }
@@ -2084,9 +2222,14 @@ struct TaskCompletionCelebration: View {
             .ignoresSafeArea()
             
             // Ambient particles
-            RewardFloatingParticlesView()
+            CelebrationFloatingParticlesView()
                 .ignoresSafeArea()
                 .opacity(0.3)
+            
+            // Confetti
+            CelebrationConfettiOverlay()
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             
             // Main content
             VStack(spacing: 0) {
@@ -2129,6 +2272,14 @@ struct TaskCompletionCelebration: View {
                                 characterStatsCardView
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
+                            
+                            if showRewards && result.raidDamageDealt > 0 {
+                                raidDamageCard(damage: result.raidDamageDealt, retaliation: result.raidRetaliationTaken)
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.9).combined(with: .opacity),
                                         removal: .opacity
                                     ))
                             }
@@ -2304,9 +2455,7 @@ struct TaskCompletionCelebration: View {
                     Circle()
                         .fill(Color("AccentGold").opacity(0.15))
                         .frame(width: 40, height: 40)
-                    Image(systemName: "dollarsign.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(Color("AccentGold"))
+                    GoldPileIcon(size: 32)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -2404,6 +2553,27 @@ struct TaskCompletionCelebration: View {
                 ForEach(result.materialDrops) { drop in
                     MaterialLootRow(drop: drop, size: 32)
                 }
+            }
+            
+            // Gem reward
+            if result.gemsGained > 0 {
+                let gemAsset: String = {
+                    switch result.gemsGained {
+                    case ...2: return "gem-blue"
+                    case 3...4: return "gem-green"
+                    case 5...9: return "gem-purple"
+                    case 10...24: return "gem-red"
+                    default: return "gem-gold"
+                    }
+                }()
+                rewardItemRow(
+                    icon: gemAsset,
+                    iconColor: Color("AccentPurple"),
+                    label: "Gems Found!",
+                    value: "+\(result.gemsGained)",
+                    valueColor: Color("AccentPurple"),
+                    imageName: gemAsset
+                )
             }
             
             // Co-op bonuses
@@ -2575,6 +2745,54 @@ struct TaskCompletionCelebration: View {
         }
     }
     
+    // MARK: - Raid Damage Card
+    
+    @ViewBuilder
+    private func raidDamageCard(damage: Int, retaliation: Int) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(Color("DifficultyHard"))
+                Text("Raid Boss Damage")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+            }
+            
+            HStack(spacing: 20) {
+                VStack(spacing: 4) {
+                    Text("-\(damage) HP")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(Color("DifficultyHard"))
+                    Text("Dealt to Boss")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                if retaliation > 0 {
+                    VStack(spacing: 4) {
+                        Text("-\(retaliation) HP")
+                            .font(.custom("Avenir-Heavy", size: 18))
+                            .foregroundColor(Color("AccentOrange"))
+                        Text("Boss struck back!")
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("DifficultyHard").opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+    
     // MARK: - Animation Sequence
     
     private func startAnimationSequence() {
@@ -2688,8 +2906,16 @@ struct RewardRow: View {
     
     var body: some View {
         HStack {
-            Image(systemName: icon)
-                .foregroundColor(color)
+            if icon.hasPrefix("gem-"), UIImage(named: icon) != nil {
+                Image(icon)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
+            } else {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+            }
             Text(label)
                 .font(.custom("Avenir-Medium", size: 16))
             Spacer()
@@ -2820,9 +3046,7 @@ struct RewardCelebrationOverlay: View {
                         // Level + EXP bar
                         VStack(spacing: 6) {
                             HStack {
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color("AccentGold"))
+                                ExpGemIcon(size: 14)
                                 Text("Level \(character.level)")
                                     .font(.custom("Avenir-Heavy", size: 14))
                                 Spacer()
@@ -2853,9 +3077,7 @@ struct RewardCelebrationOverlay: View {
                         
                         // Gold display
                         HStack {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 14)
                             Text("Gold")
                                 .font(.custom("Avenir-Heavy", size: 14))
                             Spacer()
@@ -2894,9 +3116,19 @@ struct RewardCelebrationOverlay: View {
                                     Circle()
                                         .fill(reward.color.opacity(0.12))
                                         .frame(width: 32, height: 32)
-                                    Image(systemName: reward.icon)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(reward.color)
+                                    if reward.icon == "gold-coin" {
+                                        GoldCoinIcon(size: 22)
+                                    } else if reward.icon.hasPrefix("gem-"), UIImage(named: reward.icon) != nil {
+                                        Image(reward.icon)
+                                            .interpolation(.none)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 22, height: 22)
+                                    } else {
+                                        Image(systemName: reward.icon)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(reward.color)
+                                    }
                                 }
                                 
                                 Text(reward.label)

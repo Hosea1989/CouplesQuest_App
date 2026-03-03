@@ -423,9 +423,7 @@ struct MeditationView: View {
             .frame(maxWidth: .infinity)
             
             VStack(spacing: 4) {
-                Image(systemName: "dollarsign.circle")
-                    .font(.title3)
-                    .foregroundColor(Color("AccentGold"))
+                GoldCoinIcon(size: 22)
                 Text("+\(character.meditationGoldReward)")
                     .font(.custom("Avenir-Heavy", size: 18))
                 Text("Gold")
@@ -691,7 +689,7 @@ struct MeditationView: View {
                     .foregroundColor(Color("AccentGold"))
                     
                     HStack {
-                        Image(systemName: "dollarsign.circle")
+                        GoldCoinIcon(size: 16)
                         Text("+\(result.goldGained) Gold")
                     }
                     .font(.custom("Avenir-Medium", size: 16))

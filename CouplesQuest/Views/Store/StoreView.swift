@@ -247,8 +247,7 @@ struct StoreView: View {
     private var currencyBar: some View {
         HStack(spacing: 24) {
             HStack(spacing: 6) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .foregroundColor(Color("AccentGold"))
+                GoldCoinIcon(size: 20)
                 Text("\(character?.gold ?? 0)")
                     .font(.custom("Avenir-Heavy", size: 18))
             }
@@ -257,8 +256,7 @@ struct StoreView: View {
                 shopkeeperItemTip = ShopkeeperDialogue.gemExplanation
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "diamond.fill")
-                        .foregroundColor(Color("AccentPurple"))
+                    GemCurrencyIcon(size: 22)
                     Text("\(character?.gems ?? 0)")
                         .font(.custom("Avenir-Heavy", size: 18))
                     Image(systemName: "info.circle")
@@ -511,8 +509,7 @@ struct StoreView: View {
     private var premiumSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "diamond.fill")
-                    .foregroundColor(Color("AccentPurple"))
+                GemCurrencyIcon(size: 20)
                 Text("Premium Items")
                     .font(.custom("Avenir-Heavy", size: 18))
                 Spacer()
@@ -609,8 +606,15 @@ struct StoreView: View {
             baseType: item.baseType
         )
         modelContext.insert(purchased)
+        do {
+            try modelContext.save()
+        } catch {
+            print("[Store] Deal purchase save failed: \(error). Rolling back gold.")
+            character.gold += price
+            modelContext.delete(purchased)
+            return
+        }
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
-        try? modelContext.save()
         AudioManager.shared.play(.storePurchase)
         purchasedDealID = item.id
         purchaseTrigger += 1
@@ -636,8 +640,15 @@ struct StoreView: View {
         character.gold -= piece.goldCost
         let purchased = piece.toEquipment(ownerID: character.id)
         modelContext.insert(purchased)
+        do {
+            try modelContext.save()
+        } catch {
+            print("[Store] Set piece save failed: \(error). Rolling back gold.")
+            character.gold += piece.goldCost
+            modelContext.delete(purchased)
+            return
+        }
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
-        try? modelContext.save()
         AudioManager.shared.play(.storePurchase)
         purchasedSetPieceIDs.insert(piece.id)
         purchaseTrigger += 1
@@ -711,9 +722,7 @@ struct ShopEquipmentCard: View {
                         .foregroundColor(.secondary)
                 } else {
                     HStack(spacing: 4) {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .foregroundColor(Color("AccentGold"))
-                            .font(.caption)
+                        GoldCoinIcon(size: 14)
                         Text("\(price)")
                             .font(.custom("Avenir-Heavy", size: 15))
                             .foregroundColor(canAfford ? Color("AccentGold") : .red)
@@ -776,18 +785,14 @@ struct ShopConsumableCard: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     if template.gemCost > 0 {
                         HStack(spacing: 3) {
-                            Image(systemName: "diamond.fill")
-                                .foregroundColor(Color("AccentPurple"))
-                                .font(.caption2)
+                            GemCurrencyIcon(size: 14)
                             Text("\(template.gemCost)")
                                 .font(.custom("Avenir-Heavy", size: 13))
                                 .foregroundColor(Color("AccentPurple"))
                         }
                     } else if template.goldCost > 0 {
                         HStack(spacing: 3) {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundColor(Color("AccentGold"))
-                                .font(.caption2)
+                            GoldCoinIcon(size: 12)
                             Text("\(displayPrice ?? template.goldCost)")
                                 .font(.custom("Avenir-Heavy", size: 13))
                                 .foregroundColor(Color("AccentGold"))
@@ -1043,7 +1048,7 @@ struct EquipmentBuySheet: View {
                         
                         Button(action: onBuy) {
                             HStack {
-                                Image(systemName: "dollarsign.circle.fill")
+                                GoldCoinIcon(size: 16)
                                 Text("Buy for \(price) Gold")
                             }
                             .font(.custom("Avenir-Heavy", size: 16))
@@ -1264,12 +1269,10 @@ struct ConsumableBuySheet: View {
                 Button(action: { onBuy(quantity) }) {
                     HStack {
                         if isGemPurchase {
-                            Image(systemName: "diamond.fill")
-                                .foregroundColor(Color("AccentPurple"))
+                            GemCurrencyIcon(size: 18)
                             Text(quantity > 1 ? "Buy \(quantity) for \(totalCost) Gems" : "Buy for \(totalCost) Gems")
                         } else {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 16)
                             Text(quantity > 1 ? "Buy \(quantity) for \(totalCost) Gold" : "Buy for \(totalCost) Gold")
                         }
                     }

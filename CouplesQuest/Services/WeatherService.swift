@@ -74,20 +74,25 @@ final class WeatherService: NSObject, ObservableObject, CLLocationManagerDelegat
     
     /// Request a weather refresh if the cache is stale or empty.
     func refreshIfNeeded() {
-        guard !isFetching else { return }
+        guard !isFetching else {
+            print("[WeatherService] Skipped — already fetching")
+            return
+        }
         
         if let lastFetch, Date().timeIntervalSince(lastFetch) < cacheTTL {
-            return // Cache is still fresh
+            print("[WeatherService] Cache still fresh (\(Int(Date().timeIntervalSince(lastFetch)))s / \(Int(cacheTTL))s)")
+            return
         }
         
         let status = locationManager.authorizationStatus
+        print("[WeatherService] Location auth status: \(status.rawValue) (0=notDetermined, 1=restricted, 2=denied, 3=authorizedAlways, 4=authorizedWhenInUse)")
         switch status {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
             locationManager.requestLocation()
         default:
-            break // Denied or restricted — do nothing
+            print("[WeatherService] Location denied or restricted — cannot fetch weather")
         }
     }
     
@@ -96,6 +101,7 @@ final class WeatherService: NSObject, ObservableObject, CLLocationManagerDelegat
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             let status = manager.authorizationStatus
+            print("[WeatherService] Auth changed → \(status.rawValue)")
             if status == .authorizedWhenInUse || status == .authorizedAlways {
                 locationManager.requestLocation()
             }
@@ -105,12 +111,13 @@ final class WeatherService: NSObject, ObservableObject, CLLocationManagerDelegat
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.first else { return }
         Task { @MainActor in
+            print("[WeatherService] Got location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
             await fetchWeather(for: location)
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Location failed — silently ignore; the UI just won't show weather
+        print("[WeatherService] Location error: \(error.localizedDescription)")
     }
     
     // MARK: - Fetch
@@ -131,8 +138,9 @@ final class WeatherService: NSObject, ObservableObject, CLLocationManagerDelegat
             temperature = formatter.string(from: tempInUserUnit)
             conditionSymbol = current.symbolName
             lastFetch = Date()
+            print("[WeatherService] Success — \(temperature ?? "?"), symbol: \(conditionSymbol ?? "?")")
         } catch {
-            // WeatherKit unavailable — leave published values as-is (nil or stale)
+            print("[WeatherService] WeatherKit fetch failed: \(error)")
         }
     }
 }

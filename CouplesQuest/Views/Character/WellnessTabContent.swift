@@ -63,6 +63,9 @@ struct WellnessTabContent: View {
     
     var body: some View {
         VStack(spacing: 20) {
+            // Quick Stats (Tasks Done, Best Streak, Total Stats)
+            QuickStatsGrid(character: character)
+            
             // Mood History Chart
             moodHistoryCard
             
@@ -460,9 +463,15 @@ struct WellnessTabContent: View {
                     
                     // Reward badge
                     VStack(spacing: 2) {
-                        Image(systemName: achievement.rewardType == .exp ? "sparkles" : achievement.rewardType == .gold ? "dollarsign.circle.fill" : "diamond.fill")
-                            .font(.caption)
-                            .foregroundColor(Color("AccentGold"))
+                        if achievement.rewardType == .gems {
+                            GemCurrencyIcon(size: 14)
+                        } else if achievement.rewardType == .gold {
+                            GoldCoinIcon(size: 14)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.caption)
+                                .foregroundColor(Color("AccentGold"))
+                        }
                         Text("+\(achievement.rewardAmount)")
                             .font(.custom("Avenir-Heavy", size: 11))
                             .foregroundColor(Color("AccentGold"))
@@ -524,4 +533,102 @@ struct DailyMoodPoint {
     let label: String
     let moodLevel: Int?
     let emoji: String
+}
+
+// MARK: - Quick Stats Grid
+
+struct QuickStatsGrid: View {
+    let character: PlayerCharacter
+    
+    var body: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+            GridItem(.flexible())
+        ], spacing: 12) {
+            StatBadge(
+                icon: "checkmark.circle.fill",
+                value: "\(character.tasksCompleted)",
+                label: "Tasks Done",
+                color: Color("AccentGreen")
+            )
+            
+            StatBadge(
+                icon: "flame.fill",
+                value: "\(character.longestStreak)",
+                label: "Best Streak",
+                color: Color("AccentOrange")
+            )
+            
+            StatBadge(
+                icon: "star.fill",
+                value: "\(character.stats.total)",
+                label: "Total Stats",
+                color: Color("AccentPurple")
+            )
+        }
+    }
+}
+
+struct StatBadge: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    
+    @State private var displayedValue: Int = 0
+    @State private var iconGlow: Bool = false
+    
+    private var targetValue: Int {
+        Int(value) ?? 0
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(iconGlow ? 0.2 : 0.08))
+                    .frame(width: 36, height: 36)
+                
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+            }
+            
+            Text("\(displayedValue)")
+                .font(.custom("Avenir-Heavy", size: 20))
+                .contentTransition(.numericText())
+            
+            Text(label)
+                .font(.custom("Avenir-Medium", size: 11))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+        )
+        .onAppear {
+            animateCounter()
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                iconGlow = true
+            }
+        }
+    }
+    
+    private func animateCounter() {
+        let target = targetValue
+        guard target > 0 else { return }
+        let steps = min(target, 20)
+        let stepDuration = 0.6 / Double(steps)
+        
+        for i in 1...steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration * Double(i)) {
+                withAnimation(.easeOut(duration: 0.05)) {
+                    displayedValue = Int(Double(target) * Double(i) / Double(steps))
+                }
+            }
+        }
+    }
 }

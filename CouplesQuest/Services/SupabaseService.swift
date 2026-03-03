@@ -521,6 +521,111 @@ final class SupabaseService: ObservableObject {
         return rows.first
     }
     
+    // MARK: - Community Raid Boss
+    
+    /// Fetch the current week's global community raid boss.
+    func fetchCommunityRaidBoss() async throws -> CommunityRaidBossDTO? {
+        let rows: [CommunityRaidBossDTO] = try await client
+            .from("community_raid_boss")
+            .select()
+            .gte("week_end", value: ISO8601DateFormatter().string(from: Date()))
+            .order("week_start", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first
+    }
+    
+    /// Attack the community raid boss via atomic RPC.
+    func attackCommunityRaidBoss(
+        bossId: String,
+        userId: String,
+        playerName: String,
+        damage: Int,
+        source: String = "Manual raid attack"
+    ) async throws -> CommunityAttackResult {
+        let params: [String: AnyJSON] = [
+            "p_boss_id": .string(bossId),
+            "p_user_id": .string(userId),
+            "p_player_name": .string(playerName),
+            "p_damage": .integer(damage),
+            "p_source": .string(source)
+        ]
+        
+        let response: AnyJSON = try await client
+            .rpc("fn_community_raid_attack", params: params)
+            .execute()
+            .value
+        
+        guard case .object(let dict) = response else {
+            throw NSError(domain: "CouplesQuest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid RPC response"])
+        }
+        
+        if case .string(let error) = dict["error"] {
+            throw NSError(domain: "CouplesQuest", code: -1, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+        
+        let newHp: Int
+        if case .integer(let v) = dict["new_hp"] { newHp = v }
+        else { newHp = 0 }
+        
+        let defeated: Bool
+        if case .bool(let v) = dict["boss_defeated"] { defeated = v }
+        else { defeated = false }
+        
+        let currentPhase: Int
+        if case .integer(let v) = dict["current_phase"] { currentPhase = v }
+        else { currentPhase = 1 }
+        
+        let phaseMaxHp: Int
+        if case .integer(let v) = dict["phase_max_hp"] { phaseMaxHp = v }
+        else { phaseMaxHp = 0 }
+        
+        let totalDamageDealt: Int
+        if case .integer(let v) = dict["total_damage_dealt"] { totalDamageDealt = v }
+        else { totalDamageDealt = 0 }
+        
+        return CommunityAttackResult(newHp: newHp, bossDefeated: defeated, currentPhase: currentPhase, phaseMaxHp: phaseMaxHp, totalDamageDealt: totalDamageDealt)
+    }
+    
+    /// Fetch recent attacks for the community boss.
+    func fetchCommunityAttackLog(bossId: String, limit: Int = 20) async throws -> [CommunityRaidAttackDTO] {
+        let rows: [CommunityRaidAttackDTO] = try await client
+            .from("community_raid_attacks")
+            .select()
+            .eq("boss_id", value: bossId)
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return rows
+    }
+    
+    /// Check if the current user has claimed rewards for a defeated boss.
+    func hasCommunityRewardsClaimed(bossId: String, userId: String) async throws -> Bool {
+        let rows: [[String: AnyJSON]] = try await client
+            .from("community_raid_rewards_claimed")
+            .select()
+            .eq("boss_id", value: bossId)
+            .eq("user_id", value: userId)
+            .limit(1)
+            .execute()
+            .value
+        return !rows.isEmpty
+    }
+    
+    /// Mark the current user as having claimed rewards.
+    func claimCommunityRewards(bossId: String, userId: String) async throws {
+        let row: [String: String] = [
+            "boss_id": bossId,
+            "user_id": userId
+        ]
+        try await client
+            .from("community_raid_rewards_claimed")
+            .insert(row)
+            .execute()
+    }
+    
     // MARK: - Party Challenges Sync
     
     /// Push or update a party challenge to the cloud.
@@ -679,9 +784,76 @@ final class SupabaseService: ObservableObject {
         return rows.first
     }
     
+    // MARK: - Arena PVP Sync
+    
+    /// Upsert the player's arena fighter snapshot for PVP matchmaking.
+    func syncArenaFighter(_ snapshot: FighterSnapshot) async throws {
+        try await client
+            .from("arena_fighters")
+            .upsert(snapshot)
+            .execute()
+    }
+    
+    /// Find 3 matched opponents via RPC.
+    func findArenaOpponents(userID: String, rating: Int) async throws -> [FighterSnapshot] {
+        let params: [String: AnyJSON] = [
+            "p_user_id": .string(userID),
+            "p_rating": .integer(rating)
+        ]
+        let response = try await client
+            .rpc("fn_arena_find_opponents", params: params)
+            .execute()
+        return try JSONDecoder().decode([FighterSnapshot].self, from: response.data)
+    }
+    
+    /// Submit a PVP match result via RPC.
+    func submitArenaMatch(
+        attackerID: String,
+        defenderID: String,
+        attackerStance: String,
+        defenderStance: String,
+        roundsJSON: String,
+        winnerID: String,
+        attackerRatingChange: Int,
+        defenderRatingChange: Int,
+        isRevenge: Bool,
+        arenaPointsEarned: Int,
+        goldEarned: Int,
+        expEarned: Int
+    ) async throws {
+        let params: [String: AnyJSON] = [
+            "p_attacker_id": .string(attackerID),
+            "p_defender_id": .string(defenderID),
+            "p_attacker_stance": .string(attackerStance),
+            "p_defender_stance": .string(defenderStance),
+            "p_rounds_json": .string(roundsJSON),
+            "p_winner_id": .string(winnerID),
+            "p_attacker_rating_change": .integer(attackerRatingChange),
+            "p_defender_rating_change": .integer(defenderRatingChange),
+            "p_is_revenge": .bool(isRevenge),
+            "p_arena_points_earned": .integer(arenaPointsEarned),
+            "p_gold_earned": .integer(goldEarned),
+            "p_exp_earned": .integer(expEarned)
+        ]
+        try await client.rpc("fn_arena_submit_match", params: params).execute()
+    }
+    
+    /// Fetch tier leaderboard via RPC.
+    func fetchArenaLeaderboard(tier: String, limit: Int = 50) async throws -> [FighterSnapshot] {
+        let params: [String: AnyJSON] = [
+            "p_tier": .string(tier),
+            "p_limit": .integer(limit),
+            "p_offset": .integer(0)
+        ]
+        let response = try await client
+            .rpc("fn_arena_leaderboard", params: params)
+            .execute()
+        return try JSONDecoder().decode([FighterSnapshot].self, from: response.data)
+    }
+    
     // MARK: - Arena / Dungeon / Mission History Sync
     
-    /// Insert an arena run record.
+    /// Insert an arena run record (legacy PvE).
     func syncArenaRun(_ data: ArenaRunSyncData) async throws {
         try await client
             .from("player_arena_runs")

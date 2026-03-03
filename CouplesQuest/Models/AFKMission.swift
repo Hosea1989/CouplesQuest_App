@@ -171,9 +171,6 @@ final class AFKMission {
             }
         }
         
-        // Luck bonus
-        rate += Double(stats.luck) * 0.005 // 0.5% per luck point
-        
         return min(rate, 0.99) // Cap at 99%
     }
     
@@ -316,8 +313,9 @@ final class ActiveMission: Codable {
     /// Progress (0.0 - 1.0)
     var progress: Double {
         let total = completesAt.timeIntervalSince(startedAt)
+        guard total > 0 else { return 1.0 }
         let elapsed = Date().timeIntervalSince(startedAt)
-        return min(1.0, elapsed / total)
+        return min(1.0, max(0, elapsed / total))
     }
     
     /// Time remaining formatted

@@ -418,18 +418,14 @@ struct ExpeditionView: View {
             
             // Running totals
             HStack(spacing: 16) {
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color("AccentPurple"))
+                    HStack(spacing: 4) {
+                    ExpGemIcon(size: 14)
                     Text("+\(active.totalEXPEarned) EXP")
                         .font(.custom("Avenir-Heavy", size: 13))
                         .foregroundColor(Color("AccentPurple"))
                 }
                 HStack(spacing: 4) {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color("AccentGold"))
+                    GoldCoinIcon(size: 14)
                     Text("+\(active.totalGoldEarned) Gold")
                         .font(.custom("Avenir-Heavy", size: 13))
                         .foregroundColor(Color("AccentGold"))
@@ -596,15 +592,33 @@ struct ExpeditionView: View {
                 )
                 .ignoresSafeArea()
                 
+                if result.success {
+                    CelebrationFloatingParticlesView(color: Color("AccentGreen"))
+                        .ignoresSafeArea()
+                        .opacity(0.3)
+                        .allowsHitTesting(false)
+                }
+                
                 VStack(spacing: 24) {
-                    // Result header
                     ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [(result.success ? Color("AccentGreen") : Color("AccentOrange")).opacity(0.25), Color.clear],
+                                    center: .center,
+                                    startRadius: 15,
+                                    endRadius: 70
+                                )
+                            )
+                            .frame(width: 140, height: 140)
+                        
                         Circle()
                             .fill((result.success ? Color("AccentGreen") : Color("AccentOrange")).opacity(0.15))
                             .frame(width: 80, height: 80)
                         Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 36))
                             .foregroundColor(result.success ? Color("AccentGreen") : Color("AccentOrange"))
+                            .symbolEffect(.bounce)
                     }
                     .padding(.top, 20)
                     
@@ -622,15 +636,13 @@ struct ExpeditionView: View {
                     // Rewards
                     VStack(spacing: 12) {
                         HStack {
-                            Image(systemName: "star.fill")
-                                .foregroundColor(Color("AccentPurple"))
+                            ExpGemIcon(size: 16)
                             Text("+\(result.earnedEXP) EXP")
                                 .font(.custom("Avenir-Heavy", size: 16))
                             Spacer()
                         }
                         HStack {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 16)
                             Text("+\(result.earnedGold) Gold")
                                 .font(.custom("Avenir-Heavy", size: 16))
                             Spacer()
@@ -730,15 +742,35 @@ struct ExpeditionView: View {
                 )
                 .ignoresSafeArea()
                 
+                CelebrationFloatingParticlesView()
+                    .ignoresSafeArea()
+                    .opacity(0.3)
+                    .allowsHitTesting(false)
+                
+                CelebrationConfettiOverlay()
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                
                 VStack(spacing: 24) {
-                    // Trophy icon
                     ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [Color("AccentGold").opacity(0.3), Color.clear],
+                                    center: .center,
+                                    startRadius: 15,
+                                    endRadius: 80
+                                )
+                            )
+                            .frame(width: 160, height: 160)
+                        
                         Circle()
                             .fill(Color("AccentGold").opacity(0.15))
                             .frame(width: 90, height: 90)
                         Image(systemName: "trophy.fill")
                             .font(.system(size: 40))
                             .foregroundColor(Color("AccentGold"))
+                            .symbolEffect(.bounce)
                     }
                     .padding(.top, 20)
                     
@@ -994,8 +1026,7 @@ struct ExpeditionView: View {
             _ = character.performLevelUp()
         }
         
-        // Play treasure sound + haptic
-        AudioManager.shared.play(.claimReward)
+        AudioManager.shared.play(.victoryFanfare, maxDuration: 3.5)
         let notificationFeedback = UINotificationFeedbackGenerator()
         notificationFeedback.notificationOccurred(.success)
         

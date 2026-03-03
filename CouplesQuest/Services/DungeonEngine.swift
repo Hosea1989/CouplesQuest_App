@@ -694,7 +694,33 @@ struct DungeonEngine {
             }
         }
         
-        return DungeonCompletionResult(
+        // Gem reward: dungeons always have a chance, scaling with difficulty
+        var dungeonGemsEarned = 0
+        if success {
+            let dungeonGemChance: Double = {
+                switch dungeon.difficulty {
+                case .normal:  return 0.20
+                case .hard:    return 0.45
+                case .heroic:  return 0.75
+                case .mythic:  return 1.00
+                }
+            }()
+            if Double.random(in: 0...1) <= dungeonGemChance {
+                dungeonGemsEarned = {
+                    switch dungeon.difficulty {
+                    case .normal:  return Int.random(in: 1...2)
+                    case .hard:    return Int.random(in: 1...3)
+                    case .heroic:  return Int.random(in: 3...8)
+                    case .mythic:  return Int.random(in: 5...15)
+                    }
+                }()
+                if performance.letter == "S" || performance.letter == "S+" {
+                    dungeonGemsEarned += Int.random(in: 1...3)
+                }
+            }
+        }
+        
+        var result = DungeonCompletionResult(
             success: success,
             dungeonName: dungeon.name,
             totalExp: run.totalExpEarned,
@@ -716,6 +742,8 @@ struct DungeonEngine {
             secretEquipmentDrop: secretEquipmentDrop,
             secretNarrative: secretNarrative
         )
+        result.gemsGained = dungeonGemsEarned
+        return result
     }
     
     // MARK: - Performance Rating
@@ -895,6 +923,9 @@ struct DungeonCompletionResult {
     let secretEquipmentDrop: Bool
     let secretNarrative: String
     
+    /// Gem (premium currency) reward for this dungeon
+    var gemsGained: Int = 0
+    
     /// Material drops collected from cleared rooms (set by the view after awarding)
     var materialDrops: [MaterialDrop] = []
     
@@ -917,6 +948,12 @@ struct DungeonCompletionResult {
     
     /// All character effective stats after rewards
     var currentStats: [StatType: Int] = [:]
+    
+    /// Raid boss damage dealt from this dungeon run (0 if not in raid)
+    var raidDamageDealt: Int = 0
+    
+    /// Raid boss retaliation damage taken (0 if not in raid)
+    var raidRetaliationTaken: Int = 0
     
     /// Content card IDs that dropped during this dungeon run
     var cardDropIDs: [String] {

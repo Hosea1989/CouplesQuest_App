@@ -664,10 +664,135 @@ struct ArenaWaveResult: Codable, Identifiable {
     }
 }
 
-// MARK: - Arena Status
+// MARK: - Arena Status (Legacy)
 
 enum ArenaStatus: String, Codable {
     case inProgress = "In Progress"
     case completed = "Completed"
     case failed = "Failed"
+}
+
+// MARK: - Arena PVP Match
+
+/// Local record of a PVP arena match
+@Model
+final class ArenaMatch {
+    var id: UUID
+    var characterID: UUID
+    var opponentUserID: String
+    var opponentName: String
+    var opponentLevel: Int
+    var opponentClass: String?
+    var opponentHeroPower: Int
+    var opponentRating: Int
+    var attackerStance: String
+    var defenderStance: String
+    var roundsJSON: String
+    var won: Bool
+    var ratingChange: Int
+    var ratingAfter: Int
+    var arenaPointsEarned: Int
+    var goldEarned: Int
+    var expEarned: Int
+    var isRevenge: Bool
+    var stanceMatchup: String
+    var createdAt: Date
+    
+    init(
+        characterID: UUID,
+        opponentUserID: String,
+        opponentName: String,
+        opponentLevel: Int,
+        opponentClass: String?,
+        opponentHeroPower: Int,
+        opponentRating: Int,
+        attackerStance: BattleStance,
+        defenderStance: BattleStance,
+        result: PVPMatchResult,
+        ratingChange: Int,
+        ratingAfter: Int,
+        rewards: (arenaPoints: Int, gold: Int, exp: Int),
+        isRevenge: Bool
+    ) {
+        self.id = UUID()
+        self.characterID = characterID
+        self.opponentUserID = opponentUserID
+        self.opponentName = opponentName
+        self.opponentLevel = opponentLevel
+        self.opponentClass = opponentClass
+        self.opponentHeroPower = opponentHeroPower
+        self.opponentRating = opponentRating
+        self.attackerStance = attackerStance.rawValue
+        self.defenderStance = defenderStance.rawValue
+        self.won = result.winnerIsAttacker
+        self.ratingChange = ratingChange
+        self.ratingAfter = ratingAfter
+        self.arenaPointsEarned = rewards.arenaPoints
+        self.goldEarned = rewards.gold
+        self.expEarned = rewards.exp
+        self.isRevenge = isRevenge
+        self.stanceMatchup = result.stanceMatchup
+        self.createdAt = Date()
+        
+        if let data = try? JSONEncoder().encode(result.rounds),
+           let json = String(data: data, encoding: .utf8) {
+            self.roundsJSON = json
+        } else {
+            self.roundsJSON = "[]"
+        }
+    }
+    
+    var decodedRounds: [PVPRoundResult] {
+        guard let data = roundsJSON.data(using: .utf8),
+              let rounds = try? JSONDecoder().decode([PVPRoundResult].self, from: data) else {
+            return []
+        }
+        return rounds
+    }
+}
+
+// MARK: - Arena Shop Item
+
+struct ArenaShopItem: Identifiable {
+    var id: String
+    var name: String
+    var itemDescription: String
+    var category: ArenaShopCategory
+    var cost: Int
+    var icon: String
+    var rarity: String?
+    var equipmentBaseType: String?
+    var equipmentSlot: EquipmentSlot?
+    var isAvailable: Bool = true
+    
+    enum ArenaShopCategory: String, CaseIterable {
+        case equipment = "Equipment"
+        case consumables = "Consumables"
+        case titles = "Titles"
+    }
+    
+    static let allItems: [ArenaShopItem] = [
+        // Equipment — Cape (Cloak)
+        ArenaShopItem(id: "cape-rare", name: "Gladiator's Cape", itemDescription: "A battle-worn cape forged in the Arena. +5% crit damage in PVP.", category: .equipment, cost: 200, icon: "equip-cape-rare", rarity: "rare", equipmentBaseType: "cape", equipmentSlot: .cloak),
+        ArenaShopItem(id: "cape-epic", name: "Gladiator's Cape", itemDescription: "An imposing cape earned through Arena glory. +5% crit damage in PVP.", category: .equipment, cost: 500, icon: "equip-cape-epic", rarity: "epic", equipmentBaseType: "cape", equipmentSlot: .cloak),
+        ArenaShopItem(id: "cape-legendary", name: "Gladiator's Cape", itemDescription: "A legendary cape that strikes fear into all opponents.", category: .equipment, cost: 1200, icon: "equip-cape-legendary", rarity: "legendary", equipmentBaseType: "cape", equipmentSlot: .cloak),
+        // Equipment — Brooch (Accessory)
+        ArenaShopItem(id: "brooch-rare", name: "Champion's Brooch", itemDescription: "A brooch worn by Arena champions. Bolsters composure under pressure.", category: .equipment, cost: 200, icon: "equip-brooch-rare", rarity: "rare", equipmentBaseType: "brooch", equipmentSlot: .accessory),
+        ArenaShopItem(id: "brooch-epic", name: "Champion's Brooch", itemDescription: "An ornate brooch that radiates Arena prestige.", category: .equipment, cost: 500, icon: "equip-brooch-epic", rarity: "epic", equipmentBaseType: "brooch", equipmentSlot: .accessory),
+        ArenaShopItem(id: "brooch-legendary", name: "Champion's Brooch", itemDescription: "A legendary brooch coveted by the greatest fighters.", category: .equipment, cost: 1200, icon: "equip-brooch-legendary", rarity: "legendary", equipmentBaseType: "brooch", equipmentSlot: .accessory),
+        // Equipment — Halberd (Weapon)
+        ArenaShopItem(id: "halberd-rare", name: "Colosseum Halberd", itemDescription: "A fearsome polearm from the Arena armory.", category: .equipment, cost: 200, icon: "equip-halberd-rare", rarity: "rare", equipmentBaseType: "halberd", equipmentSlot: .weapon),
+        ArenaShopItem(id: "halberd-epic", name: "Colosseum Halberd", itemDescription: "An imposing halberd that has felled countless Arena challengers.", category: .equipment, cost: 500, icon: "equip-halberd-epic", rarity: "epic", equipmentBaseType: "halberd", equipmentSlot: .weapon),
+        ArenaShopItem(id: "halberd-legendary", name: "Colosseum Halberd", itemDescription: "A legendary weapon that carries the weight of a thousand victories.", category: .equipment, cost: 1200, icon: "equip-halberd-legendary", rarity: "legendary", equipmentBaseType: "halberd", equipmentSlot: .weapon),
+        // Consumables
+        ArenaShopItem(id: "arena-elixir", name: "Arena Elixir", itemDescription: "+10% ATK for your next 3 fights.", category: .consumables, cost: 50, icon: "flame.fill"),
+        ArenaShopItem(id: "iron-tonic", name: "Iron Tonic", itemDescription: "+10% GUARD for your next 3 fights.", category: .consumables, cost: 50, icon: "shield.fill"),
+        ArenaShopItem(id: "scouts-eye", name: "Scout's Eye", itemDescription: "Reveals opponent's Defense Stance before you choose yours.", category: .consumables, cost: 75, icon: "eye.fill"),
+        ArenaShopItem(id: "second-wind", name: "Second Wind", itemDescription: "+1 bonus daily Arena fight.", category: .consumables, cost: 100, icon: "wind"),
+        // Titles
+        ArenaShopItem(id: "title-gladiator", name: "Gladiator", itemDescription: "Display \"Gladiator\" as your Arena title.", category: .titles, cost: 100, icon: "text.badge.star"),
+        ArenaShopItem(id: "title-veteran", name: "Arena Veteran", itemDescription: "Display \"Arena Veteran\" as your Arena title.", category: .titles, cost: 300, icon: "text.badge.star"),
+        ArenaShopItem(id: "title-champion", name: "Pit Champion", itemDescription: "Display \"Pit Champion\" as your Arena title.", category: .titles, cost: 500, icon: "text.badge.star"),
+        ArenaShopItem(id: "title-unbreakable", name: "The Unbreakable", itemDescription: "Display \"The Unbreakable\" as your Arena title.", category: .titles, cost: 1000, icon: "text.badge.star"),
+    ]
 }

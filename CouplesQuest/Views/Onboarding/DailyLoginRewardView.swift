@@ -12,6 +12,7 @@ struct DailyLoginRewardView: View {
     
     @State private var claimed = false
     @State private var claimAnimating = false
+    @State private var showConfetti = false
     
     /// The reward definitions for each day of the 7-day cycle
     private let rewards: [DailyReward] = [
@@ -34,7 +35,13 @@ struct DailyLoginRewardView: View {
             // Dimmed background
             Color.black.opacity(0.6)
                 .ignoresSafeArea()
-                .onTapGesture { } // Prevent dismissal by tapping background
+                .onTapGesture { }
+            
+            if showConfetti {
+                CelebrationConfettiOverlay()
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
             
             // Card content
             VStack(spacing: 24) {
@@ -229,10 +236,10 @@ struct DailyLoginRewardView: View {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
             claimed = true
             claimAnimating = false
+            showConfetti = true
         }
         
-        // Auto-dismiss after a brief moment
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             onClaim()
         }
     }

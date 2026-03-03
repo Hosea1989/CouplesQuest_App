@@ -19,6 +19,18 @@ enum ForgeStation: String, CaseIterable {
     }
 }
 
+enum CraftSubTab: String, CaseIterable {
+    case equipment = "Equipment"
+    case consumables = "Consumables"
+    
+    var icon: String {
+        switch self {
+        case .equipment: return "hammer.fill"
+        case .consumables: return "laurel.leading"
+        }
+    }
+}
+
 // MARK: - Main Forge View (Unified 4-Station)
 
 struct ForgeView: View {
@@ -30,6 +42,7 @@ struct ForgeView: View {
     @Query private var allConsumables: [Consumable]
     
     @State private var selectedStation: ForgeStation = .craft
+    @State private var craftSubTab: CraftSubTab = .equipment
     
     // Craft state
     @State private var selectedSlot: EquipmentSlot?
@@ -58,6 +71,9 @@ struct ForgeView: View {
     // Herb crafting state
     @State private var showHerbCraft = false
     @State private var craftedConsumable: Consumable?
+    
+    // Material sheet
+    @State private var showMaterialSheet = false
     
     // Forgekeeper dialogue state
     @State private var forgekeeperMessage: String = ForgekeeperDialogue.random(from: ForgekeeperDialogue.welcomeGreetings)
@@ -187,6 +203,32 @@ struct ForgeView: View {
                 }
             }
         }
+        .sheet(isPresented: $showMaterialSheet) {
+            NavigationStack {
+                ScrollView {
+                    materialInventorySection
+                        .padding(16)
+                }
+                .background(
+                    LinearGradient(
+                        colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                )
+                .navigationTitle("Your Materials")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showMaterialSheet = false }
+                            .font(.custom("Avenir-Heavy", size: 15))
+                            .foregroundColor(Color("ForgeEmber"))
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
         .alert("Salvage Item?", isPresented: $showSalvageConfirm) {
             Button("Cancel", role: .cancel) { selectedSalvageItem = nil }
             Button("Salvage", role: .destructive) {
@@ -262,22 +304,39 @@ struct ForgeView: View {
     // MARK: - Currency Bar
     
     private var currencyBar: some View {
-        HStack(spacing: 0) {
-            ForgeCurrencyPill(icon: "sparkle", label: "Essence", count: essenceCount, color: Color("AccentGold"), hasInfo: true) {
-                forgekeeperTip = ForgekeeperDialogue.essenceExplanation
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForgeCurrencyPill(icon: "sparkle", label: "Essence", count: essenceCount, color: Color("AccentGold"), hasInfo: true) {
+                    forgekeeperTip = ForgekeeperDialogue.essenceExplanation
+                }
+                Spacer()
+                ForgeCurrencyPill(icon: "cube.fill", label: "Materials", count: generalMaterialCount, color: Color("AccentPurple"), hasInfo: true) {
+                    forgekeeperTip = ForgekeeperDialogue.materialsExplanation
+                }
+                Spacer()
+                ForgeCurrencyPill(icon: "square.stack.3d.up.fill", label: "Fragments", count: fragmentCount, color: Color("StatDexterity"), hasInfo: true) {
+                    forgekeeperTip = ForgekeeperDialogue.fragmentsExplanation
+                }
+                Spacer()
+                ForgeCurrencyPill(icon: "laurel.leading", label: "Herbs", count: herbCount, color: Color("AccentGreen"))
+                Spacer()
+                ForgeCurrencyPill(icon: "dollarsign.circle.fill", label: "Gold", count: character?.gold ?? 0, color: Color("AccentGold"))
             }
-            Spacer()
-            ForgeCurrencyPill(icon: "cube.fill", label: "Materials", count: generalMaterialCount, color: Color("AccentPurple"), hasInfo: true) {
-                forgekeeperTip = ForgekeeperDialogue.materialsExplanation
+            
+            Button {
+                showMaterialSheet = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text("View All Materials")
+                        .font(.custom("Avenir-Medium", size: 11))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9))
+                }
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 8)
             }
-            Spacer()
-            ForgeCurrencyPill(icon: "square.stack.3d.up.fill", label: "Fragments", count: fragmentCount, color: Color("StatDexterity"), hasInfo: true) {
-                forgekeeperTip = ForgekeeperDialogue.fragmentsExplanation
-            }
-            Spacer()
-            ForgeCurrencyPill(icon: "laurel.leading", label: "Herbs", count: herbCount, color: Color("AccentGreen"))
-            Spacer()
-            ForgeCurrencyPill(icon: "dollarsign.circle.fill", label: "Gold", count: character?.gold ?? 0, color: Color("AccentGold"))
+            .buttonStyle(.plain)
         }
         .padding(14)
         .background(
@@ -291,58 +350,83 @@ struct ForgeView: View {
     
     private var craftStationContent: some View {
         VStack(spacing: 20) {
-            // Equipment Crafting
-            slotPickerSection
+            craftSubTabPicker
             
-            if selectedSlot != nil {
-                tierPickerSection
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                        removal: .opacity
-                    ))
+            switch craftSubTab {
+            case .equipment:
+                slotPickerSection
+                
+                if selectedSlot != nil {
+                    tierPickerSection
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                }
+                
+                if selectedSlot != nil && selectedTier != nil {
+                    forgeButton
+                        .id("forgeButton")
+                        .transition(.scale.combined(with: .opacity))
+                }
+            case .consumables:
+                herbCraftingSection
             }
-            
-            if selectedSlot != nil && selectedTier != nil {
-                forgeButton
-                    .id("forgeButton")
-                    .transition(.scale.combined(with: .opacity))
-            }
-            
-            Divider().padding(.vertical, 4)
-            
-            // Herb Crafting Section
-            herbCraftingSection
-            
-            // Material Inventory
-            materialInventorySection
         }
+    }
+    
+    // MARK: - Craft Sub-Tab Picker
+    
+    private var craftSubTabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(CraftSubTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        craftSubTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 13))
+                        Text(tab.rawValue)
+                            .font(.custom("Avenir-Heavy", size: 13))
+                    }
+                    .foregroundColor(craftSubTab == tab ? Color("ForgeEmber") : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .bottom) {
+                        if craftSubTab == tab {
+                            Rectangle()
+                                .fill(Color("ForgeEmber"))
+                                .frame(height: 2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color("CardBackground"))
+        )
     }
     
     // MARK: - Slot Picker
     
     private var slotPickerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "hammer.fill")
-                    .foregroundColor(Color("ForgeEmber"))
-                    .font(.title3)
-                Text("Equipment Crafting")
-                    .font(.custom("Avenir-Heavy", size: 18))
-            }
-            
-            HStack(spacing: 12) {
-                ForEach(EquipmentSlot.allCases, id: \.self) { slot in
-                    ForgeSlotCard(slot: slot, isSelected: selectedSlot == slot) {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            selectedSlot = slot
-                            selectedTier = nil
-                            forgekeeperTip = nil
-                            forgekeeperMessage = ForgekeeperDialogue.slotTip(for: slot.rawValue)
-                        }
+        HStack(spacing: 16) {
+            ForEach(EquipmentSlot.allCases, id: \.self) { slot in
+                ForgeSlotChip(slot: slot, isSelected: selectedSlot == slot) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        selectedSlot = slot
+                        selectedTier = nil
+                        forgekeeperTip = nil
+                        forgekeeperMessage = ForgekeeperDialogue.slotTip(for: slot.rawValue)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
     
     // MARK: - Tier Picker
@@ -443,21 +527,15 @@ struct ForgeView: View {
     
     private var herbCraftingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "laurel.leading")
-                    .foregroundColor(Color("AccentGreen"))
-                    .font(.title3)
-                Text("Herb Crafting")
-                    .font(.custom("Avenir-Heavy", size: 18))
+            HStack {
+                Text("Craft consumables from herbs gathered on AFK missions.")
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.secondary)
                 Spacer()
                 Text("\(herbCount) Herbs")
-                    .font(.custom("Avenir-Medium", size: 13))
+                    .font(.custom("Avenir-Heavy", size: 13))
                     .foregroundColor(Color("AccentGreen"))
             }
-            
-            Text("Craft consumables from herbs gathered on AFK missions.")
-                .font(.custom("Avenir-Medium", size: 13))
-                .foregroundColor(.secondary)
             
             ForEach(GameEngine.herbRecipes) { recipe in
                 let canAfford = character.map {
@@ -512,9 +590,7 @@ struct ForgeView: View {
                             .foregroundColor(canAfford ? Color("AccentGreen") : .red)
                     }
                     HStack(spacing: 2) {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(Color("AccentGold"))
+                        GoldCoinIcon(size: 11)
                         Text("\(recipe.goldCost)")
                             .font(.custom("Avenir-Heavy", size: 12))
                             .foregroundColor((character?.gold ?? 0) >= recipe.goldCost ? Color("AccentGold") : .red)
@@ -644,8 +720,7 @@ struct ForgeView: View {
                             .font(.custom("Avenir-Heavy", size: 12))
                             .foregroundColor(Color("ForgeEmber"))
                         HStack(spacing: 3) {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .font(.system(size: 8))
+                            GoldCoinIcon(size: 10)
                                 .foregroundColor(canAffordGold ? Color("AccentGold") : .red)
                             Text("\(goldCost)")
                                 .font(.custom("Avenir-Heavy", size: 11))
@@ -796,7 +871,7 @@ struct ForgeView: View {
                         }
                     }
                     HStack(spacing: 3) {
-                        Image(systemName: "dollarsign.circle.fill").font(.system(size: 8)).foregroundColor(Color("AccentGold"))
+                        GoldCoinIcon(size: 10)
                         Text("\(goldBack)g").font(.custom("Avenir-Heavy", size: 11)).foregroundColor(Color("AccentGold"))
                     }
                 }
@@ -939,9 +1014,6 @@ struct ForgeView: View {
     
     private var materialInventorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Your Materials")
-                .font(.custom("Avenir-Heavy", size: 18))
-            
             if ownedMaterials.isEmpty {
                 emptyStateView(icon: "shippingbox", title: "No materials yet", subtitle: "Complete tasks, dungeons, and missions\nto start collecting materials.")
             } else {
@@ -1153,9 +1225,15 @@ private struct ForgeCurrencyPill: View {
         } label: {
             VStack(spacing: 4) {
                 HStack(spacing: 2) {
-                    Image(systemName: icon)
-                        .font(.system(size: 13))
-                        .foregroundColor(color)
+                    Group {
+                        if icon == "dollarsign.circle.fill" {
+                            GoldCoinIcon(size: 15)
+                        } else {
+                            Image(systemName: icon)
+                                .font(.system(size: 13))
+                        }
+                    }
+                    .foregroundColor(color)
                     if hasInfo {
                         Image(systemName: "info.circle")
                             .font(.system(size: 8))
@@ -1175,46 +1253,28 @@ private struct ForgeCurrencyPill: View {
     }
 }
 
-// MARK: - Slot Card
+// MARK: - Slot Chip
 
-private struct ForgeSlotCard: View {
+private struct ForgeSlotChip: View {
     let slot: EquipmentSlot
     let isSelected: Bool
     let onTap: () -> Void
     
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 10) {
-                ZStack {
+            Image(systemName: slot.icon)
+                .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .white : .secondary)
+                .frame(width: 44, height: 44)
+                .background(
                     Circle()
-                        .fill(isSelected ? Color("ForgeEmber").opacity(0.2) : Color.secondary.opacity(0.1))
-                        .frame(width: 56, height: 56)
-                    if isSelected {
-                        Circle()
-                            .stroke(Color("ForgeEmber").opacity(0.4), lineWidth: 2)
-                            .frame(width: 56, height: 56)
-                    }
-                    Image(systemName: slot.icon)
-                        .font(.title2)
-                        .foregroundColor(isSelected ? Color("ForgeEmber") : .secondary)
-                        .scaleEffect(isSelected ? 1.1 : 1.0)
-                }
-                
-                Text(slot.rawValue)
-                    .font(.custom("Avenir-Heavy", size: 13))
-                    .foregroundColor(isSelected ? .primary : .secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color("CardBackground"))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(isSelected ? Color("ForgeEmber") : .clear, lineWidth: 2)
-                    )
-                    .shadow(color: isSelected ? Color("ForgeEmber").opacity(0.2) : .clear, radius: 8, x: 0, y: 4)
-            )
+                        .fill(isSelected ? Color("ForgeEmber") : Color("CardBackground"))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isSelected ? Color.clear : Color.secondary.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: isSelected ? Color("ForgeEmber").opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
         }
         .buttonStyle(.plain)
     }
@@ -1348,9 +1408,15 @@ private struct ForgeCostIndicator: View {
     
     var body: some View {
         VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundColor(color)
+            Group {
+                if icon == "dollarsign.circle.fill" {
+                    GoldCoinIcon(size: 13)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundColor(color)
             HStack(spacing: 0) {
                 Text("\(min(have, need))")
                     .font(.custom("Avenir-Heavy", size: 12))

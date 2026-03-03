@@ -6,6 +6,7 @@ struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gameEngine: GameEngine
     @Query private var characters: [PlayerCharacter]
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     @Bindable var task: GameTask
     
@@ -283,11 +284,9 @@ struct TaskDetailView: View {
                 VStack(spacing: 8) {
                     ZStack {
                         Circle()
-                            .fill(Color("AccentGold").opacity(0.15))
+                            .fill(Color("AccentPurple").opacity(0.15))
                             .frame(width: 48, height: 48)
-                        Image(systemName: "sparkles")
-                            .font(.title3)
-                            .foregroundColor(Color("AccentGold"))
+                        ExpGemIcon(size: 28)
                     }
                     Text("+\(task.scaledExpReward(characterLevel: character?.level ?? 1))")
                         .font(.custom("Avenir-Heavy", size: 18))
@@ -309,9 +308,7 @@ struct TaskDetailView: View {
                         Circle()
                             .fill(Color("AccentGold").opacity(0.15))
                             .frame(width: 48, height: 48)
-                        Image(systemName: "dollarsign.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(Color("AccentGold"))
+                        GoldCoinIcon(size: 22)
                     }
                     Text("+\(task.scaledGoldReward(characterLevel: character?.level ?? 1))")
                         .font(.custom("Avenir-Heavy", size: 18))
@@ -541,6 +538,20 @@ struct TaskDetailView: View {
         // Award crafting materials
         let matDrops = gameEngine.awardMaterialsForTask(task: task, character: character, context: modelContext)
         result.materialDrops = matDrops
+        
+        if let boss = raidBosses.first(where: { $0.isActive }) {
+            if let raidResult = gameEngine.dealRaidDamage(
+                character: character,
+                boss: boss,
+                activityType: .task,
+                activityValue: task.expReward,
+                sourceLabel: "Task: \(task.title)"
+            ) {
+                result.raidDamageDealt = raidResult.damage
+                result.raidRetaliationTaken = raidResult.retaliationDamage
+            }
+        }
+        
         lastCompletionResult = result
         showCompletionCelebration = true
     }

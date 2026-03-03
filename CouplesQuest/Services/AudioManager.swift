@@ -105,6 +105,13 @@ final class AudioManager: ObservableObject {
         case achievementUnlock   = "sfx_achievement_unlock"
         case streakMilestone     = "sfx_streak_milestone"
         
+        // Victory / Defeat
+        case victoryFanfare      = "sfx_victory_fanfare"
+        case defeatSting         = "sfx_defeat_sting"
+        case rewardJingle        = "sfx_reward_jingle"
+        case coinCollect         = "sfx_coin_collect"
+        case stageComplete       = "sfx_stage_complete"
+        
         // Feedback
         case success         = "sfx_success"
         case error           = "sfx_error"
@@ -186,6 +193,12 @@ final class AudioManager: ObservableObject {
             case .rebirth:          return 1032  // bloom tone (ascension)
             case .achievementUnlock: return 1335 // celebratory snap (trophy)
             case .streakMilestone:  return 1335  // celebratory snap (streak fire)
+            // Victory / Defeat
+            case .victoryFanfare:   return 1025  // triumphant chime (victory)
+            case .defeatSting:      return 1073  // descending alert (defeat)
+            case .rewardJingle:     return 1395  // payment success ding (reward reveal)
+            case .coinCollect:      return 1394  // pleasant ding (coin pickup)
+            case .stageComplete:    return 1394  // pleasant ding (stage checkpoint)
             // Feedback
             case .success:          return 1394  // SMS tone (pleasant ding)
             case .error:            return 1073  // descending alert tone
@@ -254,16 +267,27 @@ final class AudioManager: ObservableObject {
     // MARK: - Playback
     
     /// Play a sound effect. Uses bundled file if available, otherwise falls back to system sound.
-    func play(_ effect: SoundEffect) {
+    /// Pass `maxDuration` to cap playback length (fades out over 0.3s at the cutoff).
+    func play(_ effect: SoundEffect, maxDuration: TimeInterval? = nil) {
         guard !isMuted else { return }
         
         if let player = players[effect.rawValue] {
-            // Custom audio file exists — use it
             player.volume = volume
             player.currentTime = 0
             player.play()
+            
+            if let max = maxDuration {
+                let savedVolume = volume
+                DispatchQueue.main.asyncAfter(deadline: .now() + max) {
+                    guard player.isPlaying else { return }
+                    player.setVolume(0, fadeDuration: 0.3)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        player.stop()
+                        player.volume = savedVolume
+                    }
+                }
+            }
         } else {
-            // Fallback to system sound
             AudioServicesPlaySystemSound(effect.fallbackSystemSound)
         }
     }

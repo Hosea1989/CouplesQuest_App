@@ -19,11 +19,25 @@ struct LevelUpCelebrationView: View {
     }
     @State private var sparkleOpacities: [Double] = Array(repeating: 0, count: 12)
     
+    @State private var showConfetti = false
+    
     var body: some View {
         ZStack {
             // Dimmed background
             Color.black.opacity(0.7)
                 .ignoresSafeArea()
+            
+            // Floating particles
+            CelebrationFloatingParticlesView()
+                .ignoresSafeArea()
+                .opacity(0.3)
+            
+            // Confetti
+            if showConfetti {
+                CelebrationConfettiOverlay()
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
             
             // Sparkle particles
             ForEach(0..<12, id: \.self) { index in
@@ -147,7 +161,8 @@ struct LevelUpCelebrationView: View {
             displays.append(RewardDisplay(
                 icon: "dollarsign.circle.fill",
                 text: "+\(totalGold) Gold",
-                color: "AccentGold"
+                color: "AccentGold",
+                imageName: "gold-coin"
             ))
         }
         
@@ -157,10 +172,20 @@ struct LevelUpCelebrationView: View {
             return nil
         }.reduce(0, +)
         if totalGems > 0 {
+            let gemAsset: String = {
+                switch totalGems {
+                case ...2:   return "gem-blue"
+                case 3...4:  return "gem-green"
+                case 5...9:  return "gem-purple"
+                case 10...24: return "gem-red"
+                default:     return "gem-gold"
+                }
+            }()
             displays.append(RewardDisplay(
                 icon: "diamond.fill",
                 text: "+\(totalGems) Gem\(totalGems == 1 ? "" : "s")",
-                color: "AccentPurple"
+                color: "AccentPurple",
+                imageName: gemAsset
             ))
         }
         
@@ -214,6 +239,8 @@ struct LevelUpCelebrationView: View {
     
     private func animateEntrance() {
         AudioManager.shared.play(.levelUp)
+        
+        showConfetti = true
         
         withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) {
             showTitle = true

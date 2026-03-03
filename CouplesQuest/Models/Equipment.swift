@@ -395,7 +395,8 @@ enum ArmorWeight: String, Codable, CaseIterable {
 }
 
 /// Equipment slot types (5 slots: Weapon, Armor, Accessory, Trinket, Cloak)
-enum EquipmentSlot: String, Codable, CaseIterable {
+enum EquipmentSlot: String, Codable, CaseIterable, Identifiable {
+    var id: String { rawValue }
     case weapon = "Weapon"
     case armor = "Armor"
     case accessory = "Accessory"

@@ -130,9 +130,9 @@ final class PlayerCharacter {
     /// Date of last mood check-in
     var lastMoodDate: Date?
     
-    // MARK: - Arena
+    // MARK: - Arena (Legacy PvE)
     
-    /// Personal best arena wave reached
+    /// Personal best arena wave reached (legacy, kept for historical data)
     var arenaBestWave: Int
     
     /// Number of arena attempts used today
@@ -140,6 +140,47 @@ final class PlayerCharacter {
     
     /// Date of last arena attempt (for daily reset)
     var lastArenaDate: Date?
+    
+    // MARK: - Arena PVP
+    
+    /// Current arena PVP rating (starts at 1000)
+    var arenaRating: Int
+    
+    /// Peak rating achieved during current season
+    var arenaPeakRating: Int
+    
+    /// Total PVP wins
+    var arenaWins: Int
+    
+    /// Total PVP losses
+    var arenaLosses: Int
+    
+    /// Current consecutive win streak
+    var arenaStreak: Int
+    
+    /// Persistent defense stance used when others attack (raw value of BattleStance)
+    var arenaDefenseStance: String
+    
+    /// Arena Points currency balance
+    var arenaPoints: Int
+    
+    /// Number of PVP fights used today
+    var arenaPVPFightsToday: Int
+    
+    /// Date of last PVP fight (for daily reset)
+    var lastPVPFightDate: Date?
+    
+    /// JSON-encoded array of user IDs for pending revenge opportunities
+    var pendingRevengeJSON: String
+    
+    /// Current season number
+    var arenaSeasonNumber: Int
+    
+    /// Whether season rewards have been claimed for the ended season
+    var arenaSeasonRewardsClaimed: Bool
+    
+    /// Arena cosmetic title (purchased from Arena Shop)
+    var arenaTitle: String?
     
     // MARK: - Persistent HP
     
@@ -373,6 +414,20 @@ final class PlayerCharacter {
         self.arenaBestWave = 0
         self.arenaAttemptsToday = 0
         self.lastArenaDate = nil
+        // Arena PVP
+        self.arenaRating = 1000
+        self.arenaPeakRating = 1000
+        self.arenaWins = 0
+        self.arenaLosses = 0
+        self.arenaStreak = 0
+        self.arenaDefenseStance = BattleStance.fortress.rawValue
+        self.arenaPoints = 0
+        self.arenaPVPFightsToday = 0
+        self.lastPVPFightDate = nil
+        self.pendingRevengeJSON = "[]"
+        self.arenaSeasonNumber = 1
+        self.arenaSeasonRewardsClaimed = false
+        self.arenaTitle = nil
         // Persistent HP — starts at 100 base; recalculated to maxHP once class is chosen
         self.currentHP = 100
         self.lastHPUpdateAt = Date()
@@ -939,7 +994,7 @@ final class PlayerCharacter {
         return pityCounter(for: contentType) >= threshold
     }
     
-    // MARK: - Arena Helpers
+    // MARK: - Arena Helpers (Legacy PvE)
     
     /// Check and reset daily arena attempts (call from action handlers only, never from computed properties)
     func checkArenaReset() {
@@ -955,6 +1010,90 @@ final class PlayerCharacter {
             return true
         }
         return arenaAttemptsToday == 0
+    }
+    
+    // MARK: - Arena PVP Helpers
+    
+    /// Current arena tier based on rating
+    var arenaTier: ArenaTier {
+        ArenaTier.tier(for: arenaRating)
+    }
+    
+    /// Remaining free PVP fights today
+    var remainingPVPFights: Int {
+        if let lastDate = lastPVPFightDate, !Calendar.current.isDateInToday(lastDate) {
+            return ArenaEngine.maxDailyFights
+        }
+        return max(0, ArenaEngine.maxDailyFights - arenaPVPFightsToday)
+    }
+    
+    /// Check and reset daily PVP fight counter
+    func checkPVPFightReset() {
+        if let lastDate = lastPVPFightDate, !Calendar.current.isDateInToday(lastDate) {
+            guard arenaPVPFightsToday != 0 else { return }
+            arenaPVPFightsToday = 0
+        }
+    }
+    
+    /// Record a PVP fight result
+    func recordPVPFight(won: Bool, ratingChange: Int) {
+        if won {
+            arenaWins += 1
+            arenaStreak += 1
+            arenaRating = max(0, arenaRating + ratingChange)
+            arenaPeakRating = max(arenaPeakRating, arenaRating)
+        } else {
+            arenaLosses += 1
+            arenaStreak = 0
+            arenaRating = max(0, arenaRating - ratingChange)
+        }
+        arenaPVPFightsToday += 1
+        lastPVPFightDate = Date()
+    }
+    
+    /// Decoded pending revenge user IDs
+    var pendingRevengeIDs: [String] {
+        guard let data = pendingRevengeJSON.data(using: .utf8),
+              let ids = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return ids
+    }
+    
+    /// Add a revenge opportunity (FIFO, max 3)
+    func addRevengeID(_ userID: String) {
+        var ids = pendingRevengeIDs
+        if ids.contains(userID) { return }
+        ids.append(userID)
+        if ids.count > ArenaEngine.maxRevengeSlots {
+            ids.removeFirst()
+        }
+        if let data = try? JSONEncoder().encode(ids),
+           let json = String(data: data, encoding: .utf8) {
+            pendingRevengeJSON = json
+        }
+    }
+    
+    /// Remove a revenge ID (after taking or expiring)
+    func removeRevengeID(_ userID: String) {
+        var ids = pendingRevengeIDs
+        ids.removeAll { $0 == userID }
+        if let data = try? JSONEncoder().encode(ids),
+           let json = String(data: data, encoding: .utf8) {
+            pendingRevengeJSON = json
+        }
+    }
+    
+    /// Reset PVP stats for a new season
+    func resetForNewArenaSeason(seasonNumber: Int) {
+        arenaRating = ArenaEngine.defaultRating
+        arenaPeakRating = ArenaEngine.defaultRating
+        arenaWins = 0
+        arenaLosses = 0
+        arenaStreak = 0
+        arenaPVPFightsToday = 0
+        arenaSeasonNumber = seasonNumber
+        arenaSeasonRewardsClaimed = false
     }
     
     // MARK: - Partner Helpers
@@ -1408,7 +1547,7 @@ final class PlayerCharacter {
     
     /// Aggregate hero power score (all 5 equipment slots + affixes)
     var heroPower: Int {
-        let statPower = effectiveStats.total * 10
+        let statPower = effectiveStats.combatTotal * 10
         let levelPower = level * 5
         
         let equipmentItems = [equipment.weapon, equipment.armor, equipment.accessory, equipment.trinket, equipment.cloak].compactMap { $0 }

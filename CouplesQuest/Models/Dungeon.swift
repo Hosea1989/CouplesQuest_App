@@ -575,7 +575,7 @@ enum EncounterType: String, Codable, CaseIterable {
                     name: "Intuition",
                     description: "Trust your gut and take a leap of faith",
                     icon: "sparkles",
-                    primaryStat: .luck,
+                    primaryStat: .wisdom,
                     powerModifier: 1.3,
                     riskModifier: 1.5
                 ),
@@ -637,7 +637,7 @@ enum EncounterType: String, Codable, CaseIterable {
                     name: "Just Grab It",
                     description: "Fortune favors the bold — grab everything!",
                     icon: "hand.thumbsup.fill",
-                    primaryStat: .luck,
+                    primaryStat: .dexterity,
                     powerModifier: 1.35,
                     riskModifier: 1.6
                 )
@@ -1537,7 +1537,7 @@ struct SampleDungeons {
             rooms: [
                 DungeonRoom(name: "The Entry Hall", description: "Faded murals line the walls. A puzzle blocks the path.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 14),
                 DungeonRoom(name: "Guardian Chamber", description: "Stone golems awaken as you enter!", encounterType: .combat, primaryStat: .strength, difficultyRating: 16),
-                DungeonRoom(name: "Treasure Vault", description: "A hidden vault glimmers with ancient riches.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 10, bonusLootChance: 0.5),
+                DungeonRoom(name: "Treasure Vault", description: "A hidden vault glimmers with ancient riches.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 10, bonusLootChance: 0.5),
                 DungeonRoom(name: "The Sealed Door", description: "An ancient mechanism guards the final chamber.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 20, isBossRoom: true, bonusLootChance: 0.35)
             ],
             levelRequirement: 5,
@@ -1591,7 +1591,7 @@ struct SampleDungeons {
                 DungeonRoom(name: "Guard Barracks", description: "Alert guards rush to stop you!", encounterType: .combat, primaryStat: .strength, difficultyRating: 28),
                 DungeonRoom(name: "Trapped Armory", description: "The armory is rigged with explosive traps!", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 26),
                 DungeonRoom(name: "The War Room", description: "The commander can be defeated by blade or by words.", encounterType: .combat, primaryStat: .charisma, difficultyRating: 30),
-                DungeonRoom(name: "Fortress Vault", description: "The fortress's legendary vault lies before you.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 20, bonusLootChance: 0.6),
+                DungeonRoom(name: "Fortress Vault", description: "The fortress's legendary vault lies before you.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 20, bonusLootChance: 0.6),
                 DungeonRoom(name: "The Iron Warden", description: "A massive construct of iron and magic guards the depths!", encounterType: .boss, primaryStat: .strength, difficultyRating: 35, isBossRoom: true, bonusLootChance: 0.45)
             ],
             levelRequirement: 15,
@@ -1619,7 +1619,7 @@ struct SampleDungeons {
                 DungeonRoom(name: "Fire Elementals", description: "Creatures of pure flame block your ascent!", encounterType: .combat, primaryStat: .strength, difficultyRating: 35),
                 DungeonRoom(name: "The Dragon's Riddle", description: "Ancient draconic runes must be deciphered.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 38),
                 DungeonRoom(name: "Wyvern Ambush", description: "Lesser dragons swoop down from above!", encounterType: .combat, primaryStat: .dexterity, difficultyRating: 36),
-                DungeonRoom(name: "Dragon's Hoard", description: "Mountains of gold and rare artifacts!", encounterType: .treasure, primaryStat: .luck, difficultyRating: 25, bonusLootChance: 0.7),
+                DungeonRoom(name: "Dragon's Hoard", description: "Mountains of gold and rare artifacts!", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 25, bonusLootChance: 0.7),
                 DungeonRoom(name: "Atherion the Ancient", description: "The ancient dragon awakens. The ultimate test of valor!", encounterType: .boss, primaryStat: .dexterity, difficultyRating: 45, isBossRoom: true, bonusLootChance: 0.6)
             ],
             levelRequirement: 25,
@@ -1648,7 +1648,7 @@ struct SampleDungeons {
                 DungeonRoom(name: "Labyrinth of Madness", description: "The walls shift. Trust nothing.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 44),
                 DungeonRoom(name: "The Negotiator", description: "A demon offers a deal. Choose wisely.", encounterType: .puzzle, primaryStat: .charisma, difficultyRating: 46),
                 DungeonRoom(name: "Stamina Trial", description: "An endless corridor that saps your will.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 48),
-                DungeonRoom(name: "Fortune's Edge", description: "A chamber of pure chaos. Only luck can save you.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 40, bonusLootChance: 0.8),
+                DungeonRoom(name: "Fortune's Edge", description: "A chamber of pure chaos. Only the swift survive.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 40, bonusLootChance: 0.8),
                 DungeonRoom(name: "The Abyssal Lord", description: "The ruler of the Abyss. Total annihilation or absolute glory.", encounterType: .boss, primaryStat: .strength, difficultyRating: 55, isBossRoom: true, bonusLootChance: 0.75)
             ],
             levelRequirement: 40,
@@ -1662,7 +1662,6 @@ struct SampleDungeons {
                 StatRequirement(stat: .wisdom, minimum: 20),
                 StatRequirement(stat: .dexterity, minimum: 18),
                 StatRequirement(stat: .charisma, minimum: 15),
-                StatRequirement(stat: .luck, minimum: 12),
                 StatRequirement(stat: .defense, minimum: 15)
             ]
         )
@@ -1700,7 +1699,7 @@ struct SampleDungeons {
             difficulty: .hard,
             rooms: [
                 DungeonRoom(name: "Spore Tunnel", description: "Clouds of glowing spores obscure the path. Breathe carefully.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 18),
-                DungeonRoom(name: "Fungal Garden", description: "Towering mushrooms hum with strange energy. Rare ingredients grow here.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 14, bonusLootChance: 0.3),
+                DungeonRoom(name: "Fungal Garden", description: "Towering mushrooms hum with strange energy. Rare ingredients grow here.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 14, bonusLootChance: 0.3),
                 DungeonRoom(name: "Myconid Colony", description: "Sentient mushroom-folk block the way. They can be reasoned with... maybe.", encounterType: .puzzle, primaryStat: .charisma, difficultyRating: 20),
                 DungeonRoom(name: "Rot Beetle Nest", description: "Armoured beetles swarm from the decaying walls!", encounterType: .combat, primaryStat: .strength, difficultyRating: 22),
                 DungeonRoom(name: "The Spormother", description: "A massive fungal entity pulses at the heart of the depths.", encounterType: .boss, primaryStat: .wisdom, difficultyRating: 26, isBossRoom: true, bonusLootChance: 0.35)
@@ -1729,7 +1728,7 @@ struct SampleDungeons {
                 DungeonRoom(name: "Avalanche Pass", description: "The mountain rumbles. Time your crossing or be buried.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 28),
                 DungeonRoom(name: "Ice Bridge", description: "A shimmering bridge of solid ice spans a bottomless crevasse.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 30),
                 DungeonRoom(name: "Frost Wolf Den", description: "A pack of dire wolves guards their territory with fang and fury.", encounterType: .combat, primaryStat: .strength, difficultyRating: 32),
-                DungeonRoom(name: "Frozen Shrine", description: "An ancient shrine encased in ice. Offerings still glitter within.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 22, bonusLootChance: 0.4),
+                DungeonRoom(name: "Frozen Shrine", description: "An ancient shrine encased in ice. Offerings still glitter within.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 22, bonusLootChance: 0.4),
                 DungeonRoom(name: "Storm Plateau", description: "Winds howl at speeds that could tear flesh from bone.", encounterType: .trap, primaryStat: .defense, difficultyRating: 34),
                 DungeonRoom(name: "The Frost Wyrm", description: "Atop the summit, a dragon of living ice spreads its crystalline wings.", encounterType: .boss, primaryStat: .strength, difficultyRating: 40, isBossRoom: true, bonusLootChance: 0.5)
             ],
@@ -1757,7 +1756,7 @@ struct SampleDungeons {
                 DungeonRoom(name: "Sandstorm Gauntlet", description: "Walls of sand roar across the dunes. Visibility is zero.", encounterType: .trap, primaryStat: .dexterity, difficultyRating: 34),
                 DungeonRoom(name: "Mirage Oasis", description: "Is it real? The shimmering pool could be salvation or a trap.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 32),
                 DungeonRoom(name: "Scorpion Pit", description: "Giant scorpions erupt from the sand, stingers poised to strike.", encounterType: .combat, primaryStat: .strength, difficultyRating: 36),
-                DungeonRoom(name: "Buried Temple", description: "Half-swallowed by sand, ancient treasures peek through the dunes.", encounterType: .treasure, primaryStat: .luck, difficultyRating: 26, bonusLootChance: 0.45),
+                DungeonRoom(name: "Buried Temple", description: "Half-swallowed by sand, ancient treasures peek through the dunes.", encounterType: .treasure, primaryStat: .dexterity, difficultyRating: 26, bonusLootChance: 0.45),
                 DungeonRoom(name: "Sun Altar", description: "Blinding light pours from a stone altar. A puzzle of reflections.", encounterType: .puzzle, primaryStat: .wisdom, difficultyRating: 38),
                 DungeonRoom(name: "The Sand Pharaoh", description: "An undead king rises from his sarcophagus, wreathed in golden flame.", encounterType: .boss, primaryStat: .charisma, difficultyRating: 44, isBossRoom: true, bonusLootChance: 0.55)
             ],

@@ -123,17 +123,6 @@ struct PlayerInspectView: View {
                 }
             }
             
-            // Hero Power
-            if let power = heroPowerValue {
-                HStack(spacing: 4) {
-                    Image(systemName: "bolt.fill")
-                        .font(.caption2)
-                    Text("Hero Power: \(power)")
-                        .font(.custom("Avenir-Medium", size: 13))
-                }
-                .foregroundColor(Color("AccentGold").opacity(0.8))
-            }
-            
             // Paragon badge
             if let paragon = snapshot?.paragonLevel, paragon > 0 {
                 HStack(spacing: 4) {
@@ -312,14 +301,6 @@ struct PlayerInspectView: View {
             return Color("AccentPurple")
         }
         return Color(charClass.primaryStat.color)
-    }
-    
-    private var heroPowerValue: Int? {
-        if let s = snapshot {
-            let total = s.strength + s.wisdom + s.charisma + s.dexterity + s.luck + s.defense
-            return total * 10 + s.level * 5
-        }
-        return cachedMember.heroPower.map { $0 * 10 + cachedMember.level * 5 }
     }
     
     private func statValueFor(_ stat: StatType) -> Int? {

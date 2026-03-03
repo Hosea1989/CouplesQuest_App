@@ -340,7 +340,9 @@ struct AdventuresHubView: View {
             
             if let character = character {
                 // Progress toward unlock
-                let progress = min(1.0, Double(character.level) / Double(category.levelRequirement))
+                let progress = category.levelRequirement > 0
+                    ? min(1.0, Double(character.level) / Double(category.levelRequirement))
+                    : 1.0
                 VStack(spacing: 8) {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {

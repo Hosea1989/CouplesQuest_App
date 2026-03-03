@@ -171,7 +171,16 @@ struct RebirthView: View {
             keepRow(icon: "rectangle.stack.fill", text: "Monster card collection")
             keepRow(icon: "trophy.fill", text: "All achievements")
             keepRow(icon: "dollarsign.circle.fill", text: "\(character.gold) Gold")
-            keepRow(icon: "diamond.fill", text: "\(character.gems) Gems")
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Color("AccentGreen"))
+                    .frame(width: 16)
+                GemCurrencyIcon(size: 18)
+                    .frame(width: 20)
+                Text("\(character.gems) Gems")
+                    .font(.custom("Avenir-Medium", size: 13))
+            }
             keepRow(icon: "heart.fill", text: "Party & bond progress")
             keepRow(icon: "star.fill", text: "Permanent rebirth bonuses")
         }

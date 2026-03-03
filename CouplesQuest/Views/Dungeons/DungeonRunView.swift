@@ -5,6 +5,7 @@ struct DungeonRunView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gameEngine: GameEngine
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     let dungeon: Dungeon
     @Bindable var run: DungeonRun
@@ -37,11 +38,15 @@ struct DungeonRunView: View {
     
     var body: some View {
         ZStack {
-            Image(dungeon.theme.thumbnailImage)
-                .interpolation(.none)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .ignoresSafeArea()
+            GeometryReader { geo in
+                Image(dungeon.theme.thumbnailImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            }
+            .ignoresSafeArea()
             
             Color("BackgroundTop").opacity(0.75)
                 .ignoresSafeArea()
@@ -52,6 +57,20 @@ struct DungeonRunView: View {
             case .resolving:
                 resolvingContent
             case .results:
+                if let result = completionResult {
+                    if result.success {
+                        CelebrationFloatingParticlesView()
+                            .ignoresSafeArea()
+                            .opacity(0.3)
+                        CelebrationConfettiOverlay()
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                    } else {
+                        DefeatOverlay()
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                    }
+                }
                 resultsContent
             }
         }
@@ -279,6 +298,10 @@ struct DungeonRunView: View {
                             dungeonStatsCard(result: result)
                         }
                         
+                        if resultShowStats && result.raidDamageDealt > 0 {
+                            dungeonRaidDamageCard(result: result)
+                        }
+                        
                         if result.secretDiscovery {
                             secretDiscoveryCard(result: result)
                         }
@@ -409,9 +432,7 @@ struct DungeonRunView: View {
             VStack(spacing: 8) {
                 HStack {
                     HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(Color("AccentGold"))
+                        ExpGemIcon(size: 14)
                         Text("Lv. \(result.characterLevel)")
                             .font(.custom("Avenir-Heavy", size: 14))
                             .foregroundColor(.white)
@@ -445,9 +466,7 @@ struct DungeonRunView: View {
             // Gold Counter
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(Color("AccentGold"))
+                    GoldPileIcon(size: 24)
                     
                     Text("Gold")
                         .font(.custom("Avenir-Medium", size: 14))
@@ -467,6 +486,22 @@ struct DungeonRunView: View {
                 }
             }
             
+            // Gem reward
+            if result.gemsGained > 0 {
+                Divider().overlay(Color.white.opacity(0.05))
+                HStack {
+                    HStack(spacing: 6) {
+                        GemIconView(amount: result.gemsGained, size: 22)
+                        Text("Gems")
+                            .font(.custom("Avenir-Medium", size: 14))
+                    }
+                    Spacer()
+                    Text("+\(result.gemsGained)")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(Color("AccentPurple"))
+                }
+            }
+            
             if result.isCoopRun && result.bondExpEarned > 0 {
                 Divider().overlay(Color.white.opacity(0.05))
                 SummaryRow(icon: "heart.circle.fill", label: "Bond EXP", value: "+\(result.bondExpEarned)", color: Color("AccentPink"))
@@ -480,6 +515,53 @@ struct DungeonRunView: View {
     }
     
     // MARK: - Character Stats Section (Dungeon)
+    
+    @ViewBuilder
+    private func dungeonRaidDamageCard(result: DungeonCompletionResult) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(Color("DifficultyHard"))
+                Text("Raid Boss Damage")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+            }
+            
+            HStack(spacing: 20) {
+                VStack(spacing: 4) {
+                    Text("-\(result.raidDamageDealt) HP")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(Color("DifficultyHard"))
+                    Text("Dealt to Boss")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                if result.raidRetaliationTaken > 0 {
+                    VStack(spacing: 4) {
+                        Text("-\(result.raidRetaliationTaken) HP")
+                            .font(.custom("Avenir-Heavy", size: 18))
+                            .foregroundColor(Color("AccentOrange"))
+                        Text("Boss struck back!")
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("DifficultyHard").opacity(0.2), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal)
+    }
     
     private func dungeonStatsCard(result: DungeonCompletionResult) -> some View {
         VStack(spacing: 14) {
@@ -731,8 +813,7 @@ struct DungeonRunView: View {
             VStack(spacing: 10) {
                 if result.secretBonusGold > 0 {
                     HStack(spacing: 8) {
-                        Image(systemName: "bitcoinsign.circle.fill")
-                            .foregroundColor(Color("AccentGold"))
+                        GoldCoinIcon(size: 16)
                         Text("Bonus Gold")
                             .font(.custom("Avenir-Medium", size: 14))
                         Spacer()
@@ -946,12 +1027,15 @@ struct DungeonRunView: View {
             let goldBefore = leadChar?.gold ?? 0
             let charLevel = leadChar?.level ?? 1
             
-            // Award EXP and gold to party members
+            // Award EXP, gold, and gems to party members
             for member in party {
                 if result.totalExp > 0 {
                     member.gainEXP(result.totalExp)
                 }
                 member.gold += result.totalGold / max(1, party.count)
+                if result.gemsGained > 0 {
+                    member.gems += result.gemsGained / max(1, party.count)
+                }
             }
             
             // Grant equipment EXP per cleared room
@@ -1125,13 +1209,26 @@ struct DungeonRunView: View {
                 }
             }
             
-            // Haptic + audio feedback
+            if result.success, let leader = party.first,
+               let boss = raidBosses.first(where: { $0.isActive }) {
+                if let raidResult = gameEngine.dealRaidDamage(
+                    character: leader,
+                    boss: boss,
+                    activityType: .dungeon,
+                    activityValue: dungeon.lootTier,
+                    sourceLabel: "Dungeon: \(dungeon.name)"
+                ) {
+                    result.raidDamageDealt = raidResult.damage
+                    result.raidRetaliationTaken = raidResult.retaliationDamage
+                }
+            }
+            
             if result.success {
                 hapticSuccess += 1
-                AudioManager.shared.play(.dungeonComplete)
+                AudioManager.shared.play(.victoryFanfare, maxDuration: 3.5)
             } else {
                 hapticError += 1
-                AudioManager.shared.play(.error)
+                AudioManager.shared.play(.defeatSting, maxDuration: 2.5)
             }
             
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -1151,9 +1248,14 @@ struct SummaryRow: View {
     
     var body: some View {
         HStack {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .frame(width: 24)
+            if icon == "gold-coin" {
+                GoldCoinIcon(size: 18)
+                    .frame(width: 24)
+            } else {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .frame(width: 24)
+            }
             Text(label)
                 .font(.custom("Avenir-Medium", size: 14))
             Spacer()
@@ -1166,26 +1268,57 @@ struct SummaryRow: View {
 
 struct LootDropRow: View {
     let equipment: Equipment
+    @State private var showTooltip = false
     
     var body: some View {
-        HStack(spacing: 12) {
-            EquipmentIconView(item: equipment, slot: equipment.slot, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(equipment.name)
-                    .font(.custom("Avenir-Heavy", size: 14))
+        Button {
+            showTooltip.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                EquipmentIconView(item: equipment, slot: equipment.slot, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(equipment.name)
+                        .font(.custom("Avenir-Heavy", size: 14))
+                        .foregroundColor(Color(equipment.rarity.color))
+                    Text(equipment.statSummary)
+                        .font(.custom("Avenir-Medium", size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text(equipment.rarity.rawValue)
+                    .font(.custom("Avenir-Heavy", size: 10))
                     .foregroundColor(Color(equipment.rarity.color))
-                Text(equipment.statSummary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color(equipment.rarity.color).opacity(0.2)))
+                    .rarityShimmer(equipment.rarity)
+            }
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showTooltip) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(equipment.name)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color(equipment.rarity.color))
+                Text(equipment.slot.rawValue.capitalized + " • " + equipment.rarity.rawValue)
                     .font(.custom("Avenir-Medium", size: 12))
                     .foregroundColor(.secondary)
+                Divider()
+                Text(equipment.itemDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+                Text(equipment.statSummary)
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(Color(equipment.primaryStat.color))
+                if equipment.levelRequirement > 1 {
+                    Text("Requires Level \(equipment.levelRequirement)")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
-            Spacer()
-            Text(equipment.rarity.rawValue)
-                .font(.custom("Avenir-Heavy", size: 10))
-                .foregroundColor(Color(equipment.rarity.color))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color(equipment.rarity.color).opacity(0.2)))
-                .rarityShimmer(equipment.rarity)
+            .padding()
+            .frame(width: 260)
+            .presentationCompactAdaptation(.popover)
         }
     }
 }

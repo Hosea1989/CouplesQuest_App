@@ -325,6 +325,21 @@ class GameEngine: ObservableObject {
         // Award gold (with rebirth bonus)
         character.gainGold(totalGold)
         
+        // Gem reward roll (rare chance based on verification tier and character level)
+        var gemsEarned = 0
+        let gemChance: Double = {
+            switch tier {
+            case .quick:         return 0.03
+            case .standard:      return 0.06
+            case .verified:      return 0.12
+            case .partyVerified: return 0.15
+            }
+        }()
+        if Double.random(in: 0...1) <= gemChance {
+            gemsEarned = character.level >= 20 ? Int.random(in: 1...3) : character.level >= 10 ? Int.random(in: 1...2) : 1
+            character.gems += gemsEarned
+        }
+        
         // Grant EXP to all equipped gear
         let equipEXP = GameEngine.equipmentEXPForTask(verificationTier: tier)
         let gearLevelUps = grantEquipmentEXP(character: character, amount: equipEXP, context: context)
@@ -471,7 +486,8 @@ class GameEngine: ObservableObject {
             goldAfter: snapshotGoldAfter,
             currentStats: snapshotCurrentStats,
             canLevelUp: snapshotCanLevelUp,
-            hpHealed: actualHeal
+            hpHealed: actualHeal,
+            gemsGained: gemsEarned
         )
     }
     
@@ -740,6 +756,23 @@ class GameEngine: ObservableObject {
             character.gainEXP(expReward)
             character.gainGold(goldReward)
             
+            // Gem reward roll (better odds for rarer missions)
+            var missionGemsEarned = 0
+            let missionGemChance: Double = {
+                switch mission.rarity {
+                case .common:    return 0.04
+                case .uncommon:  return 0.08
+                case .rare:      return 0.14
+                case .epic:      return 0.22
+                case .legendary: return 0.35
+                }
+            }()
+            if Double.random(in: 0...1) <= missionGemChance {
+                missionGemsEarned = mission.rarity == .legendary ? Int.random(in: 2...5) :
+                                    mission.rarity == .epic ? Int.random(in: 1...3) : Int.random(in: 1...2)
+                character.gems += missionGemsEarned
+            }
+            
             // Grant EXP to equipped gear
             let missionEquipEXP = GameEngine.equipmentEXPForMission(rarity: mission.rarity)
             grantEquipmentEXP(character: character, amount: missionEquipEXP)
@@ -882,6 +915,7 @@ class GameEngine: ObservableObject {
             missionResult.goldBefore = missionGoldBefore
             missionResult.goldAfter = missionGoldAfter
             missionResult.currentStats = missionStatsSnapshot
+            missionResult.gemsGained = missionGemsEarned
             return missionResult
         } else {
             // Mission failed — award consolation rewards (25%) so time isn't wasted
@@ -1716,56 +1750,105 @@ class GameEngine: ObservableObject {
     
     // MARK: - Raid Boss
     
-    /// Attack the raid boss after completing a task
-    func attackRaidBoss(
-        boss: WeeklyRaidBoss,
+    /// Deal passive raid damage from completing an activity (task, habit, dungeon, mission).
+    /// Returns damage dealt and retaliation taken, or nil if the boss is inactive or the player hasn't joined.
+    @discardableResult
+    func dealRaidDamage(
         character: PlayerCharacter,
-        taskDescription: String
+        boss: WeeklyRaidBoss,
+        activityType: RaidActivityType,
+        activityValue: Int,
+        sourceLabel: String
     ) -> RaidAttackResult? {
-        guard boss.isActive else { return nil }
-        guard !boss.hasReachedDailyCap(playerID: character.id) else { return nil }
+        guard boss.isActive, boss.hasJoinedRaid else { return nil }
         
-        let damage = WeeklyRaidBoss.calculateDamage(for: character)
+        let damage = WeeklyRaidBoss.calculateActivityDamage(
+            for: character,
+            activityType: activityType,
+            activityValue: activityValue
+        )
         
         let attack = RaidAttack(
             playerName: character.name,
             playerID: character.id,
             damage: damage,
-            sourceDescription: taskDescription
+            sourceDescription: sourceLabel,
+            sourceType: activityType
         )
         
-        boss.takeDamage(damage, from: attack)
+        let retaliationDmg = boss.takeDamage(damage, from: attack)
+        
+        character.currentHP = max(1, character.currentHP - retaliationDmg)
+        character.lastHPUpdateAt = Date()
+        
+        if boss.isDefeated {
+            boss.nextBossDate = WeeklyRaidBoss.nextBossAppearDate(after: Date())
+        }
+        
+        if let communityId = boss.communityBossId {
+            Task {
+                do {
+                    let serverResult = try await SupabaseService.shared.attackCommunityRaidBoss(
+                        bossId: communityId,
+                        userId: character.id.uuidString,
+                        playerName: character.name,
+                        damage: damage,
+                        source: sourceLabel
+                    )
+                    await MainActor.run {
+                        boss.currentHP = serverResult.newHp
+                        boss.isDefeated = serverResult.bossDefeated
+                        boss.currentPhase = serverResult.currentPhase
+                        boss.phaseMaxHP = serverResult.phaseMaxHp
+                        boss.totalDamageDealt = serverResult.totalDamageDealt
+                    }
+                } catch {
+                    // Local state already updated; server sync is best-effort
+                }
+            }
+        }
         
         return RaidAttackResult(
             damage: damage,
+            retaliationDamage: retaliationDmg,
             bossDefeated: boss.isDefeated,
             remainingHP: boss.currentHP,
-            maxHP: boss.maxHP
+            phaseMaxHP: boss.phaseMaxHP,
+            currentPhase: boss.currentPhase
         )
     }
     
-    /// Claim raid boss defeat rewards (enhanced with loot table per design doc)
+    /// Claim raid boss rewards -- available when boss is defeated OR expired (contribution-based)
     func claimRaidBossRewards(
         boss: WeeklyRaidBoss,
         character: PlayerCharacter,
         bond: Bond?,
         context: ModelContext
     ) {
-        guard boss.isDefeated && !boss.rewardsClaimed else { return }
+        guard !boss.rewardsClaimed else { return }
+        guard boss.isDefeated || boss.isExpired else { return }
+        guard boss.hasJoinedRaid else { return }
         
-        // Calculate rewards using loot table
-        let lootResult = WeeklyRaidBoss.lootResult(tier: boss.tier, template: nil)
+        if boss.nextBossDate == nil {
+            boss.nextBossDate = WeeklyRaidBoss.nextBossAppearDate(after: Date())
+        }
         
-        // Apply gold and EXP (with rebirth bonuses)
-        character.gainEXP(lootResult.exp)
-        character.gainGold(lootResult.gold)
+        let playerDamage = boss.totalPlayerDamage(by: character.id)
+        let lootResult = WeeklyRaidBoss.calculateLoot(
+            tier: boss.tier,
+            highestPhase: boss.currentPhase,
+            playerDamage: playerDamage,
+            totalDamage: boss.totalDamageDealt,
+            hasPartner: bond != nil
+        )
         
-        // Bond EXP if partnered
-        if let bond = bond {
+        character.gainEXP(lootResult.totalExp)
+        character.gainGold(lootResult.totalGold)
+        
+        if let bond = bond, lootResult.bondExp > 0 {
             bond.gainBondEXP(lootResult.bondExp)
         }
         
-        // Equipment drop (15-25% rare+ based on template)
         if lootResult.equipmentDropped {
             let loot = LootGenerator.generateEquipment(tier: max(2, boss.tier), luck: character.effectiveStats.luck, playerLevel: character.level)
             loot.ownerID = character.id
@@ -1773,7 +1856,6 @@ class GameEngine: ObservableObject {
             Task { try? await SupabaseService.shared.syncEquipment(loot) }
         }
         
-        // Guaranteed boss-exclusive card drop
         let cardPool = ContentManager.shared.activeCardPool
         if let contentCard = CardDropEngine.raidBossCardDrop(
             bossTemplateName: boss.name,
@@ -1787,6 +1869,15 @@ class GameEngine: ObservableObject {
         }
         
         boss.rewardsClaimed = true
+        
+        if let communityId = boss.communityBossId {
+            Task {
+                try? await SupabaseService.shared.claimCommunityRewards(
+                    bossId: communityId,
+                    userId: character.id.uuidString
+                )
+            }
+        }
     }
     
     // MARK: - Equipment EXP
@@ -3160,7 +3251,6 @@ class GameEngine: ObservableObject {
         
         character.gold -= price
         
-        // Create a copy for the character's inventory
         let purchased = Equipment(
             name: item.name,
             description: item.itemDescription,
@@ -3175,8 +3265,15 @@ class GameEngine: ObservableObject {
             baseType: item.baseType
         )
         context.insert(purchased)
+        do {
+            try context.save()
+        } catch {
+            print("[Store] Equipment save failed: \(error). Rolling back gold.")
+            character.gold += price
+            context.delete(purchased)
+            return false
+        }
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
-        try? context.save()
         return true
     }
     
@@ -3189,8 +3286,15 @@ class GameEngine: ObservableObject {
         
         let purchased = item.toEquipment(ownerID: character.id)
         context.insert(purchased)
+        do {
+            try context.save()
+        } catch {
+            print("[Store] Milestone gear save failed: \(error). Rolling back gold.")
+            character.gold += item.goldCost
+            context.delete(purchased)
+            return false
+        }
         Task { try? await SupabaseService.shared.syncEquipment(purchased) }
-        try? context.save()
         return true
     }
     
@@ -3206,27 +3310,44 @@ class GameEngine: ObservableObject {
         character.gems -= bundle.gemCost
         
         // Grant equipment pieces
+        var insertedEquipment: [Equipment] = []
         for piece in bundle.equipmentPieces {
             if let template = EquipmentCatalog.find(id: piece.catalogID) {
                 let equip = template.toEquipment(ownerID: character.id)
                 context.insert(equip)
-                Task { try? await SupabaseService.shared.syncEquipment(equip) }
+                insertedEquipment.append(equip)
             }
         }
         
         // Grant consumables
+        var insertedConsumables: [Consumable] = []
         for consumableItem in bundle.consumables {
             let allTemplates = ConsumableCatalog.items
             if let template = allTemplates.first(where: { $0.name == consumableItem.templateName }) {
                 for _ in 0..<consumableItem.quantity {
                     let consumable = template.toConsumable(characterID: character.id)
                     context.insert(consumable)
-                    Task { try? await SupabaseService.shared.syncConsumable(consumable) }
+                    insertedConsumables.append(consumable)
                 }
             }
         }
         
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            print("[Store] Bundle save failed: \(error). Rolling back currency.")
+            character.gold += bundle.goldCost
+            character.gems += bundle.gemCost
+            insertedEquipment.forEach { context.delete($0) }
+            insertedConsumables.forEach { context.delete($0) }
+            return false
+        }
+        for equip in insertedEquipment {
+            Task { try? await SupabaseService.shared.syncEquipment(equip) }
+        }
+        for consumable in insertedConsumables {
+            Task { try? await SupabaseService.shared.syncConsumable(consumable) }
+        }
         return true
     }
     
@@ -3251,8 +3372,16 @@ class GameEngine: ObservableObject {
         
         let consumable = template.toConsumable(characterID: character.id)
         context.insert(consumable)
+        do {
+            try context.save()
+        } catch {
+            print("[Store] Consumable save failed: \(error). Rolling back currency.")
+            character.gold += template.goldCost
+            character.gems += template.gemCost
+            context.delete(consumable)
+            return false
+        }
         Task { try? await SupabaseService.shared.syncConsumable(consumable) }
-        try? context.save()
         return true
     }
     
@@ -3532,7 +3661,7 @@ class GameEngine: ObservableObject {
                 // Calculate partner stat total from snapshot if available
                 if let snapshot = partnerProfile.characterData {
                     let total = snapshot.strength + snapshot.wisdom + snapshot.charisma +
-                                snapshot.dexterity + snapshot.luck + snapshot.defense
+                                snapshot.dexterity + snapshot.defense
                     character.partnerStatTotal = total
                 }
                 
@@ -3557,7 +3686,7 @@ class GameEngine: ObservableObject {
                 if let profile = try await SupabaseService.shared.fetchProfile(byID: member.id) {
                     let snapshot = profile.characterData
                     let statTotal: Int? = snapshot.map {
-                        $0.strength + $0.wisdom + $0.charisma + $0.dexterity + $0.luck + $0.defense
+                        $0.strength + $0.wisdom + $0.charisma + $0.dexterity + $0.defense
                     }
                     
                     updatedMembers.append(CachedPartyMember(
@@ -3931,8 +4060,17 @@ struct TaskCompletionResult {
     /// HP healed from completing this task (0 if already at max)
     let hpHealed: Int
     
+    /// Gem (premium currency) reward for this task
+    var gemsGained: Int = 0
+    
     /// Material drops from task completion (essence + chance of bonus)
     var materialDrops: [MaterialDrop] = []
+    
+    /// Raid boss damage dealt from this activity (0 if not in raid)
+    var raidDamageDealt: Int = 0
+    
+    /// Raid boss retaliation damage taken (0 if not in raid)
+    var raidRetaliationTaken: Int = 0
     
     /// Convenience: first bonus stat gain (for backward-compatible display)
     var bonusStatGain: (StatType, Int)? {
@@ -3966,7 +4104,10 @@ struct TaskCompletionResult {
         goldAfter: Int = 0,
         currentStats: [StatType: Int] = [:],
         canLevelUp: Bool = false,
-        hpHealed: Int = 0
+        hpHealed: Int = 0,
+        gemsGained: Int = 0,
+        raidDamageDealt: Int = 0,
+        raidRetaliationTaken: Int = 0
     ) {
         self.expGained = expGained
         self.goldGained = goldGained
@@ -3995,6 +4136,9 @@ struct TaskCompletionResult {
         self.currentStats = currentStats
         self.canLevelUp = canLevelUp
         self.hpHealed = hpHealed
+        self.gemsGained = gemsGained
+        self.raidDamageDealt = raidDamageDealt
+        self.raidRetaliationTaken = raidRetaliationTaken
     }
 }
 
@@ -4214,6 +4358,9 @@ struct MissionCompletionResult {
     let itemDropped: String?
     let levelUpRewards: [LevelUpReward]
     
+    /// Gem (premium currency) reward for this mission
+    var gemsGained: Int = 0
+    
     // Snapshot data for animated reward screen
     let previousLevel: Int
     let newLevel: Int
@@ -4246,6 +4393,12 @@ struct MissionCompletionResult {
     
     /// All character effective stats after rewards (for stat display card)
     var currentStats: [StatType: Int] = [:]
+    
+    /// Raid boss damage dealt from this activity (0 if not in raid)
+    var raidDamageDealt: Int = 0
+    
+    /// Raid boss retaliation damage taken (0 if not in raid)
+    var raidRetaliationTaken: Int = 0
 }
 
 /// Result of a meditation session
@@ -4271,12 +4424,14 @@ struct MeditationResult {
     }
 }
 
-/// Result of attacking a raid boss
+/// Result of attacking a raid boss (includes retaliation and phase info)
 struct RaidAttackResult {
     let damage: Int
+    let retaliationDamage: Int
     let bossDefeated: Bool
     let remainingHP: Int
-    let maxHP: Int
+    let phaseMaxHP: Int
+    let currentPhase: Int
 }
 
 /// Result of a mood check-in

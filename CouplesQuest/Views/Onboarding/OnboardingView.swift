@@ -231,9 +231,7 @@ struct OnboardingView: View {
                         .scaleEffect(animateReward ? 1.0 : 0.5)
                         
                         VStack(spacing: 4) {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 26)
                             Text("+\(earnedGold) Gold")
                                 .font(.custom("Avenir-Heavy", size: 18))
                                 .foregroundColor(Color("AccentGold"))

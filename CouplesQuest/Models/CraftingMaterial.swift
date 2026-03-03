@@ -118,6 +118,19 @@ enum MaterialType: String, Codable, CaseIterable {
         case .researchToken: return "Earned exclusively from AFK missions"
         }
     }
+    
+    /// Description of what this material is used for
+    var usedForDescription: String {
+        switch self {
+        case .essence: return "Used to craft equipment at the Forge"
+        case .ore: return "Used to craft equipment at the Forge"
+        case .crystal: return "Used to craft equipment at the Forge"
+        case .hide: return "Used to craft equipment at the Forge"
+        case .herb: return "Used to craft equipment at the Forge"
+        case .fragment: return "Used for equipment enhancement at the Forge"
+        case .researchToken: return "Used to unlock upgrades in the Research Tree"
+        }
+    }
 }
 
 // MARK: - Material Drop (lightweight reward descriptor)

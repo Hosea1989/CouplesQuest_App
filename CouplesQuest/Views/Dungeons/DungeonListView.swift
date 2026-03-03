@@ -583,8 +583,7 @@ struct DungeonCard: View {
                         .fixedSize()
                         
                         HStack(spacing: 3) {
-                            Image(systemName: "dollarsign.circle")
-                                .font(.system(size: 10))
+                            GoldCoinIcon(size: 12)
                             Text("+\(dungeon.baseGoldReward)")
                         }
                         .font(.custom("Avenir-Medium", size: 11))
@@ -710,20 +709,21 @@ struct DungeonDetailView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color("BackgroundTop").ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // Hero banner
-                        ZStack(alignment: .bottomLeading) {
+        ZStack {
+            Color("BackgroundTop").ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Hero banner
+                    ZStack(alignment: .bottomLeading) {
+                        GeometryReader { geo in
                             Image(dungeon.theme.thumbnailImage)
                                 .interpolation(.none)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(height: 200)
+                                .frame(width: geo.size.width, height: geo.size.height)
                                 .clipped()
+                        }
                             
                             LinearGradient(
                                 colors: [.clear, Color("BackgroundTop").opacity(0.6), Color("BackgroundTop")],
@@ -765,6 +765,8 @@ struct DungeonDetailView: View {
                             .padding(.horizontal, 20)
                             .padding(.bottom, 16)
                         }
+                        .frame(height: 200)
+                        .clipped()
                         
                         VStack(spacing: 24) {
                             // Description
@@ -783,7 +785,7 @@ struct DungeonDetailView: View {
                             DetailStatRow(icon: "person.fill", label: "Level Required", value: "\(dungeon.levelRequirement)+",
                                          valueColor: meetsLevel ? Color("AccentGreen") : .red)
                             HStack {
-                                Image(systemName: "chart.bar.fill")
+                                Image(systemName: "bolt.fill")
                                     .foregroundColor(.secondary)
                                     .frame(width: 24)
                                 Text("Hero Might")
@@ -797,7 +799,7 @@ struct DungeonDetailView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .popover(isPresented: $showHeroMightTip) {
-                                    Text("The sum of all your stats (STR, WIS, CHA, DEX, DEF, LCK) compared to what this dungeon recommends.")
+                                    Text("The sum of your combat stats (STR, WIS, CHA, DEX, DEF) compared to what this dungeon recommends.")
                                         .font(.custom("Avenir-Medium", size: 13))
                                         .padding()
                                         .frame(width: 260)
@@ -805,7 +807,7 @@ struct DungeonDetailView: View {
                                 }
                                 Spacer()
                                 if let character = character {
-                                    let playerTotal = character.effectiveStats.total
+                                    let playerTotal = character.effectiveStats.combatTotal
                                     let meets = playerTotal >= dungeon.recommendedStatTotal
                                     Text("\(playerTotal)/\(dungeon.recommendedStatTotal)")
                                         .font(.custom("Avenir-Heavy", size: 14))
@@ -983,13 +985,21 @@ struct DungeonDetailView: View {
                     .padding(.bottom, canCoop ? 140 : 80)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") { dismiss() }
-                        .foregroundColor(Color("AccentGold"))
+            .overlay(alignment: .topLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Close")
+                            .font(.custom("Avenir-Heavy", size: 14))
+                    }
+                    .foregroundColor(Color("AccentGold"))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
                 }
+                .padding(.top, 12)
+                .padding(.leading, 16)
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
@@ -1072,7 +1082,6 @@ struct DungeonDetailView: View {
                 .padding()
                 .background(Color("BackgroundTop"))
             }
-        }
     }
 }
 

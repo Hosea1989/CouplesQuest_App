@@ -10,6 +10,7 @@ struct MissionsView: View {
     @Query private var characters: [PlayerCharacter]
     @Query private var missions: [AFKMission]
     @Query(sort: \DungeonRun.startedAt, order: .reverse) private var dungeonRuns: [DungeonRun]
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     @State private var showCompletionResult = false
     @State private var lastMissionResult: MissionCompletionResult?
@@ -34,6 +35,8 @@ struct MissionsView: View {
         } else {
             base = missions.filter { $0.isAvailable }
         }
+        
+        base.removeAll { $0.isRankUpTraining }
         
         // Include rank-up training when eligible (level 20+, still a starter class)
         if let char = character,
@@ -389,6 +392,19 @@ struct MissionsView: View {
                             message: "\(character.name) completed mission '\(missionName)' (+\(expVal) EXP)",
                             metadata: ["mission_name": missionName, "exp": "\(expVal)"]
                         )
+                    }
+                }
+                
+                if let boss = raidBosses.first(where: { $0.isActive }) {
+                    if let raidResult = gameEngine.dealRaidDamage(
+                        character: character,
+                        boss: boss,
+                        activityType: .mission,
+                        activityValue: mission.expReward,
+                        sourceLabel: "Mission: \(mission.name)"
+                    ) {
+                        result.raidDamageDealt = raidResult.damage
+                        result.raidRetaliationTaken = raidResult.retaliationDamage
                     }
                 }
             } else {
@@ -1313,6 +1329,8 @@ struct MissionCompletionView: View {
     @State private var showContinue = false
     @State private var showConfetti = false
     @State private var headerGlow = false
+    @State private var showItemTooltip = false
+    @State private var showConsumableTooltip = false
     @State private var showCharacterStats = false
     @State private var missionAnimatedStatIndices: Set<Int> = []
     
@@ -1336,14 +1354,14 @@ struct MissionCompletionView: View {
             
             // Ambient particles
             if result.success {
-                RewardFloatingParticlesView()
+                CelebrationFloatingParticlesView()
                     .ignoresSafeArea()
                     .opacity(0.4)
             }
             
             // Confetti
             if showConfetti {
-                RewardConfettiOverlay()
+                CelebrationConfettiOverlay()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
@@ -1396,6 +1414,14 @@ struct MissionCompletionView: View {
                                 missionStatsCardView
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
+                            }
+                            
+                            if showCharacterStats && result.raidDamageDealt > 0 {
+                                missionRaidDamageCard
+                                    .transition(.asymmetric(
+                                        insertion: .scale(scale: 0.9).combined(with: .opacity),
                                         removal: .opacity
                                     ))
                             }
@@ -1484,9 +1510,7 @@ struct MissionCompletionView: View {
             HStack {
                 // Level badge
                 HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color("AccentGold"))
+                    ExpGemIcon(size: 14)
                     Text("Lv. \(displayLevel)")
                         .font(.custom("Avenir-Heavy", size: 16))
                         .foregroundColor(.white)
@@ -1638,9 +1662,7 @@ struct MissionCompletionView: View {
                             Circle()
                                 .fill(Color("AccentGold").opacity(0.15))
                                 .frame(width: 36, height: 36)
-                            Image(systemName: "dollarsign.circle.fill")
-                                .font(.system(size: 18))
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 20)
                         }
                         VStack(alignment: .leading, spacing: 1) {
                             Text("GOLD")
@@ -1688,13 +1710,63 @@ struct MissionCompletionView: View {
             
             // Item drop row
             if showItemDrop, let itemName = result.itemDropped {
-                rewardItemRow(
-                    icon: "gift.fill",
-                    iconColor: Color("AccentPurple"),
-                    label: "Item Found!",
-                    value: itemName,
-                    valueColor: Color("AccentPurple")
-                )
+                Button { showItemTooltip.toggle() } label: {
+                    rewardItemRow(
+                        icon: "gift.fill",
+                        iconColor: Color("AccentPurple"),
+                        label: "Item Found!",
+                        value: itemName,
+                        valueColor: Color("AccentPurple")
+                    )
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showItemTooltip) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(itemName)
+                            .font(.custom("Avenir-Heavy", size: 15))
+                            .foregroundColor(Color("AccentPurple"))
+                        Divider()
+                        Text("New equipment added to your inventory. Equip it from the Inventory tab to boost your stats.")
+                            .font(.custom("Avenir-Medium", size: 13))
+                            .foregroundColor(.primary)
+                    }
+                    .padding()
+                    .frame(width: 260)
+                    .presentationCompactAdaptation(.popover)
+                }
+                .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
+            }
+            
+            // Consumable drop row
+            if showItemDrop, let consumableName = result.consumableDropped {
+                Button { showConsumableTooltip.toggle() } label: {
+                    rewardItemRow(
+                        icon: consumableIcon(for: consumableName),
+                        iconColor: consumableColor(for: consumableName),
+                        label: "Consumable Found!",
+                        value: consumableName,
+                        valueColor: consumableColor(for: consumableName),
+                        imageName: consumableImageName(for: consumableName)
+                    )
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showConsumableTooltip) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(consumableName)
+                            .font(.custom("Avenir-Heavy", size: 15))
+                            .foregroundColor(consumableColor(for: consumableName))
+                        Divider()
+                        Text(consumableEffect(for: consumableName))
+                            .font(.custom("Avenir-Medium", size: 13))
+                            .foregroundColor(.primary)
+                        Text("Use from the Inventory tab.")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .frame(width: 260)
+                    .presentationCompactAdaptation(.popover)
+                }
                 .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
             }
             
@@ -1717,6 +1789,28 @@ struct MissionCompletionView: View {
                         .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
                 }
             }
+            
+            // Gem reward
+            if result.gemsGained > 0 {
+                let gemAsset: String = {
+                    switch result.gemsGained {
+                    case ...2: return "gem-blue"
+                    case 3...4: return "gem-green"
+                    case 5...9: return "gem-purple"
+                    case 10...24: return "gem-red"
+                    default: return "gem-gold"
+                    }
+                }()
+                rewardItemRow(
+                    icon: gemAsset,
+                    iconColor: Color("AccentPurple"),
+                    label: "Gems Found!",
+                    value: "+\(result.gemsGained)",
+                    valueColor: Color("AccentPurple"),
+                    imageName: gemAsset
+                )
+                .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
+            }
         }
         .padding(20)
         .background(
@@ -1729,16 +1823,24 @@ struct MissionCompletionView: View {
         )
     }
     
-    private func rewardItemRow(icon: String, iconColor: Color, label: String, value: String, valueColor: Color) -> some View {
+    private func rewardItemRow(icon: String, iconColor: Color, label: String, value: String, valueColor: Color, imageName: String? = nil) -> some View {
         HStack {
             HStack(spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(iconColor.opacity(0.15))
                         .frame(width: 36, height: 36)
-                    Image(systemName: icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(iconColor)
+                    if let imgName = imageName, UIImage(named: imgName) != nil {
+                        Image(imgName)
+                            .interpolation(.none)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 26, height: 26)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 18))
+                            .foregroundColor(iconColor)
+                    }
                 }
                 Text(label)
                     .font(.custom("Avenir-Medium", size: 16))
@@ -1751,7 +1853,80 @@ struct MissionCompletionView: View {
         }
     }
     
+    // MARK: - Consumable Lookup Helpers
+    
+    private func consumableTemplate(for name: String) -> ConsumableTemplate? {
+        ConsumableCatalog.items.first { $0.name == name }
+    }
+    
+    private func consumableEffect(for name: String) -> String {
+        if let template = consumableTemplate(for: name) {
+            return template.description
+        }
+        return "A useful consumable item."
+    }
+    
+    private func consumableIcon(for name: String) -> String {
+        consumableTemplate(for: name)?.icon ?? "flask.fill"
+    }
+    
+    private func consumableColor(for name: String) -> Color {
+        if let template = consumableTemplate(for: name) {
+            return Color(template.type.color)
+        }
+        return Color("AccentGreen")
+    }
+    
+    private func consumableImageName(for name: String) -> String? {
+        consumableTemplate(for: name)?.imageName
+    }
+    
     // MARK: - Character Stats Card (Mission)
+    
+    private var missionRaidDamageCard: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(Color("DifficultyHard"))
+                Text("Raid Boss Damage")
+                    .font(.custom("Avenir-Heavy", size: 16))
+                Spacer()
+            }
+            
+            HStack(spacing: 20) {
+                VStack(spacing: 4) {
+                    Text("-\(result.raidDamageDealt) HP")
+                        .font(.custom("Avenir-Heavy", size: 18))
+                        .foregroundColor(Color("DifficultyHard"))
+                    Text("Dealt to Boss")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                if result.raidRetaliationTaken > 0 {
+                    VStack(spacing: 4) {
+                        Text("-\(result.raidRetaliationTaken) HP")
+                            .font(.custom("Avenir-Heavy", size: 18))
+                            .foregroundColor(Color("AccentOrange"))
+                        Text("Boss struck back!")
+                            .font(.custom("Avenir-Medium", size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("DifficultyHard").opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
     
     private var missionStatsCardView: some View {
         VStack(spacing: 14) {
@@ -2041,145 +2216,7 @@ struct MissionCompletionView: View {
     }
 }
 
-// MARK: - Confetti Overlay
-
-private struct RewardConfettiData: Identifiable {
-    let id: Int
-    let color: Color
-    let startX: CGFloat
-    let endX: CGFloat
-    let endY: CGFloat
-    let rotation: Double
-    let delay: Double
-    let duration: Double
-    let width: CGFloat
-    let height: CGFloat
-}
-
-private struct RewardConfettiOverlay: View {
-    @State private var pieces: [RewardConfettiData]
-    
-    init() {
-        let colors: [Color] = [.red, .blue, .green, .yellow, .orange, .purple, .pink, .mint]
-        var p: [RewardConfettiData] = []
-        for i in 0..<80 {
-            p.append(RewardConfettiData(
-                id: i,
-                color: colors[i % colors.count],
-                startX: CGFloat.random(in: -30...30),
-                endX: CGFloat.random(in: -200...200),
-                endY: CGFloat.random(in: 300...900),
-                rotation: Double.random(in: -720...720),
-                delay: Double(i) * 0.015,
-                duration: Double.random(in: 2.5...4.0),
-                width: CGFloat.random(in: 5...10),
-                height: CGFloat.random(in: 8...18)
-            ))
-        }
-        _pieces = State(initialValue: p)
-    }
-    
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                ForEach(pieces) { piece in
-                    RewardConfettiPieceView(piece: piece)
-                        .position(x: geo.size.width / 2, y: 0)
-                }
-            }
-        }
-    }
-}
-
-private struct RewardConfettiPieceView: View {
-    let piece: RewardConfettiData
-    @State private var animate = false
-    
-    var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(piece.color)
-            .frame(width: piece.width, height: piece.height)
-            .offset(
-                x: animate ? piece.endX : piece.startX,
-                y: animate ? piece.endY : -50
-            )
-            .rotationEffect(.degrees(animate ? piece.rotation : 0))
-            .opacity(animate ? 0 : 1)
-            .onAppear {
-                withAnimation(
-                    .easeOut(duration: piece.duration)
-                    .delay(piece.delay)
-                ) {
-                    animate = true
-                }
-            }
-    }
-}
-
-// MARK: - Floating Particles
-
-struct RewardFloatingParticleData: Identifiable {
-    let id: Int
-    let xFraction: CGFloat  // 0.0–1.0 fraction of width
-    let startYFraction: CGFloat
-    let size: CGFloat
-    let particleOpacity: Double
-    let duration: Double
-}
-
-struct RewardFloatingParticlesView: View {
-    @State private var particles: [RewardFloatingParticleData]
-    
-    init() {
-        var p: [RewardFloatingParticleData] = []
-        for i in 0..<15 {
-            p.append(RewardFloatingParticleData(
-                id: i,
-                xFraction: CGFloat.random(in: 0...1),
-                startYFraction: CGFloat.random(in: 0.2...1.0),
-                size: CGFloat.random(in: 2...6),
-                particleOpacity: Double.random(in: 0.2...0.5),
-                duration: Double.random(in: 3...6)
-            ))
-        }
-        _particles = State(initialValue: p)
-    }
-    
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                ForEach(particles) { particle in
-                    RewardFloatingParticleItemView(particle: particle, geoSize: geo.size)
-                }
-            }
-        }
-    }
-}
-
-struct RewardFloatingParticleItemView: View {
-    let particle: RewardFloatingParticleData
-    let geoSize: CGSize
-    @State private var animate = false
-    
-    var body: some View {
-        Circle()
-            .fill(Color("AccentGold"))
-            .frame(width: particle.size, height: particle.size)
-            .opacity(particle.particleOpacity)
-            .position(
-                x: geoSize.width * particle.xFraction,
-                y: animate ? -20 : geoSize.height * particle.startYFraction
-            )
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: particle.duration)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    animate = true
-                }
-            }
-    }
-}
+// Confetti/particles moved to CelebrationEffects.swift
 
 // MARK: - Training Tips Card
 
@@ -2452,7 +2489,7 @@ struct SampleMissions {
                 durationSeconds: 28800, // 8 hours
                 statRequirements: [
                     StatRequirement(stat: .dexterity, minimum: 18),
-                    StatRequirement(stat: .luck, minimum: 14)
+                    StatRequirement(stat: .charisma, minimum: 14)
                 ],
                 levelRequirement: 25,
                 baseSuccessRate: 0.70,
@@ -2523,7 +2560,7 @@ struct SampleMissions {
                 durationSeconds: 14400, // 4 hours
                 statRequirements: [
                     StatRequirement(stat: .wisdom, minimum: 15),
-                    StatRequirement(stat: .luck, minimum: 12)
+                    StatRequirement(stat: .charisma, minimum: 12)
                 ],
                 levelRequirement: 20,
                 baseSuccessRate: 0.65,
@@ -2566,7 +2603,7 @@ struct SampleMissions {
                 durationSeconds: 14400, // 4 hours
                 statRequirements: [
                     StatRequirement(stat: .dexterity, minimum: 15),
-                    StatRequirement(stat: .luck, minimum: 12)
+                    StatRequirement(stat: .charisma, minimum: 12)
                 ],
                 levelRequirement: 20,
                 baseSuccessRate: 0.65,
@@ -2584,7 +2621,7 @@ struct SampleMissions {
                 rarity: .epic,
                 durationSeconds: 14400, // 4 hours
                 statRequirements: [
-                    StatRequirement(stat: .luck, minimum: 15),
+                    StatRequirement(stat: .charisma, minimum: 15),
                     StatRequirement(stat: .dexterity, minimum: 12)
                 ],
                 levelRequirement: 20,

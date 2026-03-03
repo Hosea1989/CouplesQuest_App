@@ -111,6 +111,7 @@ struct SwordsAndChoresApp: App {
             PartnerInteraction.self,
             WeeklyRaidBoss.self,
             ArenaRun.self,
+            ArenaMatch.self,
             CraftingMaterial.self,
             Consumable.self,
             MoodEntry.self,

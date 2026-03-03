@@ -17,6 +17,9 @@
 		334455667788AABBCCDDEEFF /* CouplesLeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4455667788AABBCCDDEEFF11 /* CouplesLeaderboardView.swift */; };
 		39A41B6A57DCF630988600E2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47534ADCB2F01A2A1785F608 /* ContentView.swift */; };
 		3C4D5E6F7A8B9C0D1E2F3A4B /* DungeonEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* DungeonEngine.swift */; };
+		AA01BB02CC03DD04EE05FF06 /* ArenaEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB02CC03DD04EE05FF07 /* ArenaEngine.swift */; };
+		AA01BB02CC03DD04EE05FF08 /* ArenaFightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB02CC03DD04EE05FF09 /* ArenaFightView.swift */; };
+		AA01BB02CC03DD04EE05FF0A /* ArenaShopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB02CC03DD04EE05FF0B /* ArenaShopView.swift */; };
 		45F95D92B491495BE688C8E4 /* PlayerCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C61DFCBF5F21A58490E473 /* PlayerCharacter.swift */; };
 		4D5E6F7A8B9C0D1E2F3A4B5C /* DungeonListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* DungeonListView.swift */; };
 		4D5E6F7B8B9C0D1E2F3A4B5D /* DungeonLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A8B8C9D0E1F2A3B4C6 /* DungeonLobbyView.swift */; };
@@ -59,6 +62,7 @@
 		CD6FE9F1E0FA5060779358B4 /* CharacterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346828650F7857975FEACA08 /* CharacterView.swift */; };
 		CFBK0001FALLBACK0BUILD001 /* content_fallback.json in Resources */ = {isa = PBXBuildFile; fileRef = CFBK0001FALLBACK0SWIFT001 /* content_fallback.json */; };
 		CONS0001XCASSETS0BUILD001 /* Consumables.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */; };
+		GEMS0001XCASSETS0BUILD001 /* Gems.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = GEMS0001XCASSETS0FREF0001 /* Gems.xcassets */; };
 		MATS0001XCASSETS0BUILD001 /* Materials.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = MATS0001XCASSETS0FREF0001 /* Materials.xcassets */; };
 		CMGR0001SERVICE0BUILD00001 /* ContentManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMGR0001SERVICE0SWIFT00001 /* ContentManager.swift */; };
 		CPTY0001A0B0C0D0E0F00001 /* CreatePartySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPTY0002A0B0C0D0E0F00001 /* CreatePartySheet.swift */; };
@@ -76,6 +80,7 @@
 		EQRK0001QUIRKMOD0SWIFT01 /* EquipmentQuirk.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */; };
 		EC0A1A2B3C4D5E6F7A8B9C01 /* EquipmentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0A1A2B3C4D5E6F7A8B9C02 /* EquipmentCatalog.swift */; };
 		ED1DUNG0001A0B0C0D0E0F001 /* Dungeons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */; };
+		RAID0001XCASSETS0BUILD001 /* RaidBosses.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = RAID0001XCASSETS0FREF0001 /* RaidBosses.xcassets */; };
 		ED1MISS0001A0B0C0D0E0F001 /* Missions.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */; };
 		ED1TASK0001A0B0C0D0E0F001 /* EditTaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1TASK0001A0B0C0D0E0F002 /* EditTaskView.swift */; };
 		ED1TASK0002A0B0C0D0E0F001 /* TaskAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1TASK0002A0B0C0D0E0F002 /* TaskAnalyticsView.swift */; };
@@ -118,8 +123,10 @@
 		SUPA0005AUTHVIW0BUILD00001 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUPA0004AUTHVIW0SWIFT00001 /* AuthView.swift */; };
 		SUPA0007AUTHGAT0BUILD00001 /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SUPA0006AUTHGAT0SWIFT00001 /* AuthGateView.swift */; };
 		TIMER0001D5E6F7A8B9C0D1E2 /* TaskTimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TIMER0002E6F7A8B9C0D1E2F3 /* TaskTimerView.swift */; };
+		CELB0001EFFECTS0BUILD00001 /* CelebrationEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = CELB0002EFFECTS0SWIFT00001 /* CelebrationEffects.swift */; };
 		TOST0001OVERLAY0BUILD00001 /* ToastOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOST0002OVERLAY0SWIFT00001 /* ToastOverlayView.swift */; };
 		TOST0003MANAGER0BUILD00001 /* ToastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TOST0004MANAGER0SWIFT00001 /* ToastManager.swift */; };
+		LOOT0001REVEAL00BUILD00001 /* LootRevealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = LOOT0002REVEAL00SWIFT00001 /* LootRevealView.swift */; };
 		W3LL0001A0B0C0D0E0F00001 /* WellnessTabContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = W3LL0002A0B0C0D0E0F00001 /* WellnessTabContent.swift */; };
 		WTHR0001SERVICE0BUILD00001 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WTHR0002SERVICE0SWIFT00001 /* WeatherService.swift */; };
 		SND0000BUILDFL0000000000 /* fire_crackling.wav in Resources */ = {isa = PBXBuildFile; fileRef = SND0000FILEREF0000000000 /* fire_crackling.wav */; };
@@ -230,6 +237,9 @@
 		C1A2B3C4D5E6F7A8B9C0D10D /* MeditationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationView.swift; sourceTree = "<group>"; };
 		C1A2B3C4D5E6F7A8B9C0D10F /* ForgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgeView.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* DungeonEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonEngine.swift; sourceTree = "<group>"; };
+		AA01BB02CC03DD04EE05FF07 /* ArenaEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaEngine.swift; sourceTree = "<group>"; };
+		AA01BB02CC03DD04EE05FF09 /* ArenaFightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaFightView.swift; sourceTree = "<group>"; };
+		AA01BB02CC03DD04EE05FF0B /* ArenaShopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaShopView.swift; sourceTree = "<group>"; };
 		C4D5E6F7A8B9C0D1E2F3A4B5 /* DutyBoardGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DutyBoardGenerator.swift; sourceTree = "<group>"; };
 		CARD0002A0B0C0D0E0F00001 /* MonsterCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonsterCard.swift; sourceTree = "<group>"; };
 		CARD0004A0B0C0D0E0F00001 /* BestiaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BestiaryView.swift; sourceTree = "<group>"; };
@@ -255,7 +265,9 @@
 		EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentQuirk.swift; sourceTree = "<group>"; };
 		EC0A1A2B3C4D5E6F7A8B9C02 /* EquipmentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentCatalog.swift; sourceTree = "<group>"; };
 		CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Consumables.xcassets; sourceTree = "<group>"; };
+		GEMS0001XCASSETS0FREF0001 /* Gems.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Gems.xcassets; sourceTree = "<group>"; };
 		ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Dungeons.xcassets; sourceTree = "<group>"; };
+		RAID0001XCASSETS0FREF0001 /* RaidBosses.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = RaidBosses.xcassets; sourceTree = "<group>"; };
 		MATS0001XCASSETS0FREF0001 /* Materials.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Materials.xcassets; sourceTree = "<group>"; };
 		ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Missions.xcassets; sourceTree = "<group>"; };
 		ED1TASK0001A0B0C0D0E0F002 /* EditTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditTaskView.swift; sourceTree = "<group>"; };
@@ -299,8 +311,10 @@
 		SUPA0004AUTHVIW0SWIFT00001 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		SUPA0006AUTHGAT0SWIFT00001 /* AuthGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthGateView.swift; sourceTree = "<group>"; };
 		TIMER0002E6F7A8B9C0D1E2F3 /* TaskTimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTimerView.swift; sourceTree = "<group>"; };
+		CELB0002EFFECTS0SWIFT00001 /* CelebrationEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelebrationEffects.swift; sourceTree = "<group>"; };
 		TOST0002OVERLAY0SWIFT00001 /* ToastOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastOverlayView.swift; sourceTree = "<group>"; };
 		TOST0004MANAGER0SWIFT00001 /* ToastManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastManager.swift; sourceTree = "<group>"; };
+		LOOT0002REVEAL00SWIFT00001 /* LootRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LootRevealView.swift; sourceTree = "<group>"; };
 		W3LL0002A0B0C0D0E0F00001 /* WellnessTabContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WellnessTabContent.swift; sourceTree = "<group>"; };
 		WTHR0002SERVICE0SWIFT00001 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		SND0000FILEREF0000000000 /* fire_crackling.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = fire_crackling.wav; sourceTree = "<group>"; };
@@ -429,6 +443,7 @@
 				A1F2E3D4C5B6A7980008AA04 /* AchievementTracker.swift */,
 				F1A2B3C4D5E6F7A8B9C0F100 /* AudioManager.swift */,
 				CMGR0001SERVICE0SWIFT00001 /* ContentManager.swift */,
+				AA01BB02CC03DD04EE05FF07 /* ArenaEngine.swift */,
 				C3D4E5F6A7B8C9D0E1F2A3B4 /* DungeonEngine.swift */,
 				C4D5E6F7A8B9C0D1E2F3A4B5 /* DutyBoardGenerator.swift */,
 				79B35F8F7D5FB617DBEF9A80 /* GameEngine.swift */,
@@ -480,9 +495,11 @@
 				F1A2B3C4D5E6F7A8B9C0F200 /* Equipment.xcassets */,
 				CONS0001XCASSETS0FREF0001 /* Consumables.xcassets */,
 				MATS0001XCASSETS0FREF0001 /* Materials.xcassets */,
+				GEMS0001XCASSETS0FREF0001 /* Gems.xcassets */,
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* Avatars.xcassets */,
 				ED1MISS0001A0B0C0D0E0F002 /* Missions.xcassets */,
 				ED1DUNG0001A0B0C0D0E0F002 /* Dungeons.xcassets */,
+				RAID0001XCASSETS0FREF0001 /* RaidBosses.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -531,6 +548,8 @@
 			isa = PBXGroup;
 			children = (
 				C1A2B3C4D5E6F7A8B9C0D105 /* AdventuresHubView.swift */,
+				AA01BB02CC03DD04EE05FF09 /* ArenaFightView.swift */,
+				AA01BB02CC03DD04EE05FF0B /* ArenaShopView.swift */,
 				C1A2B3C4D5E6F7A8B9C0D109 /* ArenaView.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* DungeonListView.swift */,
 				D4E5F6A8B8C9D0E1F2A3B4C6 /* DungeonLobbyView.swift */,
@@ -658,6 +677,8 @@
 		TOST0005SHARED0GROUP00001 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				CELB0002EFFECTS0SWIFT00001 /* CelebrationEffects.swift */,
+				LOOT0002REVEAL00SWIFT00001 /* LootRevealView.swift */,
 				TOST0002OVERLAY0SWIFT00001 /* ToastOverlayView.swift */,
 			);
 			path = Shared;
@@ -915,8 +936,10 @@
 				D1E2F3A4B5C6D7E8F9A0B1C2 /* Avatars.xcassets in Resources */,
 				ED1MISS0001A0B0C0D0E0F001 /* Missions.xcassets in Resources */,
 				ED1DUNG0001A0B0C0D0E0F001 /* Dungeons.xcassets in Resources */,
+				RAID0001XCASSETS0BUILD001 /* RaidBosses.xcassets in Resources */,
 				CONS0001XCASSETS0BUILD001 /* Consumables.xcassets in Resources */,
 				MATS0001XCASSETS0BUILD001 /* Materials.xcassets in Resources */,
+				GEMS0001XCASSETS0BUILD001 /* Gems.xcassets in Resources */,
 				CFBK0001FALLBACK0BUILD001 /* content_fallback.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -931,13 +954,18 @@
 				SUPA0005AUTHVIW0BUILD00001 /* AuthView.swift in Sources */,
 				SUPA0007AUTHGAT0BUILD00001 /* AuthGateView.swift in Sources */,
 				SPLSH001SPLSHVW0BUILD00001 /* SplashScreenView.swift in Sources */,
+				CELB0001EFFECTS0BUILD00001 /* CelebrationEffects.swift in Sources */,
 				TOST0001OVERLAY0BUILD00001 /* ToastOverlayView.swift in Sources */,
 				TOST0003MANAGER0BUILD00001 /* ToastManager.swift in Sources */,
+				LOOT0001REVEAL00BUILD00001 /* LootRevealView.swift in Sources */,
 				WTHR0001SERVICE0BUILD00001 /* WeatherService.swift in Sources */,
 				SUPA0003SERVICE0BUILD00001 /* SupabaseService.swift in Sources */,
 				C1A2B3C4D5E6F7A8B9C0D106 /* AdventuresHubView.swift in Sources */,
 				2F4C92D4635332761BF5043C /* AFKMission.swift in Sources */,
 				C1A2B3C4D5E6F7A8B9C0D104 /* Arena.swift in Sources */,
+				AA01BB02CC03DD04EE05FF06 /* ArenaEngine.swift in Sources */,
+				AA01BB02CC03DD04EE05FF08 /* ArenaFightView.swift in Sources */,
+				AA01BB02CC03DD04EE05FF0A /* ArenaShopView.swift in Sources */,
 				C1A2B3C4D5E6F7A8B9C0D10A /* ArenaView.swift in Sources */,
 				EA0EBDD78DE79ADBF97489E6 /* CharacterCreationView.swift in Sources */,
 				CD6FE9F1E0FA5060779358B4 /* CharacterView.swift in Sources */,

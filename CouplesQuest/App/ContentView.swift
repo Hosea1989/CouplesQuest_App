@@ -299,9 +299,18 @@ struct ContentView: View {
         case .exp:
             rewards.append((icon: "sparkles", label: "EXP", value: "+\(achievement.rewardAmount)", color: Color("AccentGold")))
         case .gold:
-            rewards.append((icon: "dollarsign.circle.fill", label: "Gold", value: "+\(achievement.rewardAmount)", color: Color("AccentGold")))
+            rewards.append((icon: "gold-coin", label: "Gold", value: "+\(achievement.rewardAmount)", color: Color("AccentGold")))
         case .gems:
-            rewards.append((icon: "diamond.fill", label: "Gems", value: "+\(achievement.rewardAmount)", color: Color("AccentPurple")))
+            let gemIcon: String = {
+                switch achievement.rewardAmount {
+                case ...2: return "gem-blue"
+                case 3...4: return "gem-green"
+                case 5...9: return "gem-purple"
+                case 10...24: return "gem-red"
+                default: return "gem-gold"
+                }
+            }()
+            rewards.append((icon: gemIcon, label: "Gems", value: "+\(achievement.rewardAmount)", color: Color("AccentPurple")))
         case .title:
             rewards.append((icon: "textformat", label: "New Title", value: "Unlocked", color: Color("AccentGreen")))
         case .equipment:

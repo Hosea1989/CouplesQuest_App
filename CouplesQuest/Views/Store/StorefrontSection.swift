@@ -136,9 +136,7 @@ struct StorefrontSection: View {
                                     .strikethrough()
                                     .foregroundColor(.secondary)
                                 HStack(spacing: 4) {
-                                    Image(systemName: "dollarsign.circle.fill")
-                                        .foregroundColor(Color("AccentGold"))
-                                        .font(.caption)
+                                    GoldCoinIcon(size: 14)
                                     Text("\(salePrice)")
                                         .font(.custom("Avenir-Heavy", size: 16))
                                         .foregroundColor(canAfford ? Color("AccentGold") : .red)
@@ -292,9 +290,7 @@ struct StorefrontSection: View {
                 .foregroundColor(.secondary)
         } else if isUnlocked {
             HStack(spacing: 4) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .foregroundColor(Color("AccentGold"))
-                    .font(.caption)
+                GoldCoinIcon(size: 14)
                 Text("\(goldCost)")
                     .font(.custom("Avenir-Heavy", size: 15))
                     .foregroundColor(canAfford ? Color("AccentGold") : .red)
@@ -390,9 +386,7 @@ struct StorefrontSection: View {
                                         .foregroundColor(Color("AccentGreen"))
                                 } else {
                                     HStack(spacing: 3) {
-                                        Image(systemName: "dollarsign.circle.fill")
-                                            .foregroundColor(Color("AccentGold"))
-                                            .font(.caption2)
+                                        GoldCoinIcon(size: 12)
                                         Text("\(piece.goldCost)")
                                             .font(.custom("Avenir-Heavy", size: 14))
                                             .foregroundColor(canAfford ? Color("AccentGold") : .red)
@@ -502,16 +496,12 @@ struct StorefrontSection: View {
                         } else {
                             HStack(spacing: 3) {
                                 if isGemBundle {
-                                    Image(systemName: "diamond.fill")
-                                        .foregroundColor(Color("AccentPurple"))
-                                        .font(.caption2)
+                                    GemCurrencyIcon(size: 14)
                                     Text("\(bundle.gemCost)")
                                         .font(.custom("Avenir-Heavy", size: 15))
                                         .foregroundColor(canAfford ? Color("AccentPurple") : .red)
                                 } else {
-                                    Image(systemName: "dollarsign.circle.fill")
-                                        .foregroundColor(Color("AccentGold"))
-                                        .font(.caption2)
+                                    GoldCoinIcon(size: 12)
                                     Text("\(bundle.goldCost)")
                                         .font(.custom("Avenir-Heavy", size: 15))
                                         .foregroundColor(canAfford ? Color("AccentGold") : .red)

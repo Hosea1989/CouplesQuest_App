@@ -343,16 +343,6 @@ struct CharacterHeader: View {
                         .font(.custom("Avenir-Medium", size: 16))
                         .foregroundColor(.secondary)
                     
-                    Text("•")
-                        .foregroundColor(.secondary)
-                    
-                    HStack(spacing: 3) {
-                        Image(systemName: "bolt.shield.fill")
-                            .font(.system(size: 12))
-                        Text("\(character.heroPower)")
-                            .font(.custom("Avenir-Heavy", size: 14))
-                    }
-                    .foregroundColor(Color("AccentOrange"))
                 }
                 
                 if let characterClass = character.characterClass {
@@ -439,9 +429,12 @@ struct CharacterHeader: View {
                     let expIntoLevel = character.currentEXP - currentLevelExp
                     let expNeeded = nextLevelExp - currentLevelExp
                     
-                    Text("EXP: \(expIntoLevel) / \(expNeeded)")
-                        .font(.custom("Avenir-Medium", size: 12))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        ExpGemIcon(size: 12)
+                        Text("\(expIntoLevel) / \(expNeeded)")
+                            .font(.custom("Avenir-Medium", size: 12))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .padding(.horizontal, 24)
@@ -757,7 +750,7 @@ struct StatBarRow: View {
     let canAllocate: Bool
     
     @State private var justAllocated: Bool = false
-    @State private var showBreakdown: Bool = false
+    @State private var showTooltip: Bool = false
     
     var bonusValue: Int {
         effectiveValue - value
@@ -792,11 +785,6 @@ struct StatBarRow: View {
                     }
                 }
                 
-                // Disclosure chevron to hint tappability
-                Image(systemName: showBreakdown ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary.opacity(0.6))
-                
                 if canAllocate {
                     Button(action: allocatePoint) {
                         ZStack {
@@ -813,22 +801,32 @@ struct StatBarRow: View {
                 }
             }
             
-            // Expandable source breakdown
-            if showBreakdown {
-                StatSourceBreakdown(breakdown: character.statBreakdown(for: statType))
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            
-            // Description
-            Text(statType.description)
-                .font(.custom("Avenir-Medium", size: 11))
-                .foregroundColor(.secondary)
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showBreakdown.toggle()
+            showTooltip.toggle()
+        }
+        .popover(isPresented: $showTooltip) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: statType.icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(statType.color))
+                    Text(statType.rawValue)
+                        .font(.custom("Avenir-Heavy", size: 16))
+                }
+                
+                Text(statType.description)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.secondary)
+                
+                Divider()
+                
+                StatSourceBreakdown(breakdown: character.statBreakdown(for: statType))
             }
+            .padding()
+            .frame(width: 260)
+            .presentationCompactAdaptation(.popover)
         }
     }
     
@@ -903,18 +901,36 @@ struct EquipmentTabContent: View {
     @Query private var allEquipment: [Equipment]
     
     @State private var selectedSlot: EquipmentSlot?
-    @State private var showSlotPicker = false
     @State private var equipFeedback = 0
     
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color("AccentOrange"))
+                Text("Hero Might")
+                    .font(.custom("Avenir-Medium", size: 14))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(character.effectiveStats.combatTotal)")
+                    .font(.custom("Avenir-Heavy", size: 18))
+                    .foregroundColor(Color("AccentOrange"))
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.3), value: character.effectiveStats.combatTotal)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color("AccentOrange").opacity(0.08))
+            )
+
             ForEach(EquipmentSlot.allCases, id: \.self) { slot in
                 EquipmentSlotRow(
                     slot: slot,
                     equipment: character.equipment.item(for: slot),
                     onTap: {
                         selectedSlot = slot
-                        showSlotPicker = true
                     }
                 )
             }
@@ -942,18 +958,16 @@ struct EquipmentTabContent: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color("CardBackground"))
         )
-        .sheet(isPresented: $showSlotPicker) {
-            if let slot = selectedSlot {
-                EquipmentSlotPickerView(
-                    slot: slot,
-                    character: character,
-                    allEquipment: allEquipment,
-                    onEquip: { item in equipItem(item) },
-                    onUnequip: { item in unequipItem(item) }
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
+        .sheet(item: $selectedSlot) { slot in
+            EquipmentSlotPickerView(
+                slot: slot,
+                character: character,
+                allEquipment: allEquipment,
+                onEquip: { item in equipItem(item) },
+                onUnequip: { item in unequipItem(item) }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sensoryFeedback(.success, trigger: equipFeedback)
     }
@@ -969,7 +983,7 @@ struct EquipmentTabContent: View {
         Task { try? await SupabaseService.shared.syncEquipment(item) }
         equipFeedback += 1
         AudioManager.shared.play(.equipItem)
-        showSlotPicker = false
+        selectedSlot = nil
     }
     
     private func unequipItem(_ item: Equipment) {

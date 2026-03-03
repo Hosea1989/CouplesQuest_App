@@ -262,7 +262,7 @@ struct SplashScreenView: View {
             // #region agent log
             _debugLog("SplashScreen.onAppear — starting animations", hyp: "H-B")
             // #endregion
-            AudioManager.shared.play(.splashIntro)
+            AudioManager.shared.play(.splashIntro, maxDuration: 3.0)
             startAnimations()
         }
         .onDisappear {

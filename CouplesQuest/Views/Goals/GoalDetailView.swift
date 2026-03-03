@@ -227,8 +227,7 @@ struct GoalDetailView: View {
                                     .font(.custom("Avenir-Medium", size: 11))
                             }
                             HStack(spacing: 3) {
-                                Image(systemName: "dollarsign.circle.fill")
-                                    .font(.caption2)
+                                GoldCoinIcon(size: 12)
                                 Text("+\(milestone.goldReward)")
                                     .font(.custom("Avenir-Medium", size: 11))
                             }

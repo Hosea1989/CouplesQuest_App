@@ -48,6 +48,11 @@ final class Stats {
         strength + wisdom + charisma + dexterity + luck + defense
     }
     
+    /// Combat-relevant stat total (excludes luck — luck only affects loot/chest rolls)
+    var combatTotal: Int {
+        strength + wisdom + charisma + dexterity + defense
+    }
+    
     /// Get stat value by type
     func value(for type: StatType) -> Int {
         switch type {

@@ -148,7 +148,7 @@ struct EditTaskView: View {
                             .foregroundColor(Color("AccentGold"))
                             
                             HStack(spacing: 4) {
-                                Image(systemName: "dollarsign.circle.fill")
+                                GoldCoinIcon(size: 16)
                                 Text("+\(previewGold)")
                             }
                             .font(.custom("Avenir-Heavy", size: 14))

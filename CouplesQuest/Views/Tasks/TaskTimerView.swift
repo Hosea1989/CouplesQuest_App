@@ -166,16 +166,14 @@ struct TaskTimerView: View {
                     // Reward preview
                     HStack(spacing: 20) {
                         HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .foregroundColor(Color("AccentGold"))
+                            ExpGemIcon(size: 16)
                             Text("+\(task.scaledExpReward(characterLevel: characterLevel)) EXP")
                                 .font(.custom("Avenir-Heavy", size: 14))
                                 .foregroundColor(Color("AccentGold"))
                         }
                         
                         HStack(spacing: 4) {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundColor(Color("AccentGold"))
+                            GoldCoinIcon(size: 16)
                             Text("+\(task.scaledGoldReward(characterLevel: characterLevel)) Gold")
                                 .font(.custom("Avenir-Heavy", size: 14))
                                 .foregroundColor(Color("AccentGold"))

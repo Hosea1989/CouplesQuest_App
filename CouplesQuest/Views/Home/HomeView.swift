@@ -10,6 +10,7 @@ struct HomeView: View {
     @Query private var missions: [AFKMission]
     @Query(sort: \Goal.createdAt, order: .reverse) private var allGoals: [Goal]
     @Query private var bonds: [Bond]
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     /// Today's date formatted for the navigation title (e.g. "Monday, Feb 9")
     private var todayDateString: String {
@@ -169,11 +170,7 @@ struct HomeView: View {
                                 .cardEntrance(visible: cardsAppeared, delay: 7)
                             }
                             
-                            // 9. Quick Stats
-                            QuickStatsGrid(character: character)
-                                .cardEntrance(visible: cardsAppeared, delay: 8)
-                            
-                            // 9.5. Leaderboard Summary Card
+                            // 9. Leaderboard Summary Card
                             NavigationLink(destination: TasksView(isEmbedded: true)) {
                                 LeaderboardSummaryCard(allTasks: allTasks, character: character)
                             }
@@ -276,7 +273,7 @@ struct HomeView: View {
                         character: character,
                         rewards: [
                             (icon: "sparkles", label: "EXP Earned", value: "+\(quest.expReward)", color: Color("AccentGold")),
-                            (icon: "dollarsign.circle.fill", label: "Gold Earned", value: "+\(quest.goldReward)", color: Color("AccentGold"))
+                            (icon: "gold-coin", label: "Gold Earned", value: "+\(quest.goldReward)", color: Color("AccentGold"))
                         ],
                         onDismiss: {
                             withAnimation { showDailyQuestCelebration = false; claimedDailyQuest = nil }
@@ -450,6 +447,19 @@ struct HomeView: View {
                     context: modelContext
                 )
                 result.materialDrops = [herbDrop]
+                
+                if let boss = raidBosses.first(where: { $0.isActive }) {
+                    if let raidResult = gameEngine.dealRaidDamage(
+                        character: character,
+                        boss: boss,
+                        activityType: .mission,
+                        activityValue: mission.expReward,
+                        sourceLabel: "Mission: \(mission.name)"
+                    ) {
+                        result.raidDamageDealt = raidResult.damage
+                        result.raidRetaliationTaken = raidResult.retaliationDamage
+                    }
+                }
             }
             
             lastMissionResult = result
@@ -581,9 +591,12 @@ struct CharacterSummaryCard: View {
             // EXP Progress Bar with shimmer
             VStack(spacing: 8) {
                 HStack {
-                    Text("EXP")
-                        .font(.custom("Avenir-Heavy", size: 12))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        ExpGemIcon(size: 14)
+                        Text("EXP")
+                            .font(.custom("Avenir-Heavy", size: 12))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                     Text("\(character.currentEXP) / \(character.expToNextLevel)")
                         .font(.custom("Avenir-Medium", size: 12))
@@ -629,8 +642,7 @@ struct CharacterSummaryCard: View {
             // Currency Row
             HStack(spacing: 24) {
                 HStack(spacing: 6) {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .foregroundColor(Color("AccentGold"))
+                    GoldCoinIcon(size: 18)
                     Text("\(character.gold)")
                         .font(.custom("Avenir-Heavy", size: 16))
                 }
@@ -1310,107 +1322,6 @@ struct LevelUpBanner: View {
     }
 }
 
-// MARK: - Quick Stats Grid
-
-struct QuickStatsGrid: View {
-    let character: PlayerCharacter
-    
-    var body: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 12) {
-            StatBadge(
-                icon: "checkmark.circle.fill",
-                value: "\(character.tasksCompleted)",
-                label: "Tasks Done",
-                color: Color("AccentGreen")
-            )
-            
-            StatBadge(
-                icon: "flame.fill",
-                value: "\(character.longestStreak)",
-                label: "Best Streak",
-                color: Color("AccentOrange")
-            )
-            
-            StatBadge(
-                icon: "star.fill",
-                value: "\(character.stats.total)",
-                label: "Total Stats",
-                color: Color("AccentPurple")
-            )
-        }
-    }
-}
-
-struct StatBadge: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    @State private var displayedValue: Int = 0
-    @State private var iconGlow: Bool = false
-    
-    private var targetValue: Int {
-        Int(value) ?? 0
-    }
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                // Pulsing glow behind icon
-                Circle()
-                    .fill(color.opacity(iconGlow ? 0.2 : 0.08))
-                    .frame(width: 36, height: 36)
-                
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-            }
-            
-            Text("\(displayedValue)")
-                .font(.custom("Avenir-Heavy", size: 20))
-                .contentTransition(.numericText())
-            
-            Text(label)
-                .font(.custom("Avenir-Medium", size: 11))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("CardBackground"))
-        )
-        .onAppear {
-            // Animate number counting up
-            animateCounter()
-            // Pulsing icon glow
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                iconGlow = true
-            }
-        }
-    }
-    
-    private func animateCounter() {
-        let target = targetValue
-        guard target > 0 else { return }
-        let steps = min(target, 20)
-        let stepDuration = 0.6 / Double(steps)
-        
-        for i in 1...steps {
-            DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration * Double(i)) {
-                withAnimation(.easeOut(duration: 0.05)) {
-                    displayedValue = Int(Double(target) * Double(i) / Double(steps))
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Active Duties Home Card
 
 struct ActiveDutiesHomeCard: View {
@@ -1419,6 +1330,7 @@ struct ActiveDutiesHomeCard: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var characters: [PlayerCharacter]
     @Query private var bonds: [Bond]
+    @Query(sort: \WeeklyRaidBoss.weekStartDate, order: .reverse) private var raidBosses: [WeeklyRaidBoss]
     
     @State private var showCompletionCelebration = false
     @State private var lastCompletionResult: TaskCompletionResult?
@@ -1650,7 +1562,21 @@ struct ActiveDutiesHomeCard: View {
         guard let character = character else { return }
         if task.startedAt == nil { task.startTask() }
         
-        let result = gameEngine.completeTask(task, character: character, bond: bond, context: modelContext)
+        var result = gameEngine.completeTask(task, character: character, bond: bond, context: modelContext)
+        
+        if let boss = raidBosses.first(where: { $0.isActive }) {
+            if let raidResult = gameEngine.dealRaidDamage(
+                character: character,
+                boss: boss,
+                activityType: .task,
+                activityValue: task.expReward,
+                sourceLabel: "Task: \(task.title)"
+            ) {
+                result.raidDamageDealt = raidResult.damage
+                result.raidRetaliationTaken = raidResult.retaliationDamage
+            }
+        }
+        
         lastCompletionResult = result
         showCompletionCelebration = true
         gameEngine.updateStreak(for: character, completedTaskToday: true)
@@ -1901,8 +1827,7 @@ struct MeditationHomeCard: View {
                             
                             // Gold reward
                             HStack(spacing: 4) {
-                                Image(systemName: "dollarsign.circle.fill")
-                                    .font(.system(size: 10))
+                                GoldCoinIcon(size: 12)
                                 Text("+\(character.meditationGoldReward) Gold")
                                     .font(.custom("Avenir-Heavy", size: 12))
                             }
@@ -2113,8 +2038,7 @@ struct MoodCheckInCard: View {
                         .foregroundColor(Color("AccentGold"))
                         
                         HStack(spacing: 4) {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .font(.system(size: 10))
+                            GoldCoinIcon(size: 12)
                             Text("+\(result.goldGained) Gold")
                                 .font(.custom("Avenir-Heavy", size: 13))
                         }
@@ -2210,8 +2134,7 @@ struct MoodCheckInCard: View {
                     .foregroundColor(Color("AccentGold").opacity(0.7))
                     
                     HStack(spacing: 4) {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .font(.system(size: 9))
+                        GoldCoinIcon(size: 11)
                         Text("+15 Gold")
                             .font(.custom("Avenir-Heavy", size: 11))
                     }
