@@ -439,6 +439,7 @@ struct EquippedSlotCard: View {
                         Text(equipment.name)
                             .font(.custom("Avenir-Heavy", size: 15))
                             .foregroundColor(Color(equipment.rarity.color))
+                            .rarityShimmer(equipment.rarity)
                         Text(equipment.statSummary)
                             .font(.custom("Avenir-Medium", size: 12))
                             .foregroundColor(Color("AccentGreen"))
@@ -488,6 +489,7 @@ struct InventoryItemRow: View {
                     Text(item.name)
                         .font(.custom("Avenir-Heavy", size: 14))
                         .foregroundColor(Color(item.rarity.color))
+                        .rarityShimmer(item.rarity)
                     Text(item.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(.secondary)
@@ -669,10 +671,20 @@ struct ItemDetailView: View {
     private var equipBlockedReason: String? {
         guard let character = character,
               let charClass = character.characterClass else { return nil }
-        if !charClass.canEquip(item) {
+        guard !charClass.canEquip(item) else { return nil }
+        let base = item.detectedBaseType.capitalized
+        switch item.slot {
+        case .weapon:
+            return "\(charClass.rawValue) cannot equip \(base) weapons"
+        case .armor:
             return "\(charClass.rawValue) cannot equip \(item.armorWeight.label)"
+        case .cloak:
+            return "\(charClass.rawValue) cannot equip \(base)"
+        case .trinket:
+            return "\(charClass.rawValue) cannot equip this trinket"
+        case .accessory:
+            return nil
         }
-        return nil
     }
     
     var body: some View {
@@ -695,6 +707,7 @@ struct ItemDetailView: View {
                             Text(item.name)
                                 .font(.custom("Avenir-Heavy", size: 24))
                                 .foregroundColor(Color(item.rarity.color))
+                                .rarityShimmer(item.rarity)
                             
                             HStack(spacing: 8) {
                                 Text(item.rarity.rawValue)
@@ -1242,6 +1255,7 @@ struct EquipmentComparisonCard: View {
                     Text(equipped.name)
                         .font(.custom("Avenir-Heavy", size: 12))
                         .foregroundColor(Color(equipped.rarity.color))
+                        .rarityShimmer(equipped.rarity)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

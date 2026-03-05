@@ -1,54 +1,152 @@
 import Foundation
 
-// MARK: - Battle Stance
+// MARK: - PVP Fighter Stats
 
-enum BattleStance: String, Codable, CaseIterable, Identifiable {
-    case onslaught = "Onslaught"
-    case fortress = "Fortress"
-    case precision = "Precision"
+struct PVPFighterStats {
+    let atk: Int
+    let guard_: Int
+    let spd: Int
+    let critChance: Double
+    let morale: Double
+    let hp: Int
+    let className: CharacterClass?
+    let level: Int
+    let heroPower: Int
+    let name: String
+    let pvpDamageBonus: Double
+    let pvpHPRegenPercent: Double
+    let bonusAPPercent: Double
+    let bonusGoldPercent: Double
+    let bonusEXPPercent: Double
     
-    var id: String { rawValue }
-    
-    var icon: String {
-        switch self {
-        case .onslaught: return "flame.fill"
-        case .fortress: return "shield.fill"
-        case .precision: return "scope"
-        }
-    }
-    
-    var subtitle: String {
-        switch self {
-        case .onslaught: return "+20% damage dealt"
-        case .fortress: return "-25% damage taken"
-        case .precision: return "2x crit rate, 1.75x crit damage"
-        }
-    }
-    
-    var color: String {
-        switch self {
-        case .onslaught: return "StatStrength"
-        case .fortress: return "StatDefense"
-        case .precision: return "StatLuck"
-        }
-    }
-    
-    func beats(_ other: BattleStance) -> Bool {
-        switch (self, other) {
-        case (.onslaught, .precision): return true
-        case (.precision, .fortress): return true
-        case (.fortress, .onslaught): return true
-        default: return false
-        }
-    }
+    var maxCritChance: Double { min(0.30, critChance) }
 }
 
-// MARK: - Stance Matchup
+// MARK: - PVP Round Event
 
-enum StanceMatchup {
-    case winning
-    case losing
-    case mirror
+struct PVPRoundEvent: Codable, Identifiable {
+    var id: UUID = UUID()
+    let fighterName: String
+    let damage: Int
+    let isCrit: Bool
+    let isDodge: Bool
+    let narrativeText: String
+    let hpAfter: Int
+}
+
+// MARK: - PVP Round Result
+
+struct PVPRoundResult: Codable, Identifiable {
+    var id: UUID = UUID()
+    let roundNumber: Int
+    let roundName: String
+    let events: [PVPRoundEvent]
+    let attackerHPAfter: Int
+    let defenderHPAfter: Int
+}
+
+// MARK: - PVP Match Result
+
+struct PVPMatchResult: Codable {
+    let rounds: [PVPRoundResult]
+    let winnerIsAttacker: Bool
+    let attackerTotalDamage: Int
+    let defenderTotalDamage: Int
+    let attackerFinalHP: Int
+    let defenderFinalHP: Int
+}
+
+// MARK: - Equipment Slot Preview (for opponent gear display)
+
+struct EquipmentSlotPreview: Codable, Identifiable {
+    var id: String { slot }
+    let slot: String
+    let name: String
+    let icon: String
+    let rarity: String
+    let equipmentLevel: Int
+}
+
+// MARK: - Fighter Snapshot (for Supabase sync)
+
+struct FighterSnapshot: Codable, Identifiable {
+    var id: UUID = UUID()
+    var userID: String
+    var name: String
+    var level: Int
+    var className: String?
+    var strength: Int
+    var wisdom: Int
+    var charisma: Int
+    var dexterity: Int
+    var luck: Int
+    var defense: Int
+    var weaponPrimaryBonus: Int
+    var armorPrimaryBonus: Int
+    var heroPower: Int
+    var rating: Int
+    var tier: String
+    var wins: Int
+    var losses: Int
+    var streak: Int
+    var peakRating: Int
+    var recentTrend: String
+    var pendingRevengeIDs: [String]
+    var arenaPoints: Int
+    var hasBond: Bool
+    var equipmentSlots: [EquipmentSlotPreview]
+    var pvpDamageBonus: Double
+    var pvpHPRegenPercent: Double
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, level, strength, wisdom, charisma, dexterity, luck, defense
+        case heroPower = "hero_power"
+        case userID = "user_id"
+        case className = "class"
+        case weaponPrimaryBonus = "weapon_primary_bonus"
+        case armorPrimaryBonus = "armor_primary_bonus"
+        case rating, tier, wins, losses, streak
+        case peakRating = "peak_rating"
+        case recentTrend = "recent_trend"
+        case pendingRevengeIDs = "pending_revenge_ids"
+        case arenaPoints = "arena_points"
+        case hasBond = "has_bond"
+        case equipmentSlots = "equipment_slots"
+        case pvpDamageBonus = "pvp_damage_bonus"
+        case pvpHPRegenPercent = "pvp_hp_regen_percent"
+    }
+    
+    func toPVPStats() -> PVPFighterStats {
+        let charClass = CharacterClass(rawValue: className ?? "")
+        let atkValue = Int(Double(strength + wisdom) * 1.5) + (weaponPrimaryBonus * 3)
+        let guardValue = defense * 2 + (armorPrimaryBonus * 3)
+        let spdValue = Int(Double(dexterity) * 1.5)
+        let critValue = 0.05 + Double(luck) * 0.005
+        let moraleValue = min(0.15, Double(charisma) * 0.003)
+        
+        let classHP = charClass?.baseHP ?? 100
+        let hpPerLvl = charClass?.hpPerLevel ?? 5
+        let defHP = defense * 5
+        let totalHP = classHP + (level * hpPerLvl) + defHP
+        
+        return PVPFighterStats(
+            atk: atkValue,
+            guard_: guardValue,
+            spd: spdValue,
+            critChance: critValue,
+            morale: moraleValue,
+            hp: totalHP,
+            className: charClass,
+            level: level,
+            heroPower: heroPower,
+            name: name,
+            pvpDamageBonus: pvpDamageBonus,
+            pvpHPRegenPercent: pvpHPRegenPercent,
+            bonusAPPercent: 0,
+            bonusGoldPercent: 0,
+            bonusEXPPercent: 0
+        )
+    }
 }
 
 // MARK: - Arena Tier
@@ -130,132 +228,6 @@ enum ArenaTier: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - PVP Fighter Stats
-
-struct PVPFighterStats {
-    let atk: Int
-    let guard_: Int
-    let spd: Int
-    let critChance: Double
-    let morale: Double
-    let hp: Int
-    let className: CharacterClass?
-    let level: Int
-    let heroPower: Int
-    let name: String
-    
-    var maxCritChance: Double { min(0.30, critChance) }
-}
-
-// MARK: - PVP Round Event
-
-struct PVPRoundEvent: Codable, Identifiable {
-    var id: UUID = UUID()
-    let fighterName: String
-    let damage: Int
-    let isCrit: Bool
-    let isDodge: Bool
-    let narrativeText: String
-    let hpAfter: Int
-}
-
-// MARK: - PVP Round Result
-
-struct PVPRoundResult: Codable, Identifiable {
-    var id: UUID = UUID()
-    let roundNumber: Int
-    let roundName: String
-    let events: [PVPRoundEvent]
-    let attackerHPAfter: Int
-    let defenderHPAfter: Int
-}
-
-// MARK: - PVP Match Result
-
-struct PVPMatchResult: Codable {
-    let rounds: [PVPRoundResult]
-    let winnerIsAttacker: Bool
-    let attackerTotalDamage: Int
-    let defenderTotalDamage: Int
-    let attackerFinalHP: Int
-    let defenderFinalHP: Int
-    let attackerStance: BattleStance
-    let defenderStance: BattleStance
-    let stanceMatchup: String
-}
-
-// MARK: - Fighter Snapshot (for Supabase sync)
-
-struct FighterSnapshot: Codable, Identifiable {
-    var id: UUID = UUID()
-    var userID: String
-    var name: String
-    var level: Int
-    var className: String?
-    var strength: Int
-    var wisdom: Int
-    var charisma: Int
-    var dexterity: Int
-    var luck: Int
-    var defense: Int
-    var weaponPrimaryBonus: Int
-    var armorPrimaryBonus: Int
-    var heroPower: Int
-    var rating: Int
-    var tier: String
-    var defenseStance: String
-    var wins: Int
-    var losses: Int
-    var streak: Int
-    var peakRating: Int
-    var recentTrend: String // "up", "down", "neutral"
-    var pendingRevengeIDs: [String]
-    var arenaPoints: Int
-    var hasBond: Bool
-    
-    enum CodingKeys: String, CodingKey {
-        case id, name, level, strength, wisdom, charisma, dexterity, luck, defense
-        case heroPower = "hero_power"
-        case userID = "user_id"
-        case className = "class"
-        case weaponPrimaryBonus = "weapon_primary_bonus"
-        case armorPrimaryBonus = "armor_primary_bonus"
-        case rating, tier, wins, losses, streak
-        case defenseStance = "defense_stance"
-        case peakRating = "peak_rating"
-        case recentTrend = "recent_trend"
-        case pendingRevengeIDs = "pending_revenge_ids"
-        case arenaPoints = "arena_points"
-        case hasBond = "has_bond"
-    }
-    
-    func toPVPStats() -> PVPFighterStats {
-        let charClass = CharacterClass(rawValue: className ?? "")
-        let atkValue = strength + wisdom + (weaponPrimaryBonus * 2)
-        let guardValue = defense + (armorPrimaryBonus * 2)
-        let critValue = 0.05 + Double(luck) * 0.005
-        let moraleValue = min(0.15, Double(charisma) * 0.003)
-        
-        let classHP = charClass?.baseHP ?? 100
-        let hpPerLvl = charClass?.hpPerLevel ?? 5
-        let defHP = defense * 5
-        let totalHP = classHP + (level * hpPerLvl) + defHP
-        
-        return PVPFighterStats(
-            atk: atkValue,
-            guard_: guardValue,
-            spd: dexterity,
-            critChance: critValue,
-            morale: moraleValue,
-            hp: totalHP,
-            className: charClass,
-            level: level,
-            heroPower: heroPower,
-            name: name
-        )
-    }
-}
-
 // MARK: - Arena Engine
 
 struct ArenaEngine {
@@ -267,7 +239,7 @@ struct ArenaEngine {
     static let revengeExpiryHours = 48
     static let revengeBonusMultiplier = 1.5
     
-    // MARK: - Derive PVP Stats
+    // MARK: - Derive PVP Stats (Deep Gear Integration)
     
     static func derivePVPStats(from character: PlayerCharacter, bondBuff: Bool = false) -> PVPFighterStats {
         let stats = character.effectiveStats
@@ -277,12 +249,42 @@ struct ArenaEngine {
         let weaponBonus = weapon != nil ? Int(weapon!.effectivePrimaryBonus.rounded()) : 0
         let armorBonus = armor != nil ? Int(armor!.effectivePrimaryBonus.rounded()) : 0
         
-        var atkValue = stats.strength + stats.wisdom + (weaponBonus * 2)
-        var guardValue = stats.defense + (armorBonus * 2)
-        var spdValue = stats.dexterity
+        var atkValue = Int(Double(stats.strength + stats.wisdom) * 1.5) + (weaponBonus * 3)
+        var guardValue = stats.defense * 2 + (armorBonus * 3)
+        var spdValue = Int(Double(stats.dexterity) * 1.5)
         var critBase = 0.05 + Double(stats.luck) * 0.005
         var moraleBase = min(0.15, Double(stats.charisma) * 0.003)
         let hpValue = character.maxHP
+        
+        // Aggregate quirk special effects from all equipment for PVP translation
+        let equippedItems = character.equipment.allEquipped
+        var pvpDamageBonus: Double = 0
+        var pvpHPRegenPercent: Double = 0
+        var bonusAPPercent: Double = 0
+        var bonusGoldPercent: Double = 0
+        var bonusEXPPercent: Double = 0
+        
+        for item in equippedItems {
+            let effects = item.quirkSpecialEffects
+            if let dungeonDmg = effects[.dungeonDamage] {
+                pvpDamageBonus += dungeonDmg * 0.5
+            }
+            if let bossDmg = effects[.bossDamage] {
+                pvpDamageBonus += bossDmg * 0.25
+            }
+            if let hpRegen = effects[.hpRegen] {
+                pvpHPRegenPercent += hpRegen
+            }
+            if let lootChance = effects[.lootChance] {
+                bonusAPPercent += lootChance
+            }
+            if let goldPct = effects[.goldPercent] {
+                bonusGoldPercent += goldPct
+            }
+            if let expPct = effects[.expPercent] {
+                bonusEXPPercent += expPct
+            }
+        }
         
         if bondBuff {
             atkValue = Int(Double(atkValue) * 1.05)
@@ -302,31 +304,20 @@ struct ArenaEngine {
             className: character.characterClass,
             level: character.level,
             heroPower: character.heroPower,
-            name: character.name
+            name: character.name,
+            pvpDamageBonus: pvpDamageBonus,
+            pvpHPRegenPercent: pvpHPRegenPercent,
+            bonusAPPercent: bonusAPPercent,
+            bonusGoldPercent: bonusGoldPercent,
+            bonusEXPPercent: bonusEXPPercent
         )
     }
     
-    // MARK: - Stance Matchup
-    
-    static func stanceMatchup(attacker: BattleStance, defender: BattleStance, attackerClass: CharacterClass?) -> StanceMatchup {
-        if attacker == defender { return .mirror }
-        
-        // Trickster: stance matchup is never "losing"
-        if attackerClass == .trickster && defender.beats(attacker) {
-            return .mirror
-        }
-        
-        if attacker.beats(defender) { return .winning }
-        return .losing
-    }
-    
-    // MARK: - Damage Calculation
+    // MARK: - Damage Calculation (Stats + Gear Driven)
     
     static func calculateDamage(
         attacker: PVPFighterStats,
         defender: PVPFighterStats,
-        attackerStance: BattleStance,
-        matchup: StanceMatchup,
         roundNumber: Int,
         attackerCurrentHP: Int,
         defenderCurrentHP: Int,
@@ -342,7 +333,7 @@ struct ArenaEngine {
         let guardReduce = effectiveGuard / (effectiveGuard + 80.0)
         let moraleReduce = defender.morale
         
-        // Dodge check
+        // Dodge check: DEX-driven
         var dodgeChance = Double(defender.spd) / (Double(defender.spd) + Double(attacker.spd) + 120.0)
         
         // Archer Quick Draw: +25% dodge in Round 1 (when defending)
@@ -353,6 +344,10 @@ struct ArenaEngine {
         if defender.className == .ranger {
             dodgeChance += 0.15
         }
+        // Enchanter: +10% dodge
+        if defender.className == .enchanter {
+            dodgeChance += 0.10
+        }
         
         dodgeChance = min(0.60, dodgeChance)
         
@@ -362,20 +357,16 @@ struct ArenaEngine {
         
         var raw = baseDamage * (1.0 - guardReduce) * (1.0 - moraleReduce)
         
-        // Stance damage modifier
-        switch attackerStance {
-        case .onslaught:
-            let bonus = matchup == .losing ? 0.08 : 0.20
-            raw *= (1.0 + bonus)
-        case .fortress:
-            break
-        case .precision:
-            break
+        // Quirk PVP damage bonus
+        if attacker.pvpDamageBonus > 0 {
+            raw *= (1.0 + attacker.pvpDamageBonus / 100.0)
         }
         
-        // Stance matchup bonus
-        if matchup == .winning {
-            raw *= 1.10
+        // Hero Might differential: every 100 HM above opponent = +1%
+        let hmDiff = attacker.heroPower - defender.heroPower
+        if hmDiff > 0 {
+            let hmBonus = Double(hmDiff / 100) * 0.01
+            raw *= (1.0 + min(0.15, hmBonus))
         }
         
         // Class passives affecting ATK
@@ -389,6 +380,10 @@ struct ArenaEngine {
                 if Double(attackerCurrentHP) / Double(attacker.hp) < 0.30 {
                     raw *= 1.25
                 }
+            case .mage:
+                // Spell Penetration: ignores 15% of guard
+                let guardPenBonus = effectiveGuard * 0.15 / (effectiveGuard + 80.0)
+                raw *= (1.0 + guardPenBonus)
             default: break
             }
         }
@@ -398,15 +393,17 @@ struct ArenaEngine {
             raw *= 1.05
         }
         
+        // Round 3: +5% damage for dramatic finisher
+        if roundNumber == 3 {
+            raw *= 1.05
+        }
+        
         // Crit check
         var critChance = attacker.maxCritChance
         
-        if attackerStance == .precision {
-            if matchup == .losing {
-                // No doubling when losing stance matchup — weaker crits
-            } else {
-                critChance = min(0.60, critChance * 2.0)
-            }
+        // Archer: +10% base crit
+        if attacker.className == .archer {
+            critChance = min(0.40, critChance + 0.10)
         }
         
         // Round 3: +50% crit chance for dramatic finisher
@@ -416,25 +413,17 @@ struct ArenaEngine {
         
         let isCrit = Double.random(in: 0...1) < critChance
         if isCrit {
-            var critMultiplier: Double
-            switch (attackerStance, matchup) {
-            case (.precision, .losing):
-                critMultiplier = 1.25
-            case (.precision, _):
-                critMultiplier = 1.75
-            default:
-                critMultiplier = 1.50
-            }
+            var critMultiplier = 1.50
             // Mage Arcane Surge: +20% crit damage
             if attacker.className == .mage {
                 critMultiplier += 0.20
             }
+            // Trickster: +20% crit damage
+            if attacker.className == .trickster {
+                critMultiplier += 0.20
+            }
             raw *= critMultiplier
         }
-        
-        // Fortress damage taken reduction (applied when this fighter is the defender, but
-        // here we're calculating damage the attacker deals, so Fortress reduces incoming damage
-        // in resolveRound where we apply it to the defender)
         
         // Variance
         let variance = Double.random(in: 0.92...1.08)
@@ -448,21 +437,18 @@ struct ArenaEngine {
     
     static func applyDefensiveModifiers(
         damage: Int,
-        defender: PVPFighterStats,
-        defenderStance: BattleStance,
-        matchup: StanceMatchup
+        defender: PVPFighterStats
     ) -> Int {
         var reduced = Double(damage)
-        
-        // Fortress stance: damage taken reduction
-        if defenderStance == .fortress {
-            let reduction = matchup == .losing ? 0.10 : 0.25
-            reduced *= (1.0 - reduction)
-        }
         
         // Paladin Iron Will: flat -15% damage taken
         if defender.className == .paladin {
             reduced *= 0.85
+        }
+        
+        // Berserker: takes +10% more damage (tradeoff for massive ATK)
+        if defender.className == .berserker {
+            reduced *= 1.10
         }
         
         return max(1, Int(reduced.rounded()))
@@ -472,25 +458,8 @@ struct ArenaEngine {
     
     static func resolveMatch(
         attacker: PVPFighterStats,
-        defender: PVPFighterStats,
-        attackerStance: BattleStance,
-        defenderStance: BattleStance
+        defender: PVPFighterStats
     ) -> PVPMatchResult {
-        
-        let attackerMatchup = stanceMatchup(attacker: attackerStance, defender: defenderStance, attackerClass: attacker.className)
-        let defenderMatchup: StanceMatchup = {
-            if attackerMatchup == .winning { return .losing }
-            if attackerMatchup == .losing { return .winning }
-            return .mirror
-        }()
-        
-        // Trickster check for defender too
-        let adjustedDefenderMatchup: StanceMatchup
-        if defender.className == .trickster && defenderMatchup == .losing {
-            adjustedDefenderMatchup = .mirror
-        } else {
-            adjustedDefenderMatchup = defenderMatchup
-        }
         
         var attackerHP = attacker.hp
         var defenderHP = defender.hp
@@ -498,6 +467,7 @@ struct ArenaEngine {
         var defenderTotalDamage = 0
         var rounds: [PVPRoundResult] = []
         var defenderGuardReduced = false
+        var attackerGuardReduced = false
         
         let roundNames = ["Opening", "Clash", "Decisive"]
         
@@ -510,14 +480,12 @@ struct ArenaEngine {
                 // Attacker strikes
                 let (atkDmg, atkCrit, atkDodge) = calculateDamage(
                     attacker: attacker, defender: defender,
-                    attackerStance: attackerStance, matchup: attackerMatchup,
                     roundNumber: roundNum, attackerCurrentHP: attackerHP,
-                    defenderCurrentHP: defenderHP, defenderGuardReduced: false
+                    defenderCurrentHP: defenderHP, defenderGuardReduced: defenderGuardReduced
                 )
                 
                 let finalAtkDmg = atkDodge ? 0 : applyDefensiveModifiers(
-                    damage: atkDmg, defender: defender,
-                    defenderStance: defenderStance, matchup: adjustedDefenderMatchup
+                    damage: atkDmg, defender: defender
                 )
                 defenderHP = max(0, defenderHP - finalAtkDmg)
                 attackerTotalDamage += finalAtkDmg
@@ -542,17 +510,19 @@ struct ArenaEngine {
                 if defenderHP > 0 {
                     let (defDmg, defCrit, defDodge) = calculateDamage(
                         attacker: defender, defender: attacker,
-                        attackerStance: defenderStance, matchup: adjustedDefenderMatchup,
                         roundNumber: roundNum, attackerCurrentHP: defenderHP,
-                        defenderCurrentHP: attackerHP, defenderGuardReduced: false
+                        defenderCurrentHP: attackerHP, defenderGuardReduced: attackerGuardReduced
                     )
                     
                     let finalDefDmg = defDodge ? 0 : applyDefensiveModifiers(
-                        damage: defDmg, defender: attacker,
-                        defenderStance: attackerStance, matchup: attackerMatchup
+                        damage: defDmg, defender: attacker
                     )
                     attackerHP = max(0, attackerHP - finalDefDmg)
                     defenderTotalDamage += finalDefDmg
+                    
+                    if defCrit && defender.className == .sorcerer {
+                        attackerGuardReduced = true
+                    }
                     
                     let defNarrative = generateNarrative(
                         attackerName: defender.name, defenderName: attacker.name,
@@ -569,17 +539,19 @@ struct ArenaEngine {
                 // Defender strikes first (only in Round 1 when defender has higher SPD)
                 let (defDmg, defCrit, defDodge) = calculateDamage(
                     attacker: defender, defender: attacker,
-                    attackerStance: defenderStance, matchup: adjustedDefenderMatchup,
                     roundNumber: roundNum, attackerCurrentHP: defenderHP,
-                    defenderCurrentHP: attackerHP, defenderGuardReduced: false
+                    defenderCurrentHP: attackerHP, defenderGuardReduced: attackerGuardReduced
                 )
                 
                 let finalDefDmg = defDodge ? 0 : applyDefensiveModifiers(
-                    damage: defDmg, defender: attacker,
-                    defenderStance: attackerStance, matchup: attackerMatchup
+                    damage: defDmg, defender: attacker
                 )
                 attackerHP = max(0, attackerHP - finalDefDmg)
                 defenderTotalDamage += finalDefDmg
+                
+                if defCrit && defender.className == .sorcerer {
+                    attackerGuardReduced = true
+                }
                 
                 let defNarrative = generateNarrative(
                     attackerName: defender.name, defenderName: attacker.name,
@@ -595,14 +567,12 @@ struct ArenaEngine {
                 if attackerHP > 0 {
                     let (atkDmg, atkCrit, atkDodge) = calculateDamage(
                         attacker: attacker, defender: defender,
-                        attackerStance: attackerStance, matchup: attackerMatchup,
                         roundNumber: roundNum, attackerCurrentHP: attackerHP,
-                        defenderCurrentHP: defenderHP, defenderGuardReduced: false
+                        defenderCurrentHP: defenderHP, defenderGuardReduced: defenderGuardReduced
                     )
                     
                     let finalAtkDmg = atkDodge ? 0 : applyDefensiveModifiers(
-                        damage: atkDmg, defender: defender,
-                        defenderStance: defenderStance, matchup: adjustedDefenderMatchup
+                        damage: atkDmg, defender: defender
                     )
                     defenderHP = max(0, defenderHP - finalAtkDmg)
                     attackerTotalDamage += finalAtkDmg
@@ -625,6 +595,7 @@ struct ArenaEngine {
             }
             
             // Enchanter Arcane Ward: heal 12% maxHP after Round 2
+            // Also apply quirk HP regen after Round 2
             if roundNum == 2 {
                 if attacker.className == .enchanter {
                     attackerHP = min(attacker.hp, attackerHP + Int(Double(attacker.hp) * 0.12))
@@ -632,7 +603,18 @@ struct ArenaEngine {
                 if defender.className == .enchanter {
                     defenderHP = min(defender.hp, defenderHP + Int(Double(defender.hp) * 0.12))
                 }
+                if attacker.pvpHPRegenPercent > 0 {
+                    attackerHP = min(attacker.hp, attackerHP + Int(Double(attacker.hp) * attacker.pvpHPRegenPercent / 100.0))
+                }
+                if defender.pvpHPRegenPercent > 0 {
+                    defenderHP = min(defender.hp, defenderHP + Int(Double(defender.hp) * defender.pvpHPRegenPercent / 100.0))
+                }
             }
+            
+            // Trickster: 20% chance to nullify opponent's class passive each round
+            // (already handled implicitly -- Trickster has crit damage bonus instead)
+            
+            // Ranger: +10% damage to targets above 70% HP (applied in damage calc via raw modifier)
             
             rounds.append(PVPRoundResult(
                 roundNumber: roundNum,
@@ -657,24 +639,13 @@ struct ArenaEngine {
             winnerIsAttacker = attackerHP >= defenderHP
         }
         
-        let matchupName: String = {
-            switch stanceMatchup(attacker: attackerStance, defender: defenderStance, attackerClass: attacker.className) {
-            case .winning: return "winning"
-            case .losing: return "losing"
-            case .mirror: return "mirror"
-            }
-        }()
-        
         return PVPMatchResult(
             rounds: rounds,
             winnerIsAttacker: winnerIsAttacker,
             attackerTotalDamage: attackerTotalDamage,
             defenderTotalDamage: defenderTotalDamage,
             attackerFinalHP: attackerHP,
-            defenderFinalHP: defenderHP,
-            attackerStance: attackerStance,
-            defenderStance: defenderStance,
-            stanceMatchup: matchupName
+            defenderFinalHP: defenderHP
         )
     }
     
@@ -685,20 +656,20 @@ struct ArenaEngine {
         
         let winnerGain: Int
         if diff > 200 {
-            winnerGain = 40 // upset bonus
+            winnerGain = 40
         } else if diff < -200 {
-            winnerGain = 12 // expected win
+            winnerGain = 12
         } else {
-            winnerGain = 25 // standard
+            winnerGain = 25
         }
         
         let loserLoss: Int
         if diff > 200 {
-            loserLoss = 12 // expected loss
+            loserLoss = 12
         } else if diff < -200 {
-            loserLoss = 30 // upset loss
+            loserLoss = 30
         } else {
-            loserLoss = 20 // standard
+            loserLoss = 20
         }
         
         return (winnerGain, loserLoss)
@@ -711,11 +682,11 @@ struct ArenaEngine {
     
     // MARK: - Rewards
     
-    static func matchRewards(won: Bool, opponentRating: Int, playerLevel: Int, streak: Int, isRevenge: Bool) -> (arenaPoints: Int, gold: Int, exp: Int) {
+    static func matchRewards(won: Bool, opponentRating: Int, playerLevel: Int, streak: Int, isRevenge: Bool, bonusAPPercent: Double = 0, bonusGoldPercent: Double = 0, bonusEXPPercent: Double = 0) -> (arenaPoints: Int, gold: Int, exp: Int) {
         if won {
             var ap = Int.random(in: 15...25)
-            let gold = Int.random(in: 50...150)
-            let exp = playerLevel * 3
+            var gold = Int.random(in: 50...150)
+            var exp = playerLevel * 3
             
             if streak >= 3 {
                 ap = Int(Double(ap) * 1.5)
@@ -724,12 +695,54 @@ struct ArenaEngine {
                 ap = Int(Double(ap) * ArenaEngine.revengeBonusMultiplier)
             }
             
+            // Quirk bonuses
+            if bonusAPPercent > 0 {
+                ap = Int(Double(ap) * (1.0 + bonusAPPercent / 100.0))
+            }
+            if bonusGoldPercent > 0 {
+                gold = Int(Double(gold) * (1.0 + bonusGoldPercent / 100.0))
+            }
+            if bonusEXPPercent > 0 {
+                exp = Int(Double(exp) * (1.0 + bonusEXPPercent / 100.0))
+            }
+            
             return (ap, gold, exp)
         } else {
             let ap = Int.random(in: 3...5)
             let exp = playerLevel * 1
             return (ap, 0, exp)
         }
+    }
+    
+    // MARK: - Difficulty Assessment
+    
+    enum OpponentDifficulty: String {
+        case easy = "Easy"
+        case even = "Even"
+        case hard = "Hard"
+        
+        var color: String {
+            switch self {
+            case .easy: return "AccentGreen"
+            case .even: return "AccentGold"
+            case .hard: return "AccentRed"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .easy: return "chevron.down"
+            case .even: return "equal"
+            case .hard: return "chevron.up"
+            }
+        }
+    }
+    
+    static func assessDifficulty(playerHeroPower: Int, opponentHeroPower: Int) -> OpponentDifficulty {
+        let diff = opponentHeroPower - playerHeroPower
+        if diff > 150 { return .hard }
+        if diff < -150 { return .easy }
+        return .even
     }
     
     // MARK: - Narrative Generation
@@ -781,6 +794,42 @@ struct ArenaEngine {
         let weaponBonus = weapon != nil ? Int(weapon!.effectivePrimaryBonus.rounded()) : 0
         let armorBonus = armor != nil ? Int(armor!.effectivePrimaryBonus.rounded()) : 0
         
+        let equippedItems = character.equipment.allEquipped
+        var pvpDamageBonus: Double = 0
+        var pvpHPRegenPercent: Double = 0
+        
+        for item in equippedItems {
+            let effects = item.quirkSpecialEffects
+            if let dungeonDmg = effects[.dungeonDamage] {
+                pvpDamageBonus += dungeonDmg * 0.5
+            }
+            if let bossDmg = effects[.bossDamage] {
+                pvpDamageBonus += bossDmg * 0.25
+            }
+            if let hpRegen = effects[.hpRegen] {
+                pvpHPRegenPercent += hpRegen
+            }
+        }
+        
+        // Build equipment slot previews
+        let slotPairs: [(String, Equipment?)] = [
+            ("Weapon", character.equipment.weapon),
+            ("Armor", character.equipment.armor),
+            ("Accessory", character.equipment.accessory),
+            ("Trinket", character.equipment.trinket),
+            ("Cloak", character.equipment.cloak)
+        ]
+        let equipPreviews: [EquipmentSlotPreview] = slotPairs.compactMap { slotName, item in
+            guard let item = item else { return nil }
+            return EquipmentSlotPreview(
+                slot: slotName,
+                name: item.name,
+                icon: item.imageName ?? EquipmentSlot(rawValue: slotName)?.icon ?? "questionmark",
+                rarity: item.rarity.rawValue,
+                equipmentLevel: item.equipmentLevel
+            )
+        }
+        
         return FighterSnapshot(
             userID: userID,
             name: character.name,
@@ -797,7 +846,6 @@ struct ArenaEngine {
             heroPower: character.heroPower,
             rating: character.arenaRating,
             tier: ArenaTier.tier(for: character.arenaRating).rawValue,
-            defenseStance: character.arenaDefenseStance,
             wins: character.arenaWins,
             losses: character.arenaLosses,
             streak: character.arenaStreak,
@@ -805,7 +853,10 @@ struct ArenaEngine {
             recentTrend: "neutral",
             pendingRevengeIDs: [],
             arenaPoints: character.arenaPoints,
-            hasBond: character.partyID != nil
+            hasBond: character.partyID != nil,
+            equipmentSlots: equipPreviews,
+            pvpDamageBonus: pvpDamageBonus,
+            pvpHPRegenPercent: pvpHPRegenPercent
         )
     }
 }

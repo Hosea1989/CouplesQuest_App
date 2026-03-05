@@ -3,7 +3,6 @@ import SwiftUI
 struct ArenaFightView: View {
     let character: PlayerCharacter
     let opponent: FighterSnapshot
-    let attackerStance: BattleStance
     let isRevenge: Bool
     let onComplete: (PVPMatchResult, (arenaPoints: Int, gold: Int, exp: Int), Int) -> Void
     
@@ -25,21 +24,19 @@ struct ArenaFightView: View {
     @State private var shakeDefender = false
     @State private var showCritFlash = false
     
-    private var defenderStance: BattleStance {
-        BattleStance(rawValue: opponent.defenseStance) ?? .fortress
-    }
-    
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            ZStack {
+                Image("arena_desert")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+                
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+            }
             
             VStack(spacing: 0) {
-                // Top bar
                 HStack {
                     Text("Arena Fight")
                         .font(.custom("Avenir-Heavy", size: 18))
@@ -49,11 +46,9 @@ struct ArenaFightView: View {
                 .padding(.horizontal)
                 .padding(.top, 12)
                 
-                // Fighters display
                 fighterDisplay
                     .padding(.top, 16)
                 
-                // Round label
                 if !roundLabel.isEmpty {
                     Text(roundLabel)
                         .font(.custom("Avenir-Heavy", size: 16))
@@ -62,24 +57,20 @@ struct ArenaFightView: View {
                         .transition(.opacity)
                 }
                 
-                // Stance matchup display
-                stanceMatchupDisplay
+                gearComparisonRow
                     .padding(.vertical, 8)
                 
-                // Battle feed
                 battleFeed
                 
                 Spacer()
             }
             
-            // Crit flash
             if showCritFlash {
                 Color.yellow.opacity(0.15)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
             
-            // Result overlay
             if showResult, let result = matchResult {
                 resultOverlay(result: result)
             }
@@ -93,7 +84,6 @@ struct ArenaFightView: View {
     
     private var fighterDisplay: some View {
         HStack(spacing: 0) {
-            // Attacker (player)
             VStack(spacing: 8) {
                 ZStack {
                     Circle()
@@ -116,12 +106,19 @@ struct ArenaFightView: View {
                     .font(.custom("Avenir-Medium", size: 11))
                     .foregroundColor(.secondary)
                 
-                // HP Bar
+                HStack(spacing: 3) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color("AccentGold"))
+                    Text("\(character.heroPower)")
+                        .font(.custom("Avenir-Heavy", size: 11))
+                        .foregroundColor(Color("AccentGold"))
+                }
+                
                 hpBar(percentage: attackerHP, color: .green, label: "\(Int(attackerHP * Double(attackerMaxHP)))/\(attackerMaxHP)")
             }
             .frame(maxWidth: .infinity)
             
-            // VS
             VStack(spacing: 4) {
                 Text("VS")
                     .font(.custom("Avenir-Heavy", size: 22))
@@ -135,7 +132,6 @@ struct ArenaFightView: View {
             }
             .frame(width: 50)
             
-            // Defender (opponent)
             VStack(spacing: 8) {
                 ZStack {
                     Circle()
@@ -157,6 +153,15 @@ struct ArenaFightView: View {
                 Text("Lv.\(opponent.level)")
                     .font(.custom("Avenir-Medium", size: 11))
                     .foregroundColor(.secondary)
+                
+                HStack(spacing: 3) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color("AccentGold"))
+                    Text("\(opponent.heroPower)")
+                        .font(.custom("Avenir-Heavy", size: 11))
+                        .foregroundColor(Color("AccentGold"))
+                }
                 
                 hpBar(percentage: defenderHP, color: .red, label: "\(Int(defenderHP * Double(defenderMaxHP)))/\(defenderMaxHP)")
             }
@@ -191,36 +196,80 @@ struct ArenaFightView: View {
         .frame(width: 120)
     }
     
-    // MARK: - Stance Matchup Display
+    // MARK: - Gear Comparison Row
     
-    private var stanceMatchupDisplay: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 4) {
-                Image(systemName: attackerStance.icon)
-                    .foregroundColor(Color(attackerStance.color))
-                    .font(.system(size: 12))
-                Text(attackerStance.rawValue)
-                    .font(.custom("Avenir-Medium", size: 12))
-                    .foregroundColor(Color(attackerStance.color))
+    private var gearComparisonRow: some View {
+        HStack(spacing: 6) {
+            // Player gear (from character's equipped items)
+            let playerSlots = playerEquipmentPreviews()
+            HStack(spacing: 3) {
+                ForEach(playerSlots) { slot in
+                    miniGearIcon(slot)
+                }
             }
             
             Text("vs")
                 .font(.custom("Avenir-Medium", size: 11))
                 .foregroundColor(.secondary)
             
-            HStack(spacing: 4) {
-                Image(systemName: defenderStance.icon)
-                    .foregroundColor(Color(defenderStance.color))
-                    .font(.system(size: 12))
-                Text(defenderStance.rawValue)
-                    .font(.custom("Avenir-Medium", size: 12))
-                    .foregroundColor(Color(defenderStance.color))
+            // Opponent gear
+            HStack(spacing: 3) {
+                ForEach(opponent.equipmentSlots) { slot in
+                    miniGearIcon(slot)
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(Color("CardBackground").opacity(0.5))
         .cornerRadius(8)
+    }
+    
+    private func miniGearIcon(_ slot: EquipmentSlotPreview) -> some View {
+        let rarityColor = rarityColorName(slot.rarity)
+        let slotEnum = EquipmentSlot(rawValue: slot.slot)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color(rarityColor).opacity(0.15))
+                .frame(width: 22, height: 22)
+            RoundedRectangle(cornerRadius: 3)
+                .stroke(Color(rarityColor).opacity(0.5), lineWidth: 1)
+                .frame(width: 22, height: 22)
+            Image(systemName: slotEnum?.icon ?? "questionmark")
+                .font(.system(size: 10))
+                .foregroundColor(Color(rarityColor))
+        }
+    }
+    
+    private func playerEquipmentPreviews() -> [EquipmentSlotPreview] {
+        let slots: [(String, Equipment?)] = [
+            ("Weapon", character.equipment.weapon),
+            ("Armor", character.equipment.armor),
+            ("Accessory", character.equipment.accessory),
+            ("Trinket", character.equipment.trinket),
+            ("Cloak", character.equipment.cloak)
+        ]
+        return slots.compactMap { slotName, item in
+            guard let item = item else { return nil }
+            return EquipmentSlotPreview(
+                slot: slotName,
+                name: item.name,
+                icon: item.imageName ?? EquipmentSlot(rawValue: slotName)?.icon ?? "questionmark",
+                rarity: item.rarity.rawValue,
+                equipmentLevel: item.equipmentLevel
+            )
+        }
+    }
+    
+    private func rarityColorName(_ rarity: String) -> String {
+        switch rarity {
+        case "Common": return "RarityCommon"
+        case "Uncommon": return "RarityUncommon"
+        case "Rare": return "RarityRare"
+        case "Epic": return "RarityEpic"
+        case "Legendary": return "RarityLegendary"
+        default: return "RarityCommon"
+        }
     }
     
     // MARK: - Battle Feed
@@ -294,7 +343,6 @@ struct ArenaFightView: View {
             VStack(spacing: 20) {
                 Spacer()
                 
-                // Win/Loss header
                 if result.winnerIsAttacker {
                     VStack(spacing: 8) {
                         Image(systemName: "trophy.fill")
@@ -315,7 +363,6 @@ struct ArenaFightView: View {
                     }
                 }
                 
-                // Rating change
                 VStack(spacing: 4) {
                     let changeText = result.winnerIsAttacker ? "+\(ratingChange)" : "-\(ratingChange)"
                     let changeColor: Color = result.winnerIsAttacker ? .green : .red
@@ -328,7 +375,6 @@ struct ArenaFightView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                // Rewards
                 VStack(spacing: 8) {
                     HStack(spacing: 20) {
                         rewardPill(icon: "star.circle.fill", value: "\(rewards.arenaPoints) AP", color: Color("AccentGold"))
@@ -400,14 +446,11 @@ struct ArenaFightView: View {
         
         let result = ArenaEngine.resolveMatch(
             attacker: attackerStats,
-            defender: defenderStats,
-            attackerStance: attackerStance,
-            defenderStance: defenderStance
+            defender: defenderStats
         )
         
         self.matchResult = result
         
-        // Calculate rating and rewards
         let (winGain, loseLoss) = ArenaEngine.calculateRatingChange(
             winnerRating: result.winnerIsAttacker ? character.arenaRating : opponent.rating,
             loserRating: result.winnerIsAttacker ? opponent.rating : character.arenaRating
@@ -424,10 +467,12 @@ struct ArenaFightView: View {
             opponentRating: opponent.rating,
             playerLevel: character.level,
             streak: result.winnerIsAttacker ? character.arenaStreak + 1 : 0,
-            isRevenge: isRevenge
+            isRevenge: isRevenge,
+            bonusAPPercent: attackerStats.bonusAPPercent,
+            bonusGoldPercent: attackerStats.bonusGoldPercent,
+            bonusEXPPercent: attackerStats.bonusEXPPercent
         )
         
-        // Animate rounds
         animateRounds(result.rounds)
     }
     
@@ -435,7 +480,6 @@ struct ArenaFightView: View {
         var delay: Double = 0.5
         
         for (rIdx, round) in rounds.enumerated() {
-            // Show round label
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     self.roundLabel = "Round \(round.roundNumber) — \(round.roundName)"
@@ -444,7 +488,6 @@ struct ArenaFightView: View {
             }
             delay += 0.8
             
-            // Show each event
             for event in round.events {
                 let eventDelay = delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + eventDelay) {
@@ -452,7 +495,6 @@ struct ArenaFightView: View {
                         self.visibleEvents.append(event)
                     }
                     
-                    // Shake and HP update
                     let isAttackerHit = event.fighterName != character.name
                     if !event.isDodge && event.damage > 0 {
                         if isAttackerHit {
@@ -472,7 +514,6 @@ struct ArenaFightView: View {
                         }
                     }
                     
-                    // Crit flash
                     if event.isCrit {
                         withAnimation(.easeOut(duration: 0.1)) { self.showCritFlash = true }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -480,7 +521,6 @@ struct ArenaFightView: View {
                         }
                     }
                     
-                    // Update HP bars
                     withAnimation(.easeInOut(duration: 0.4)) {
                         self.attackerHP = Double(max(0, round.attackerHPAfter)) / Double(attackerMaxHP)
                         self.defenderHP = Double(max(0, round.defenderHPAfter)) / Double(defenderMaxHP)
@@ -492,7 +532,6 @@ struct ArenaFightView: View {
             delay += 0.5
         }
         
-        // Show result after all rounds
         DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.5) {
             withAnimation(.easeInOut(duration: 0.4)) {
                 self.showResult = true

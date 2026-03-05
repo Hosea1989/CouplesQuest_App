@@ -158,7 +158,7 @@ final class PlayerCharacter {
     /// Current consecutive win streak
     var arenaStreak: Int
     
-    /// Persistent defense stance used when others attack (raw value of BattleStance)
+    /// Legacy field (stances removed in PVP v2). Kept for SwiftData schema compatibility.
     var arenaDefenseStance: String
     
     /// Arena Points currency balance
@@ -420,7 +420,7 @@ final class PlayerCharacter {
         self.arenaWins = 0
         self.arenaLosses = 0
         self.arenaStreak = 0
-        self.arenaDefenseStance = BattleStance.fortress.rawValue
+        self.arenaDefenseStance = "none"
         self.arenaPoints = 0
         self.arenaPVPFightsToday = 0
         self.lastPVPFightDate = nil
@@ -1961,9 +1961,46 @@ enum CharacterClass: String, Codable, CaseIterable {
         }
     }
     
+    /// Weapon base types this class can equip
+    var weaponProficiency: Set<String> {
+        switch self {
+        case .warrior:   return ["sword", "shield", "spear", "halberd"]
+        case .berserker: return ["axe", "sword", "halberd"]
+        case .paladin:   return ["mace", "shield", "sword"]
+        case .mage:      return ["staff", "wand"]
+        case .sorcerer:  return ["staff", "tome"]
+        case .enchanter: return ["wand", "tome"]
+        case .archer:    return ["bow", "crossbow"]
+        case .ranger:    return ["bow", "spear", "dagger"]
+        case .trickster: return ["dagger", "crossbow"]
+        }
+    }
+    
+    /// Cloak/robe base types this class can equip
+    var cloakProficiency: Set<String> {
+        switch classLine {
+        case .mage:    return ["robes", "cloak"]
+        case .archer:  return ["cape"]
+        case .warrior: return ["mantle"]
+        }
+    }
+    
     /// Whether this class can equip the given item
     func canEquip(_ equipment: Equipment) -> Bool {
-        armorProficiency.contains(equipment.armorWeight)
+        let base = equipment.detectedBaseType
+        switch equipment.slot {
+        case .weapon:
+            return weaponProficiency.contains(base)
+        case .armor:
+            return armorProficiency.contains(equipment.armorWeight)
+        case .cloak:
+            return cloakProficiency.contains(base)
+        case .trinket:
+            if base == "orb" { return classLine == .mage }
+            return true
+        case .accessory:
+            return true
+        }
     }
     
     /// Only the 3 starter classes for character creation

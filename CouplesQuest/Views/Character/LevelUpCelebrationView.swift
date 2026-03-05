@@ -195,7 +195,8 @@ struct LevelUpCelebrationView: View {
                 displays.append(RewardDisplay(
                     icon: "shield.fill",
                     text: name,
-                    color: rarity.color
+                    color: rarity.color,
+                    tooltipText: "New \(rarity.rawValue) equipment! Equip it from the Inventory tab to boost your stats."
                 ))
             }
         }
@@ -203,10 +204,12 @@ struct LevelUpCelebrationView: View {
         // Consumables
         for reward in rewards {
             if case .consumable(let name) = reward {
+                let desc = ConsumableCatalog.items.first { $0.name == name }?.description
                 displays.append(RewardDisplay(
                     icon: "cross.vial.fill",
                     text: name,
-                    color: "AccentGreen"
+                    color: "AccentGreen",
+                    tooltipText: desc ?? "A useful consumable item. Use it from the Inventory tab."
                 ))
             }
         }
@@ -220,7 +223,8 @@ struct LevelUpCelebrationView: View {
                     icon: matType?.icon ?? "cube.fill",
                     text: "+\(qty) \(name)",
                     color: "AccentOrange",
-                    imageName: imgName
+                    imageName: imgName,
+                    tooltipText: matType?.usedForDescription ?? "Used for crafting and upgrades at the Forge."
                 ))
             }
         }
@@ -282,35 +286,64 @@ struct RewardDisplay {
     let text: String
     let color: String
     var imageName: String? = nil
+    var tooltipText: String? = nil
 }
 
 struct LevelUpRewardRow: View {
     let reward: RewardDisplay
+    @State private var showTooltip = false
     
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color(reward.color).opacity(0.15))
-                    .frame(width: 36, height: 36)
-                if let imgName = reward.imageName, UIImage(named: imgName) != nil {
-                    Image(imgName)
-                        .interpolation(.none)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 26, height: 26)
-                } else {
-                    Image(systemName: reward.icon)
-                        .font(.title3)
-                        .foregroundColor(Color(reward.color))
+        Button {
+            if reward.tooltipText != nil { showTooltip.toggle() }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color(reward.color).opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    if let imgName = reward.imageName, UIImage(named: imgName) != nil {
+                        Image(imgName)
+                            .interpolation(.none)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 26, height: 26)
+                    } else {
+                        Image(systemName: reward.icon)
+                            .font(.title3)
+                            .foregroundColor(Color(reward.color))
+                    }
+                }
+                
+                Text(reward.text)
+                    .font(.custom("Avenir-Heavy", size: 16))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                if reward.tooltipText != nil {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
                 }
             }
-            
-            Text(reward.text)
-                .font(.custom("Avenir-Heavy", size: 16))
-                .foregroundColor(.white)
-            
-            Spacer()
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showTooltip) {
+            if let tooltip = reward.tooltipText {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(reward.text)
+                        .font(.custom("Avenir-Heavy", size: 15))
+                        .foregroundColor(Color(reward.color))
+                    Divider()
+                    Text(tooltip)
+                        .font(.custom("Avenir-Medium", size: 13))
+                        .foregroundColor(.primary)
+                }
+                .padding()
+                .frame(width: 260)
+                .presentationCompactAdaptation(.popover)
+            }
         }
     }
 }

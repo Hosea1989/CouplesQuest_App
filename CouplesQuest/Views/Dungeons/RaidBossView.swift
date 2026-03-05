@@ -755,15 +755,17 @@ struct RaidBossView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            
-            if showJoinTooltip {
-                Text("Once you join, completing tasks, habits, dungeons, and missions will passively deal damage to the boss.")
-                    .font(.custom("Avenir-Medium", size: 11))
-                    .foregroundColor(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.6)))
-                    .transition(.scale.combined(with: .opacity))
+            .overlay(alignment: .top) {
+                if showJoinTooltip {
+                    Text("Once you join, completing tasks, habits, dungeons, and missions will passively deal damage to the boss.")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.6)))
+                        .transition(.scale.combined(with: .opacity))
+                        .offset(y: -50)
+                }
             }
         }
     }

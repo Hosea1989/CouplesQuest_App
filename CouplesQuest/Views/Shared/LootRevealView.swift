@@ -119,6 +119,7 @@ private extension LootRevealView {
             .font(.custom("Avenir-Heavy", size: 24))
             .foregroundColor(.white)
             .shadow(color: rc.opacity(0.8), radius: 10)
+            .rarityShimmer(equipment.rarity)
     }
     
     func rarityBadge(_ rc: Color) -> some View {

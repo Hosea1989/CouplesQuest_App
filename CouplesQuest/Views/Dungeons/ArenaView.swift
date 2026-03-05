@@ -9,11 +9,9 @@ struct ArenaView: View {
     
     @State private var opponents: [FighterSnapshot] = []
     @State private var selectedOpponent: FighterSnapshot?
-    @State private var selectedStance: BattleStance?
     @State private var showFightView = false
     @State private var showShop = false
-    @State private var showStanceSelector = false
-    @State private var showDefenseStancePicker = false
+    
     @State private var isLoadingOpponents = false
     @State private var leaderboardEntries: [FighterSnapshot] = []
     @State private var isLoadingLeaderboard = false
@@ -25,30 +23,32 @@ struct ArenaView: View {
     private var character: PlayerCharacter? { characters.first }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                profileCard
-                
-                if let char = character, !char.pendingRevengeIDs.isEmpty {
-                    revengeSection
+        ZStack {
+            arenaBackground
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    profileCard
+                    
+                    if let char = character, !char.pendingRevengeIDs.isEmpty {
+                        revengeSection
+                    }
+                    
+                    actionArea
+                    
+                    leaderboardSection
+                    
+                    recentMatchesSection
                 }
-                
-                actionArea
-                
-                leaderboardSection
-                
-                recentMatchesSection
+                .padding(.vertical)
             }
-            .padding(.vertical)
         }
         .fullScreenCover(isPresented: $showFightView) {
             if let opponent = selectedOpponent,
-               let stance = selectedStance,
                let character = character {
                 ArenaFightView(
                     character: character,
                     opponent: opponent,
-                    attackerStance: stance,
                     isRevenge: isRevengeFight,
                     onComplete: { result, rewards, ratingChange in
                         handleFightComplete(result: result, rewards: rewards, ratingChange: ratingChange)
@@ -61,12 +61,24 @@ struct ArenaView: View {
                 ArenaShopView(character: character)
             }
         }
-        .sheet(isPresented: $showDefenseStancePicker) {
-            defenseStanceSheet
-        }
+        
         .onAppear {
             character?.checkPVPFightReset()
             loadLeaderboard()
+        }
+    }
+    
+    // MARK: - Arena Background
+    
+    private var arenaBackground: some View {
+        ZStack {
+            Image("arena_desert")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+            
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
         }
     }
     
@@ -115,7 +127,6 @@ struct ArenaView: View {
             }
             .padding(.horizontal)
             
-            // Tier badge & rating
             VStack(spacing: 10) {
                 let tier = character?.arenaTier ?? .bronze
                 
@@ -163,7 +174,6 @@ struct ArenaView: View {
                 }
             }
             
-            // W/L and streak
             HStack(spacing: 24) {
                 VStack(spacing: 2) {
                     Text("\(character?.arenaWins ?? 0)W - \(character?.arenaLosses ?? 0)L")
@@ -202,24 +212,7 @@ struct ArenaView: View {
                 }
             }
             
-            // Defense stance button
-            Button { showDefenseStancePicker = true } label: {
-                let currentStance = BattleStance(rawValue: character?.arenaDefenseStance ?? "Fortress") ?? .fortress
-                HStack(spacing: 8) {
-                    Image(systemName: currentStance.icon)
-                        .foregroundColor(Color(currentStance.color))
-                    Text("Defense: \(currentStance.rawValue)")
-                        .font(.custom("Avenir-Medium", size: 13))
-                        .foregroundColor(.primary)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color("CardBackground"))
-                .cornerRadius(8)
-            }
+            
         }
         .padding()
         .background(Color("CardBackground").opacity(0.5))
@@ -313,10 +306,8 @@ struct ArenaView: View {
     
     private var actionArea: some View {
         VStack(spacing: 16) {
-            if opponents.isEmpty && !showStanceSelector {
+            if opponents.isEmpty {
                 findOpponentButton
-            } else if showStanceSelector, selectedOpponent != nil {
-                stanceSelector
             } else {
                 opponentPicker
             }
@@ -375,56 +366,78 @@ struct ArenaView: View {
     }
     
     private func opponentCard(_ opponent: FighterSnapshot) -> some View {
-        Button {
+        let playerHM = character?.heroPower ?? 0
+        let difficulty = ArenaEngine.assessDifficulty(playerHeroPower: playerHM, opponentHeroPower: opponent.heroPower)
+        
+        return Button {
             selectedOpponent = opponent
-            showStanceSelector = true
+            beginFight()
         } label: {
-            HStack(spacing: 12) {
-                // Class icon
-                let cls = CharacterClass(rawValue: opponent.className ?? "")
-                Image(systemName: cls?.icon ?? "person.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(Color("AccentGold"))
-                    .frame(width: 40, height: 40)
-                    .background(Color("CardBackground"))
-                    .clipShape(Circle())
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(opponent.name)
-                            .font(.custom("Avenir-Heavy", size: 15))
-                            .foregroundColor(.primary)
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    let cls = CharacterClass(rawValue: opponent.className ?? "")
+                    Image(systemName: cls?.icon ?? "person.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color("AccentGold"))
+                        .frame(width: 40, height: 40)
+                        .background(Color("CardBackground"))
+                        .clipShape(Circle())
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(opponent.name)
+                                .font(.custom("Avenir-Heavy", size: 15))
+                                .foregroundColor(.primary)
+                            
+                            Text("Lv.\(opponent.level)")
+                                .font(.custom("Avenir-Medium", size: 12))
+                                .foregroundColor(.secondary)
+                        }
                         
-                        Text("Lv.\(opponent.level)")
-                            .font(.custom("Avenir-Medium", size: 12))
-                            .foregroundColor(.secondary)
+                        if let className = opponent.className {
+                            Text(className)
+                                .font(.custom("Avenir-Medium", size: 12))
+                                .foregroundColor(.secondary)
+                        }
                     }
                     
-                    if let className = opponent.className {
-                        Text(className)
-                            .font(.custom("Avenir-Medium", size: 12))
-                            .foregroundColor(.secondary)
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color("AccentGold"))
+                            Text("\(opponent.heroPower)")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                                .foregroundColor(Color("AccentGold"))
+                        }
+                        
+                        HStack(spacing: 4) {
+                            Text("\(opponent.rating)")
+                                .font(.custom("Avenir-Medium", size: 12))
+                                .foregroundColor(.secondary)
+                            
+                            trendIcon(for: opponent.recentTrend)
+                        }
                     }
                 }
                 
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color("AccentGold"))
-                        Text("\(opponent.heroPower)")
-                            .font(.custom("Avenir-Heavy", size: 14))
-                            .foregroundColor(Color("AccentGold"))
-                    }
-                    
-                    HStack(spacing: 4) {
-                        Text("\(opponent.rating)")
-                            .font(.custom("Avenir-Medium", size: 12))
-                            .foregroundColor(.secondary)
+                // Gear preview row
+                if !opponent.equipmentSlots.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(opponent.equipmentSlots) { slot in
+                            gearSlotBadge(slot)
+                        }
+                        Spacer()
                         
-                        trendIcon(for: opponent.recentTrend)
+                        // Difficulty badge
+                        difficultyBadge(difficulty)
+                    }
+                } else {
+                    HStack {
+                        Spacer()
+                        difficultyBadge(difficulty)
                     }
                 }
             }
@@ -435,6 +448,55 @@ struct ArenaView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color("AccentGold").opacity(0.15), lineWidth: 1)
             )
+        }
+    }
+    
+    private func gearSlotBadge(_ slot: EquipmentSlotPreview) -> some View {
+        let rarityColor = rarityColorName(slot.rarity)
+        return VStack(spacing: 2) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(rarityColor).opacity(0.15))
+                    .frame(width: 28, height: 28)
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color(rarityColor).opacity(0.5), lineWidth: 1)
+                    .frame(width: 28, height: 28)
+                
+                let slotEnum = EquipmentSlot(rawValue: slot.slot)
+                Image(systemName: slotEnum?.icon ?? "questionmark")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(rarityColor))
+            }
+            if slot.equipmentLevel > 1 {
+                Text("+\(slot.equipmentLevel)")
+                    .font(.custom("Avenir-Heavy", size: 8))
+                    .foregroundColor(Color(rarityColor))
+            }
+        }
+    }
+    
+    private func difficultyBadge(_ difficulty: ArenaEngine.OpponentDifficulty) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: difficulty.icon)
+                .font(.system(size: 9, weight: .bold))
+            Text(difficulty.rawValue)
+                .font(.custom("Avenir-Heavy", size: 10))
+        }
+        .foregroundColor(Color(difficulty.color))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color(difficulty.color).opacity(0.12))
+        .cornerRadius(6)
+    }
+    
+    private func rarityColorName(_ rarity: String) -> String {
+        switch rarity {
+        case "Common": return "RarityCommon"
+        case "Uncommon": return "RarityUncommon"
+        case "Rare": return "RarityRare"
+        case "Epic": return "RarityEpic"
+        case "Legendary": return "RarityLegendary"
+        default: return "RarityCommon"
         }
     }
     
@@ -455,108 +517,6 @@ struct ArenaView: View {
                     .foregroundColor(.secondary)
             }
         }
-    }
-    
-    // MARK: - Stance Selector
-    
-    private var stanceSelector: some View {
-        VStack(spacing: 14) {
-            if let opponent = selectedOpponent {
-                HStack {
-                    Text("vs \(opponent.name)")
-                        .font(.custom("Avenir-Heavy", size: 16))
-                    Spacer()
-                    Button("Back") {
-                        showStanceSelector = false
-                        selectedStance = nil
-                    }
-                    .font(.custom("Avenir-Medium", size: 13))
-                    .foregroundColor(.secondary)
-                }
-            }
-            
-            Text("Choose Your Battle Stance")
-                .font(.custom("Avenir-Heavy", size: 15))
-                .foregroundColor(.primary)
-            
-            // RPS reminder
-            HStack(spacing: 4) {
-                Image(systemName: "flame.fill").foregroundColor(Color("StatStrength")).font(.system(size: 10))
-                Image(systemName: "arrow.right").font(.system(size: 8)).foregroundColor(.secondary)
-                Image(systemName: "scope").foregroundColor(Color("StatLuck")).font(.system(size: 10))
-                Image(systemName: "arrow.right").font(.system(size: 8)).foregroundColor(.secondary)
-                Image(systemName: "shield.fill").foregroundColor(Color("StatDefense")).font(.system(size: 10))
-                Image(systemName: "arrow.right").font(.system(size: 8)).foregroundColor(.secondary)
-                Image(systemName: "flame.fill").foregroundColor(Color("StatStrength")).font(.system(size: 10))
-            }
-            .padding(.vertical, 4)
-            
-            ForEach(BattleStance.allCases) { stance in
-                Button {
-                    selectedStance = stance
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: stance.icon)
-                            .font(.system(size: 22))
-                            .foregroundColor(Color(stance.color))
-                            .frame(width: 36)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(stance.rawValue)
-                                .font(.custom("Avenir-Heavy", size: 15))
-                                .foregroundColor(.primary)
-                            Text(stance.subtitle)
-                                .font(.custom("Avenir-Medium", size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        if selectedStance == stance {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(Color(stance.color))
-                        }
-                    }
-                    .padding(12)
-                    .background(
-                        selectedStance == stance
-                            ? Color(stance.color).opacity(0.1)
-                            : Color("CardBackground").opacity(0.5)
-                    )
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(
-                                selectedStance == stance ? Color(stance.color).opacity(0.4) : Color.clear,
-                                lineWidth: 1.5
-                            )
-                    )
-                }
-            }
-            
-            Button {
-                beginFight()
-            } label: {
-                HStack {
-                    Image(systemName: "bolt.fill")
-                    Text("Fight!")
-                        .font(.custom("Avenir-Heavy", size: 17))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    selectedStance != nil
-                        ? LinearGradient(colors: [Color("AccentGold"), Color("AccentOrange")], startPoint: .leading, endPoint: .trailing)
-                        : LinearGradient(colors: [Color.gray.opacity(0.5), Color.gray.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
-                )
-                .cornerRadius(12)
-            }
-            .disabled(selectedStance == nil)
-        }
-        .padding()
-        .background(Color("CardBackground").opacity(0.3))
-        .cornerRadius(14)
     }
     
     // MARK: - Leaderboard Section
@@ -599,7 +559,6 @@ struct ArenaView: View {
         let isMe = fighter.userID == character?.supabaseUserID
         
         return HStack(spacing: 10) {
-            // Rank
             Group {
                 switch rank {
                 case 1:
@@ -619,7 +578,6 @@ struct ArenaView: View {
             }
             .frame(width: 28)
             
-            // Class icon
             let cls = CharacterClass(rawValue: fighter.className ?? "")
             Image(systemName: cls?.icon ?? "person.fill")
                 .font(.system(size: 14))
@@ -633,7 +591,6 @@ struct ArenaView: View {
             
             Spacer()
             
-            // Hero Might
             HStack(spacing: 3) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 9))
@@ -716,64 +673,7 @@ struct ArenaView: View {
         .padding(.horizontal)
     }
     
-    // MARK: - Defense Stance Sheet
     
-    private var defenseStanceSheet: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Text("Set your Defense Stance")
-                    .font(.custom("Avenir-Heavy", size: 18))
-                
-                Text("This stance is used when other players attack you.")
-                    .font(.custom("Avenir-Medium", size: 13))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                ForEach(BattleStance.allCases) { stance in
-                    let isSelected = character?.arenaDefenseStance == stance.rawValue
-                    Button {
-                        character?.arenaDefenseStance = stance.rawValue
-                        showDefenseStancePicker = false
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: stance.icon)
-                                .font(.system(size: 24))
-                                .foregroundColor(Color(stance.color))
-                                .frame(width: 40)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(stance.rawValue)
-                                    .font(.custom("Avenir-Heavy", size: 16))
-                                    .foregroundColor(.primary)
-                                Text(stance.subtitle)
-                                    .font(.custom("Avenir-Medium", size: 12))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(Color(stance.color))
-                            }
-                        }
-                        .padding()
-                        .background(isSelected ? Color(stance.color).opacity(0.1) : Color("CardBackground"))
-                        .cornerRadius(12)
-                    }
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Defense Stance")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { showDefenseStancePicker = false }
-                }
-            }
-        }
-        .presentationDetents([.medium])
-    }
     
     // MARK: - Actions
     
@@ -781,7 +681,6 @@ struct ArenaView: View {
         isLoadingOpponents = true
         guard let character = character else { return }
         
-        // For now, generate mock opponents. Real implementation will call Supabase RPC.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             let rating = character.arenaRating
             let mockNames = ["Valorheart", "Emberstrike", "Nightweaver", "Ironclad", "Stormcaller", "Shadowbane"]
@@ -794,6 +693,13 @@ struct ArenaView: View {
                 let level = max(6, character.level + Int.random(in: -5...5))
                 
                 let baseStat = level + Int.random(in: 3...8)
+                
+                let mockSlots: [EquipmentSlotPreview] = [
+                    EquipmentSlotPreview(slot: "Weapon", name: "Arena Blade", icon: "wand.and.stars", rarity: ["Rare", "Epic", "Legendary"].randomElement()!, equipmentLevel: Int.random(in: 1...5)),
+                    EquipmentSlotPreview(slot: "Armor", name: "Battle Plate", icon: "shield.fill", rarity: ["Uncommon", "Rare", "Epic"].randomElement()!, equipmentLevel: Int.random(in: 1...4)),
+                    EquipmentSlotPreview(slot: "Accessory", name: "Fighter's Ring", icon: "sparkle", rarity: ["Common", "Uncommon", "Rare"].randomElement()!, equipmentLevel: Int.random(in: 1...3)),
+                ]
+                
                 return FighterSnapshot(
                     userID: UUID().uuidString,
                     name: mockNames.randomElement()!,
@@ -810,7 +716,6 @@ struct ArenaView: View {
                     heroPower: Int.random(in: max(100, character.heroPower - 200)...character.heroPower + 200),
                     rating: opponentRating,
                     tier: ArenaTier.tier(for: opponentRating).rawValue,
-                    defenseStance: BattleStance.allCases.randomElement()!.rawValue,
                     wins: Int.random(in: 0...50),
                     losses: Int.random(in: 0...40),
                     streak: Int.random(in: 0...5),
@@ -818,7 +723,10 @@ struct ArenaView: View {
                     recentTrend: ["up", "down", "neutral"].randomElement()!,
                     pendingRevengeIDs: [],
                     arenaPoints: 0,
-                    hasBond: Bool.random()
+                    hasBond: Bool.random(),
+                    equipmentSlots: mockSlots,
+                    pvpDamageBonus: Double.random(in: 0...3),
+                    pvpHPRegenPercent: Double.random(in: 0...2)
                 )
             }
             self.isLoadingOpponents = false
@@ -826,23 +734,18 @@ struct ArenaView: View {
     }
     
     private func beginFight() {
-        guard selectedStance != nil, selectedOpponent != nil else { return }
-        showStanceSelector = false
+        guard selectedOpponent != nil else { return }
         showFightView = true
     }
     
     private func handleFightComplete(result: PVPMatchResult, rewards: (arenaPoints: Int, gold: Int, exp: Int), ratingChange: Int) {
         guard let character = character, let opponent = selectedOpponent else { return }
         
-        let defStance = BattleStance(rawValue: opponent.defenseStance) ?? .fortress
-        
-        // Record locally
         character.recordPVPFight(won: result.winnerIsAttacker, ratingChange: ratingChange)
         character.arenaPoints += rewards.arenaPoints
         character.gold += rewards.gold
         character.gainEXP(rewards.exp)
         
-        // Save match record
         let match = ArenaMatch(
             characterID: character.id,
             opponentUserID: opponent.userID,
@@ -851,8 +754,6 @@ struct ArenaView: View {
             opponentClass: opponent.className,
             opponentHeroPower: opponent.heroPower,
             opponentRating: opponent.rating,
-            attackerStance: selectedStance!,
-            defenderStance: defStance,
             result: result,
             ratingChange: ratingChange,
             ratingAfter: character.arenaRating,
@@ -861,16 +762,13 @@ struct ArenaView: View {
         )
         modelContext.insert(match)
         
-        // Reset state
         opponents = []
         selectedOpponent = nil
-        selectedStance = nil
         isRevengeFight = false
     }
     
     private func loadLeaderboard() {
         isLoadingLeaderboard = true
-        // TODO: Real implementation calls fn_arena_leaderboard via Supabase
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.isLoadingLeaderboard = false
         }

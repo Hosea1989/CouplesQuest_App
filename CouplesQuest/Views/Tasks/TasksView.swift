@@ -2,21 +2,23 @@ import SwiftUI
 import SwiftData
 
 private enum TaskTab: String, CaseIterable {
-    case board, active, history
+    case duties, habits, goals, party
     
     var label: String {
         switch self {
-        case .board: "Board"
-        case .active: "Active"
-        case .history: "History"
+        case .duties: "Duties"
+        case .habits: "Habits"
+        case .goals: "Goals"
+        case .party: "Party"
         }
     }
     
     var icon: String {
         switch self {
-        case .board: "mappin.circle.fill"
-        case .active: "checklist"
-        case .history: "checkmark.circle"
+        case .duties: "checklist"
+        case .habits: "repeat.circle.fill"
+        case .goals: "flag.fill"
+        case .party: "person.2.fill"
         }
     }
 }
@@ -59,7 +61,9 @@ struct TasksView: View {
     @State private var dutyPendingCoopChoice: GameTask?
     @State private var showRefreshConfirm = false
     @State private var refreshRotation: Double = 0
-    @State private var selectedTaskTab: TaskTab = .active
+    @State private var selectedTaskTab: TaskTab = .duties
+    @State private var showCompletedHistory = false
+    @State private var showCreateGoal = false
     
     private var character: PlayerCharacter? {
         characters.first
@@ -152,26 +156,29 @@ struct TasksView: View {
                     taskTabPicker
                     
                     switch selectedTaskTab {
-                    case .board:
-                        boardTabContent
-                    case .active:
-                        activeTabContent
-                    case .history:
-                        historyTabContent
+                    case .duties:
+                        dutiesTabContent
+                    case .habits:
+                        habitsTabContent
+                    case .goals:
+                        goalsTabContent
+                    case .party:
+                        partyTabContent
                     }
                 }
             }
             .navigationTitle("Daily Tasks")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    NavigationLink(destination: GoalsView()) {
-                        Image(systemName: "flag.fill")
-                            .foregroundColor(Color("AccentGold"))
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showCreateTask = true }) {
+                    Button(action: {
+                        switch selectedTaskTab {
+                        case .goals:
+                            showCreateGoal = true
+                        default:
+                            showCreateTask = true
+                        }
+                    }) {
                         Image(systemName: "plus.circle.fill")
                             .foregroundColor(Color("AccentGold"))
                             .font(.title2)
@@ -182,6 +189,14 @@ struct TasksView: View {
                 CreateTaskView()
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showCreateGoal) {
+                CreateGoalView()
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showCompletedHistory) {
+                completedHistorySheet
             }
             .sheet(isPresented: $showCompletionCelebration) {
                 if let result = lastCompletionResult {
@@ -341,19 +356,29 @@ struct TasksView: View {
     
     private func tabCount(for tab: TaskTab) -> Int {
         switch tab {
-        case .board:
-            return dailyDuties.filter { $0.status == .pending }.count
-        case .active:
-            return myTasks.count + partnerQuests.count
-        case .history:
-            return completedTasks.count
+        case .duties:
+            return dailyDuties.filter { $0.status == .pending }.count + myTasks.count
+        case .habits:
+            return habits.count
+        case .goals:
+            return 0
+        case .party:
+            return partnerQuests.count
         }
+    }
+    
+    private var visibleTabs: [TaskTab] {
+        var tabs: [TaskTab] = [.duties, .habits, .goals]
+        if character?.hasPartner == true || !partnerQuests.isEmpty {
+            tabs.append(.party)
+        }
+        return tabs
     }
     
     private var taskTabPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(TaskTab.allCases, id: \.self) { tab in
+                ForEach(visibleTabs, id: \.self) { tab in
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             selectedTaskTab = tab
@@ -400,70 +425,143 @@ struct TasksView: View {
         }
     }
     
-    // MARK: - Board Tab
+    // MARK: - Duties Tab (Board + Active)
     
-    private var boardTabContent: some View {
+    private var dutiesTabContent: some View {
         ScrollView {
             VStack(spacing: 24) {
                 dutyBoardSection
-                
-                if !habits.isEmpty {
+                myTasksSection
+            }
+            .padding()
+        }
+    }
+    
+    // MARK: - Habits Tab
+    
+    private var habitsTabContent: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                if habits.isEmpty {
+                    VStack(spacing: 12) {
+                        Spacer().frame(height: 60)
+                        
+                        Image(systemName: "repeat.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary.opacity(0.4))
+                        
+                        Text("No Habits Yet")
+                            .font(.custom("Avenir-Heavy", size: 17))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Create a habit to build daily streaks and earn bonus rewards.")
+                            .font(.custom("Avenir-Medium", size: 14))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
                     dailyHabitsSection
+                }
+                
+                if !completedTasks.isEmpty {
+                    Button {
+                        showCompletedHistory = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 14))
+                            Text("View Completed (\(completedTasks.count))")
+                                .font(.custom("Avenir-Heavy", size: 14))
+                        }
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color("CardBackground"))
+                        )
+                    }
                 }
             }
             .padding()
         }
     }
     
-    // MARK: - Active Tab
+    // MARK: - Goals Tab
     
-    private var activeTabContent: some View {
+    private var goalsTabContent: some View {
+        GoalsView(isEmbedded: true)
+    }
+    
+    // MARK: - Party Tab
+    
+    private var partyTabContent: some View {
         ScrollView {
             VStack(spacing: 24) {
-                myTasksSection
-                
                 partnerQuestsSection
             }
             .padding()
         }
     }
     
-    // MARK: - History Tab
+    // MARK: - Completed History Sheet
     
-    private var historyTabContent: some View {
-        ScrollView {
-            if completedTasks.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer().frame(height: 60)
-                    
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary.opacity(0.4))
-                    
-                    Text("No Completed Tasks")
-                        .font(.custom("Avenir-Heavy", size: 17))
-                        .foregroundColor(.secondary)
-                    
-                    Text("Tasks you complete will appear here.")
-                        .font(.custom("Avenir-Medium", size: 14))
-                        .foregroundColor(.secondary.opacity(0.7))
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(completedTasks, id: \.id) { task in
-                        CompletedTaskRow(task: task, characterLevel: character?.level ?? 1)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color("CardBackground"))
-                            )
+    private var completedHistorySheet: some View {
+        NavigationStack {
+            ScrollView {
+                if completedTasks.isEmpty {
+                    VStack(spacing: 12) {
+                        Spacer().frame(height: 60)
+                        
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary.opacity(0.4))
+                        
+                        Text("No Completed Tasks")
+                            .font(.custom("Avenir-Heavy", size: 17))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Tasks you complete will appear here.")
+                            .font(.custom("Avenir-Medium", size: 14))
+                            .foregroundColor(.secondary.opacity(0.7))
                     }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(completedTasks, id: \.id) { task in
+                            CompletedTaskRow(task: task, characterLevel: character?.level ?? 1)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color("CardBackground"))
+                                )
+                        }
+                    }
+                    .padding()
                 }
-                .padding()
+            }
+            .background(
+                LinearGradient(
+                    colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            )
+            .navigationTitle("Completed")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { showCompletedHistory = false }
+                        .foregroundColor(Color("AccentGold"))
+                }
             }
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
     
     // MARK: - Daily Habits Section
@@ -2205,6 +2303,7 @@ struct TaskCompletionCelebration: View {
     @State private var animatedStatIndices: Set<Int> = []
     @State private var showContinue = false
     @State private var headerGlow = false
+    @State private var showLootTooltip = false
     
     init(result: TaskCompletionResult) {
         self.result = result
@@ -2537,14 +2636,21 @@ struct TaskCompletionCelebration: View {
             
             // Loot Drop
             if let loot = result.lootDropped {
-                rewardItemRow(
-                    icon: loot.icon,
-                    iconColor: Color(loot.rarityColor),
-                    label: "Loot Found!",
-                    value: loot.displayName,
-                    valueColor: Color(loot.rarityColor),
-                    imageName: loot.imageName
-                )
+                Button { showLootTooltip.toggle() } label: {
+                    rewardItemRow(
+                        icon: loot.icon,
+                        iconColor: Color(loot.rarityColor),
+                        label: "Loot Found!",
+                        value: loot.displayName,
+                        valueColor: Color(loot.rarityColor),
+                        imageName: loot.imageName
+                    )
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showLootTooltip) {
+                    lootTooltipContent(loot: loot)
+                        .presentationCompactAdaptation(.popover)
+                }
             }
             
             // Material drops (essence + bonus materials)
@@ -2686,6 +2792,68 @@ struct TaskCompletionCelebration: View {
                         .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 )
         )
+    }
+    
+    // MARK: - Loot Tooltip
+    
+    @ViewBuilder
+    private func lootTooltipContent(loot: LootDrop) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch loot.type {
+            case .equipment(let item):
+                Text(item.name)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color(item.rarity.color))
+                    .rarityShimmer(item.rarity)
+                Text(item.slot.rawValue.capitalized + " • " + item.rarity.rawValue)
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+                Divider()
+                Text(item.itemDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+                Text(item.statSummary)
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(Color(item.primaryStat.color))
+                if item.levelRequirement > 1 {
+                    Text("Requires Level \(item.levelRequirement)")
+                        .font(.custom("Avenir-Medium", size: 11))
+                        .foregroundColor(.secondary)
+                }
+            case .consumableItem(let item):
+                Text(item.name)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color(item.consumableType.color))
+                Divider()
+                Text(item.consumableDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+                Text("Use from the Inventory tab.")
+                    .font(.custom("Avenir-Medium", size: 12))
+                    .foregroundColor(.secondary)
+            case .consumable(let name):
+                Text(name)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color("AccentGreen"))
+                Divider()
+                Text("A useful consumable item. Check your Inventory.")
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+            case .material(let matType, _, let qty):
+                Text("\(qty)x \(matType.displayName)")
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(Color(matType.color))
+                Divider()
+                Text(matType.sourceDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.primary)
+                Text(matType.usedForDescription)
+                    .font(.custom("Avenir-Medium", size: 13))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .frame(width: 260)
     }
     
     // MARK: - Shared Row

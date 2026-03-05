@@ -54,6 +54,10 @@
 		C1A2B3C4D5E6F7A8B9C0D10C /* TrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F7A8B9C0D10B /* TrainingView.swift */; };
 		C1A2B3C4D5E6F7A8B9C0D10E /* MeditationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F7A8B9C0D10D /* MeditationView.swift */; };
 		C1A2B3C4D5E6F7A8B9C0D110 /* ForgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3C4D5E6F7A8B9C0D10F /* ForgeView.swift */; };
+		TVRN0001TAVERNVW0SWIFT02 /* TavernView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TVRN0001TAVERNVW0SWIFT01 /* TavernView.swift */; };
+		5AD95ECAFFBC46BD93BE10C0 /* ScholarDialogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAC0CE0651241F7BBD13CCF /* ScholarDialogue.swift */; };
+		8B67B7519607463282613712 /* ScholarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B146D80CBB44792A36424C4 /* ScholarView.swift */; };
+		66822B185F6F46B4BD968DFD /* ResearchStoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0D7D93C1F54C148569AA17 /* ResearchStoreView.swift */; };
 		C1D2E3F4A5B6C7D8E9F0A1B2 /* TaskVerificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E3F4A5B6C7D8E9F0A1B2C3 /* TaskVerificationView.swift */; };
 		CARD0001A0B0C0D0E0F00001 /* MonsterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARD0002A0B0C0D0E0F00001 /* MonsterCard.swift */; };
 		CARD0003A0B0C0D0E0F00001 /* BestiaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CARD0004A0B0C0D0E0F00001 /* BestiaryView.swift */; };
@@ -236,6 +240,10 @@
 		C1A2B3C4D5E6F7A8B9C0D10B /* TrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingView.swift; sourceTree = "<group>"; };
 		C1A2B3C4D5E6F7A8B9C0D10D /* MeditationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationView.swift; sourceTree = "<group>"; };
 		C1A2B3C4D5E6F7A8B9C0D10F /* ForgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgeView.swift; sourceTree = "<group>"; };
+		TVRN0001TAVERNVW0SWIFT01 /* TavernView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavernView.swift; sourceTree = "<group>"; };
+		7CAC0CE0651241F7BBD13CCF /* ScholarDialogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScholarDialogue.swift; sourceTree = "<group>"; };
+		4B146D80CBB44792A36424C4 /* ScholarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScholarView.swift; sourceTree = "<group>"; };
+		DC0D7D93C1F54C148569AA17 /* ResearchStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResearchStoreView.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* DungeonEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonEngine.swift; sourceTree = "<group>"; };
 		AA01BB02CC03DD04EE05FF07 /* ArenaEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaEngine.swift; sourceTree = "<group>"; };
 		AA01BB02CC03DD04EE05FF09 /* ArenaFightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaFightView.swift; sourceTree = "<group>"; };
@@ -577,6 +585,7 @@
 				F042BC6E5ADD935281705CE0 /* Character */,
 				7A8B9C0D1E2F3A4B5C6D7E8F /* Dungeons */,
 				D2E3F4A5B6C7D8E90010FF01 /* Forge */,
+				17E66A9B4DB84343B1354DB6 /* Research */,
 				G0AL0010A0B0C0D0E0F00001 /* Goals */,
 				6A278A4072BA8861912D6651 /* Home */,
 				8B9C0D1E2F3A4B5C6D7E8F9A /* Inventory */,
@@ -585,6 +594,7 @@
 				3E03E7DA0FBADE7930EFFAD2 /* Partner */,
 				TOST0005SHARED0GROUP00001 /* Shared */,
 				D2E3F4A5B6C7D8E90011FF02 /* Store */,
+				TVRN0010TAVERNGRP0000001 /* Tavern */,
 				4EB9020D5469C9DA81BEA80F /* Tasks */,
 			);
 			path = Views;
@@ -617,6 +627,16 @@
 			path = Forge;
 			sourceTree = "<group>";
 		};
+		17E66A9B4DB84343B1354DB6 /* Research */ = {
+			isa = PBXGroup;
+			children = (
+				DC0D7D93C1F54C148569AA17 /* ResearchStoreView.swift */,
+				4B146D80CBB44792A36424C4 /* ScholarView.swift */,
+				7CAC0CE0651241F7BBD13CCF /* ScholarDialogue.swift */,
+			);
+			path = Research;
+			sourceTree = "<group>";
+		};
 		D2E3F4A5B6C7D8E90011FF02 /* Store */ = {
 			isa = PBXGroup;
 			children = (
@@ -626,6 +646,14 @@
 				SF0T0001STOREFRT0SWIFT01 /* StorefrontSection.swift */,
 			);
 			path = Store;
+			sourceTree = "<group>";
+		};
+		TVRN0010TAVERNGRP0000001 /* Tavern */ = {
+			isa = PBXGroup;
+			children = (
+				TVRN0001TAVERNVW0SWIFT01 /* TavernView.swift */,
+			);
+			path = Tavern;
 			sourceTree = "<group>";
 		};
 		F042BC6E5ADD935281705CE0 /* Character */ = {
@@ -1001,6 +1029,10 @@
 				EQRK0001QUIRKMOD0SWIFT01 /* EquipmentQuirk.swift in Sources */,
 				EC0A1A2B3C4D5E6F7A8B9C01 /* EquipmentCatalog.swift in Sources */,
 				C1A2B3C4D5E6F7A8B9C0D110 /* ForgeView.swift in Sources */,
+				TVRN0001TAVERNVW0SWIFT02 /* TavernView.swift in Sources */,
+				5AD95ECAFFBC46BD93BE10C0 /* ScholarDialogue.swift in Sources */,
+				8B67B7519607463282613712 /* ScholarView.swift in Sources */,
+				66822B185F6F46B4BD968DFD /* ResearchStoreView.swift in Sources */,
 				FR0G0001KEEPVIEW0SWIFT02 /* ForgekeeperView.swift in Sources */,
 				FR0G0002DIALOGUE0SWIFT02 /* ForgekeeperDialogue.swift in Sources */,
 				CMGR0001SERVICE0BUILD00001 /* ContentManager.swift in Sources */,

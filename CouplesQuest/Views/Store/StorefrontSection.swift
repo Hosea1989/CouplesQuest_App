@@ -103,6 +103,7 @@ struct StorefrontSection: View {
                             Text(item.name)
                                 .font(.custom("Avenir-Heavy", size: 15))
                                 .foregroundColor(Color(item.rarity.color))
+                                .rarityShimmer(item.rarity)
                             Text(item.statSummary)
                                 .font(.custom("Avenir-Medium", size: 12))
                                 .foregroundColor(.secondary)
@@ -256,6 +257,7 @@ struct StorefrontSection: View {
             Text(item.name)
                 .font(.custom("Avenir-Heavy", size: 14))
                 .foregroundColor(isUnlocked ? Color(item.rarity.color) : .gray)
+                .rarityShimmer(isUnlocked ? item.rarity : .common)
             if isUnlocked {
                 let statText = "+\(Int(item.statBonus.rounded())) \(item.primaryStat.rawValue)"
                 let secondaryText = item.secondaryStat.map { ", +\(Int(item.secondaryStatBonus.rounded())) \($0.rawValue)" } ?? ""
@@ -372,6 +374,7 @@ struct StorefrontSection: View {
                                     Text(piece.name)
                                         .font(.custom("Avenir-Heavy", size: 13))
                                         .foregroundColor(Color(piece.rarity.color))
+                                        .rarityShimmer(piece.rarity)
                                     Text("+\(piece.statBonusDisplay) \(piece.primaryStat.rawValue)" +
                                          (piece.secondaryStat != nil ? ", +\(piece.secondaryStatBonusDisplay) \(piece.secondaryStat!.rawValue)" : ""))
                                         .font(.custom("Avenir-Medium", size: 11))

@@ -109,6 +109,15 @@ struct HomeView: View {
                                     .cardEntrance(visible: cardsAppeared, delay: 0)
                             }
                             
+                            // 1.4. Active Raid Banner
+                            if let activeBoss = raidBosses.first(where: { $0.isActive }) {
+                                NavigationLink(destination: RaidBossView()) {
+                                    ActiveRaidHomeBanner(boss: activeBoss)
+                                }
+                                .buttonStyle(.plain)
+                                .cardEntrance(visible: cardsAppeared, delay: 0)
+                            }
+                            
                             // 1.5. Breadcrumb Quest Log (first 7 days only)
                             if character.shouldShowBreadcrumbs {
                                 BreadcrumbQuestLogCard(character: character)
@@ -140,8 +149,8 @@ struct HomeView: View {
                             .buttonStyle(.plain)
                             .cardEntrance(visible: cardsAppeared, delay: 3)
                             
-                            // 5. Quick Actions Grid (lead with "New Task")
-                            QuickActionsGrid(showCreateTask: $showCreateTask)
+                            // 5. Quick Actions — Town and Camp
+                            QuickActionsGrid()
                                 .cardEntrance(visible: cardsAppeared, delay: 4)
                             
                             // 6. Daily Quests Card
@@ -592,7 +601,7 @@ struct CharacterSummaryCard: View {
             VStack(spacing: 8) {
                 HStack {
                     HStack(spacing: 4) {
-                        ExpGemIcon(size: 14)
+                        ExpGemIcon(size: 18)
                         Text("EXP")
                             .font(.custom("Avenir-Heavy", size: 12))
                             .foregroundColor(.secondary)
@@ -912,25 +921,37 @@ struct DailyQuestRow: View {
     }
 }
 
-// MARK: - Quick Actions Grid (2x3)
+// MARK: - Quick Actions — Town and Camp
+
+struct QuickActionsSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            line
+            Text(title)
+                .font(.custom("Avenir-Heavy", size: 13))
+                .foregroundColor(Color("AccentGold"))
+                .textCase(.uppercase)
+                .tracking(1.2)
+            line
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(Color("AccentGold").opacity(0.3))
+            .frame(height: 1)
+    }
+}
 
 struct QuickActionsGrid: View {
-    @Binding var showCreateTask: Bool
-    
     var body: some View {
         VStack(spacing: 10) {
+            QuickActionsSectionHeader(title: "Town")
+
             HStack(spacing: 10) {
-                // New Task
-                Button(action: { showCreateTask = true }) {
-                    QuickActionButton(
-                        icon: "plus.circle.fill",
-                        label: "New Task",
-                        color: Color("AccentGreen")
-                    )
-                }
-                .buttonStyle(QuickActionPressStyle())
-                
-                // Forge
                 NavigationLink(destination: ForgeView()) {
                     QuickActionButton(
                         icon: "hammer.fill",
@@ -939,8 +960,16 @@ struct QuickActionsGrid: View {
                     )
                 }
                 .buttonStyle(QuickActionPressStyle())
-                
-                // Store
+
+                NavigationLink(destination: TavernView()) {
+                    QuickActionButton(
+                        icon: "fork.knife",
+                        label: "Tavern",
+                        color: Color("TavernAmber")
+                    )
+                }
+                .buttonStyle(QuickActionPressStyle())
+
                 NavigationLink(destination: StoreView()) {
                     QuickActionButton(
                         icon: "bag.fill",
@@ -950,24 +979,33 @@ struct QuickActionsGrid: View {
                 }
                 .buttonStyle(QuickActionPressStyle())
             }
-            
+
+            QuickActionsSectionHeader(title: "Camp")
+
             HStack(spacing: 10) {
-                // Dungeon
-                NavigationLink(destination: DungeonListView(isEmbedded: true)) {
+                NavigationLink(destination: ResearchStoreView()) {
                     QuickActionButton(
-                        icon: "shield.lefthalf.filled",
-                        label: "Dungeon",
+                        icon: "book.fill",
+                        label: "Research",
                         color: Color("AccentPurple")
                     )
                 }
                 .buttonStyle(QuickActionPressStyle())
-                
-                // Inventory
+
                 NavigationLink(destination: InventoryView()) {
                     QuickActionButton(
                         icon: "shippingbox.fill",
                         label: "Inventory",
                         color: Color("StatDexterity")
+                    )
+                }
+                .buttonStyle(QuickActionPressStyle())
+
+                NavigationLink(destination: PartnerView()) {
+                    QuickActionButton(
+                        icon: "person.3.fill",
+                        label: "Party",
+                        color: Color("AccentPink")
                     )
                 }
                 .buttonStyle(QuickActionPressStyle())
@@ -3277,6 +3315,109 @@ struct LeaderboardSummaryCard: View {
                 .fill(Color("CardBackground"))
                 .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         )
+    }
+}
+
+// MARK: - Active Raid Home Banner
+
+struct ActiveRaidHomeBanner: View {
+    let boss: WeeklyRaidBoss
+    @State private var timerTick = 0
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    
+    private var timeString: String {
+        let t = boss.timeRemaining
+        let days = Int(t) / 86400
+        let hours = (Int(t) % 86400) / 3600
+        let minutes = (Int(t) % 3600) / 60
+        if days > 0 { return "\(days)d \(hours)h left" }
+        if hours > 0 { return "\(hours)h \(minutes)m left" }
+        return "\(minutes)m left"
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color("AccentPurple").opacity(0.15))
+                    .frame(width: 48, height: 48)
+                if UIImage(named: boss.spriteImage) != nil {
+                    Image(boss.spriteImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 36, height: 36)
+                } else {
+                    Image(systemName: boss.icon)
+                        .font(.title2)
+                        .foregroundColor(Color("AccentPurple"))
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("ACTIVE RAID")
+                        .font(.custom("Avenir-Heavy", size: 10))
+                        .foregroundColor(Color("AccentPurple"))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color("AccentPurple").opacity(0.15))
+                        .clipShape(Capsule())
+                    
+                    Text("Phase \(boss.currentPhase)/3")
+                        .font(.custom("Avenir-Medium", size: 10))
+                        .foregroundColor(.secondary)
+                }
+                
+                Text(boss.name)
+                    .font(.custom("Avenir-Heavy", size: 15))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.1))
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color("AccentPurple"), Color("AccentPink")],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: geo.size.width * boss.hpPercentage)
+                    }
+                }
+                .frame(height: 6)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(timeString)
+                    .font(.custom("Avenir-Medium", size: 11))
+                    .foregroundColor(.secondary)
+                
+                Text("\(Int(boss.hpPercentage * 100))% HP")
+                    .font(.custom("Avenir-Heavy", size: 13))
+                    .foregroundColor(Color("AccentPurple"))
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color("CardBackground"))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color("AccentPurple").opacity(0.2), lineWidth: 1)
+                )
+        )
+        .onReceive(timer) { _ in timerTick += 1 }
     }
 }
 

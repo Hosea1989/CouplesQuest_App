@@ -147,6 +147,10 @@ struct LootGenerator {
         // Armor weight filtering based on class proficiency
         let allowedWeights: Set<ArmorWeight>? = (slot == .armor) ? characterClass?.armorProficiency : nil
         
+        // Weapon/cloak/trinket base type filtering based on class proficiency
+        let allowedWeaponBases: Set<String>? = (slot == .weapon) ? characterClass?.weaponProficiency : nil
+        let allowedCloakBases: Set<String>? = (slot == .cloak) ? characterClass?.cloakProficiency : nil
+        
         var item: Equipment
         
         // 80% chance: pull a curated item from server-driven content or static catalog
@@ -198,8 +202,9 @@ struct LootGenerator {
                 }
             }
             
-            // Fallback to static catalog (with weight filtering)
-            if let template = EquipmentCatalog.random(slot: slot, rarity: rarity, maxLevel: maxLevelReq, allowedWeights: allowedWeights) {
+            // Fallback to static catalog (with weight + base type filtering)
+            let catalogBases: Set<String>? = allowedWeaponBases ?? allowedCloakBases
+            if let template = EquipmentCatalog.random(slot: slot, rarity: rarity, maxLevel: maxLevelReq, allowedWeights: allowedWeights, allowedBaseTypes: catalogBases) {
                 item = template.toEquipment()
                 rollAndApplyAffixes(to: item, characterClass: characterClass)
                 return item
@@ -210,7 +215,8 @@ struct LootGenerator {
         let primaryStat = StatType.allCases.randomElement()!
         let primaryBonus = rollStatBonus(rarity: rarity)
         let secondary = rollSecondaryStat(rarity: rarity, excluding: primaryStat)
-        let generated = generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights)
+        let proceduralBases: Set<String>? = allowedWeaponBases ?? allowedCloakBases
+        let generated = generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights, allowedBaseTypes: proceduralBases)
         let description = generateDescription(slot: slot, rarity: rarity)
         let tierBase = (tier - 1) * 5
         let bonusContrib = Int((primaryBonus / 2.0).rounded())
@@ -411,14 +417,19 @@ struct LootGenerator {
     // MARK: - Name Generation
     
     /// Generate a thematic equipment name
-    static func generateName(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil) -> String {
-        generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights).name
+    static func generateName(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil, allowedBaseTypes: Set<String>? = nil) -> String {
+        generateNameAndBase(slot: slot, rarity: rarity, primaryStat: primaryStat, allowedWeights: allowedWeights, allowedBaseTypes: allowedBaseTypes).name
     }
     
     /// Returns both the generated name and the raw base type for sprite mapping.
-    static func generateNameAndBase(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil) -> (name: String, baseType: String) {
+    static func generateNameAndBase(slot: EquipmentSlot, rarity: ItemRarity, primaryStat: StatType, allowedWeights: Set<ArmorWeight>? = nil, allowedBaseTypes: Set<String>? = nil) -> (name: String, baseType: String) {
         let prefix = prefixes(for: rarity).randomElement() ?? ""
-        let base = bases(for: slot, allowedWeights: allowedWeights).randomElement() ?? slot.rawValue
+        var pool = bases(for: slot, allowedWeights: allowedWeights)
+        if let allowed = allowedBaseTypes {
+            let filtered = pool.filter { allowed.contains($0.lowercased()) }
+            if !filtered.isEmpty { pool = filtered }
+        }
+        let base = pool.randomElement() ?? slot.rawValue
         let suffix = suffixes(for: primaryStat).randomElement() ?? ""
         
         let name = rarity == .common
@@ -431,29 +442,29 @@ struct LootGenerator {
     static func generateDescription(slot: EquipmentSlot, rarity: ItemRarity) -> String {
         let descriptions: [ItemRarity: [String]] = [
             .common: [
-                "A simple but functional piece of gear.",
-                "Nothing fancy, but it gets the job done.",
-                "Basic equipment for any adventurer."
+                "Found in a barrel. You checked a barrel. This is your life now.",
+                "It's not great, but at least it's yours. Probably.",
+                "The craftsmanship screams 'I had ten minutes and a dream.'"
             ],
             .uncommon: [
-                "Crafted with care, this gear is a cut above the rest.",
-                "Slightly enchanted with a faint magical glow.",
-                "Well-made and reliable in tough situations."
+                "Slightly better than average, which is more than most can say about themselves.",
+                "Has a faint magical glow. Could also be mold. Best not to ask.",
+                "Competent gear for someone who's moved past the 'barrel-checking' phase."
             ],
             .rare: [
-                "Imbued with powerful enchantments that hum with energy.",
-                "A sought-after piece that many adventurers would envy.",
-                "Forged with rare materials and ancient techniques."
+                "Forged under a blood moon by a blacksmith who forgot to eat lunch. Hangry craftsmanship hits different.",
+                "Won in a bet against a traveling merchant who definitely regrets the handshake.",
+                "Made from materials so rare the supply chain involves two dragons and a notarized permission slip."
             ],
             .epic: [
-                "A masterwork of magical craftsmanship, radiating power.",
-                "Legends speak of gear like this — few ever hold it.",
-                "Infused with the essence of fallen champions."
+                "Radiates so much power that nearby candles spontaneously light. Fire marshals hate it.",
+                "Legends speak of gear like this. Legends also exaggerate. But not this time.",
+                "Infused with the essence of champions who died doing something incredibly cool and slightly stupid."
             ],
             .legendary: [
-                "An artifact of immense power, spoken of only in whispers.",
-                "World-shaping power is contained within this legendary gear.",
-                "The gods themselves would covet such a treasure."
+                "An artifact so powerful it has its own gravitational pull. And its own opinions.",
+                "The gods argued over who got credit for this one. The argument lasted three centuries. It was worth it.",
+                "Possessing this item technically makes you a historical event. Act accordingly."
             ]
         ]
         return descriptions[rarity]?.randomElement() ?? "A mysterious piece of equipment."
@@ -473,18 +484,18 @@ struct LootGenerator {
     
     private static func bases(for slot: EquipmentSlot, allowedWeights: Set<ArmorWeight>? = nil) -> [String] {
         switch slot {
-        case .weapon: return ["Sword", "Axe", "Staff", "Dagger", "Bow", "Orb", "Mace", "Spear", "Shield", "Crossbow", "Tome", "Halberd"]
+        case .weapon: return ["Sword", "Axe", "Staff", "Dagger", "Bow", "Mace", "Spear", "Shield", "Crossbow", "Tome", "Halberd"]
         case .armor:
             let heavyBases = ["Plate", "Chainmail", "Breastplate", "Pauldrons", "Heavy Helm", "Heavy Gauntlets", "Heavy Boots"]
-            let lightBases = ["Robes", "Leather Armor", "Helm", "Gauntlets", "Boots"]
+            let lightBases = ["Tunic", "Leather Armor", "Helm", "Gauntlets", "Boots"]
             guard let weights = allowedWeights else { return heavyBases + lightBases }
             var result: [String] = []
             if weights.contains(.heavy) { result += heavyBases }
             if weights.contains(.light) { result += lightBases }
             return result.isEmpty ? lightBases : result
         case .accessory: return ["Ring", "Amulet", "Earring", "Talisman", "Brooch", "Pendant"]
-        case .trinket: return ["Charm", "Belt", "Bracelet"]
-        case .cloak: return ["Cloak", "Mantle", "Shroud", "Cape"]
+        case .trinket: return ["Charm", "Belt", "Bracelet", "Orb"]
+        case .cloak: return ["Cloak", "Mantle", "Shroud", "Cape", "Robes"]
         }
     }
     

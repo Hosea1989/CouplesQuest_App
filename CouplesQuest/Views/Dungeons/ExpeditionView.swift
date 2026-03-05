@@ -17,6 +17,8 @@ struct ExpeditionView: View {
     @State private var showFinalRewards = false
     @State private var expeditionTimer: Timer? = nil
     @State private var timerTick = 0
+    @State private var showStageLootTooltip = false
+    @State private var finalLootTooltipItem: String? = nil
     
     private var character: PlayerCharacter? {
         characters.first
@@ -648,12 +650,32 @@ struct ExpeditionView: View {
                             Spacer()
                         }
                         if let loot = result.lootDroppedName {
-                            HStack {
-                                Image(systemName: "shield.fill")
-                                    .foregroundColor(Color("AccentOrange"))
-                                Text(loot)
-                                    .font(.custom("Avenir-Heavy", size: 16))
-                                Spacer()
+                            Button { showStageLootTooltip.toggle() } label: {
+                                HStack {
+                                    Image(systemName: "shield.fill")
+                                        .foregroundColor(Color("AccentOrange"))
+                                    Text(loot)
+                                        .font(.custom("Avenir-Heavy", size: 16))
+                                    Spacer()
+                                    Image(systemName: "info.circle")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .popover(isPresented: $showStageLootTooltip) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(loot)
+                                        .font(.custom("Avenir-Heavy", size: 15))
+                                        .foregroundColor(Color("AccentOrange"))
+                                    Divider()
+                                    Text("New equipment added to your inventory. Equip it from the Inventory tab to boost your stats.")
+                                        .font(.custom("Avenir-Medium", size: 13))
+                                        .foregroundColor(.primary)
+                                }
+                                .padding()
+                                .frame(width: 260)
+                                .presentationCompactAdaptation(.popover)
                             }
                         }
                         if result.materialDropped,
@@ -831,13 +853,38 @@ struct ExpeditionView: View {
                                 Spacer()
                             }
                             ForEach(active.equipmentDropped, id: \.self) { item in
-                                HStack {
-                                    Image(systemName: "sparkle")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(Color("AccentGold"))
-                                    Text(item)
-                                        .font(.custom("Avenir-Medium", size: 14))
-                                    Spacer()
+                                Button {
+                                    finalLootTooltipItem = (finalLootTooltipItem == item) ? nil : item
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "sparkle")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(Color("AccentGold"))
+                                        Text(item)
+                                            .font(.custom("Avenir-Medium", size: 14))
+                                        Spacer()
+                                        Image(systemName: "info.circle")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .popover(isPresented: Binding(
+                                    get: { finalLootTooltipItem == item },
+                                    set: { if !$0 { finalLootTooltipItem = nil } }
+                                )) {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(item)
+                                            .font(.custom("Avenir-Heavy", size: 15))
+                                            .foregroundColor(Color("AccentOrange"))
+                                        Divider()
+                                        Text("New equipment added to your inventory. Equip it from the Inventory tab to boost your stats.")
+                                            .font(.custom("Avenir-Medium", size: 13))
+                                            .foregroundColor(.primary)
+                                    }
+                                    .padding()
+                                    .frame(width: 260)
+                                    .presentationCompactAdaptation(.popover)
                                 }
                             }
                         }

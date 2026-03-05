@@ -823,8 +823,8 @@ class GameEngine: ObservableObject {
                 }
             }
             
-            // Research Token drop (mission-exclusive)
-            // Base 25% chance, higher rarity missions give more tokens
+            // Tome drop (mission-exclusive)
+            // Base 25% chance, higher rarity missions give more tomes
             var researchTokensDropped = 0
             let researchTokenChance: Double = {
                 switch mission.rarity {
@@ -2502,7 +2502,7 @@ class GameEngine: ObservableObject {
         return MaterialDrop(type: .herb, rarity: itemRarity, amount: amount)
     }
     
-    /// Award Research Tokens from a successful AFK mission
+    /// Award Tomes from a successful AFK mission
     func awardResearchTokens(
         amount: Int,
         character: PlayerCharacter,
@@ -4371,7 +4371,7 @@ struct MissionCompletionResult {
     /// Stat gained from training (nil if none)
     let statGained: (stat: StatType, amount: Int)?
     
-    /// Number of Research Tokens dropped (mission-exclusive)
+    /// Number of Tomes dropped (mission-exclusive)
     var researchTokensDropped: Int = 0
     
     /// Consumable item dropped from mission completion (nil if none)

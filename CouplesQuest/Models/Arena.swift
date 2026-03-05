@@ -706,8 +706,6 @@ final class ArenaMatch {
         opponentClass: String?,
         opponentHeroPower: Int,
         opponentRating: Int,
-        attackerStance: BattleStance,
-        defenderStance: BattleStance,
         result: PVPMatchResult,
         ratingChange: Int,
         ratingAfter: Int,
@@ -722,8 +720,8 @@ final class ArenaMatch {
         self.opponentClass = opponentClass
         self.opponentHeroPower = opponentHeroPower
         self.opponentRating = opponentRating
-        self.attackerStance = attackerStance.rawValue
-        self.defenderStance = defenderStance.rawValue
+        self.attackerStance = "none"
+        self.defenderStance = "none"
         self.won = result.winnerIsAttacker
         self.ratingChange = ratingChange
         self.ratingAfter = ratingAfter
@@ -731,7 +729,7 @@ final class ArenaMatch {
         self.goldEarned = rewards.gold
         self.expEarned = rewards.exp
         self.isRevenge = isRevenge
-        self.stanceMatchup = result.stanceMatchup
+        self.stanceMatchup = "none"
         self.createdAt = Date()
         
         if let data = try? JSONEncoder().encode(result.rounds),
@@ -787,7 +785,7 @@ struct ArenaShopItem: Identifiable {
         // Consumables
         ArenaShopItem(id: "arena-elixir", name: "Arena Elixir", itemDescription: "+10% ATK for your next 3 fights.", category: .consumables, cost: 50, icon: "flame.fill"),
         ArenaShopItem(id: "iron-tonic", name: "Iron Tonic", itemDescription: "+10% GUARD for your next 3 fights.", category: .consumables, cost: 50, icon: "shield.fill"),
-        ArenaShopItem(id: "scouts-eye", name: "Scout's Eye", itemDescription: "Reveals opponent's Defense Stance before you choose yours.", category: .consumables, cost: 75, icon: "eye.fill"),
+        ArenaShopItem(id: "scouts-eye", name: "Scout's Eye", itemDescription: "Reveals opponent's full gear and quirks before you fight.", category: .consumables, cost: 75, icon: "eye.fill"),
         ArenaShopItem(id: "second-wind", name: "Second Wind", itemDescription: "+1 bonus daily Arena fight.", category: .consumables, cost: 100, icon: "wind"),
         // Titles
         ArenaShopItem(id: "title-gladiator", name: "Gladiator", itemDescription: "Display \"Gladiator\" as your Arena title.", category: .titles, cost: 100, icon: "text.badge.star"),

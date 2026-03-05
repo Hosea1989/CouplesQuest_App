@@ -351,7 +351,7 @@ struct MissionsView: View {
             if result.success {
                 var subtitle = "+\(result.expGained) EXP, +\(result.goldGained) Gold"
                 if result.researchTokensDropped > 0 {
-                    subtitle += ", +\(result.researchTokensDropped) Research Token\(result.researchTokensDropped > 1 ? "s" : "")"
+                    subtitle += ", +\(result.researchTokensDropped) Tome\(result.researchTokensDropped > 1 ? "s" : "")"
                 }
                 let title: String
                 if let newClass = result.rankedUpToClass {
@@ -370,7 +370,7 @@ struct MissionsView: View {
                     context: modelContext
                 )
                 result.materialDrops = [herbDrop]
-                // Award Research Tokens (mission-exclusive drop)
+                // Award Tomes (mission-exclusive drop)
                 if result.researchTokensDropped > 0 {
                     gameEngine.awardResearchTokens(
                         amount: result.researchTokensDropped,
@@ -1661,8 +1661,8 @@ struct MissionCompletionView: View {
                         ZStack {
                             Circle()
                                 .fill(Color("AccentGold").opacity(0.15))
-                                .frame(width: 36, height: 36)
-                            GoldCoinIcon(size: 20)
+                                .frame(width: 44, height: 44)
+                            GoldCoinIcon(size: 24)
                         }
                         VStack(alignment: .leading, spacing: 1) {
                             Text("GOLD")
@@ -1770,14 +1770,15 @@ struct MissionCompletionView: View {
                 .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
             }
             
-            // Research Token drop row
+            // Tome drop row
             if result.researchTokensDropped > 0 {
                 rewardItemRow(
                     icon: "book.closed.fill",
                     iconColor: Color("AccentPurple"),
-                    label: "Research Token\(result.researchTokensDropped > 1 ? "s" : "")",
+                    label: "Tome\(result.researchTokensDropped > 1 ? "s" : "")",
                     value: "+\(result.researchTokensDropped)",
-                    valueColor: Color("AccentPurple")
+                    valueColor: Color("AccentPurple"),
+                    imageName: "equip-tome"
                 )
                 .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
             }
@@ -1785,7 +1786,7 @@ struct MissionCompletionView: View {
             // Material drops
             if !result.materialDrops.isEmpty {
                 ForEach(result.materialDrops) { drop in
-                    MaterialLootRow(drop: drop, size: 36)
+                    MaterialLootRow(drop: drop, size: 48)
                         .transition(.asymmetric(insertion: .scale(scale: 0.5).combined(with: .opacity), removal: .opacity))
                 }
             }
@@ -1829,16 +1830,16 @@ struct MissionCompletionView: View {
                 ZStack {
                     Circle()
                         .fill(iconColor.opacity(0.15))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                     if let imgName = imageName, UIImage(named: imgName) != nil {
                         Image(imgName)
                             .interpolation(.none)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 32, height: 32)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 18))
+                            .font(.system(size: 20))
                             .foregroundColor(iconColor)
                     }
                 }

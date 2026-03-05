@@ -806,12 +806,10 @@ final class SupabaseService: ObservableObject {
         return try JSONDecoder().decode([FighterSnapshot].self, from: response.data)
     }
     
-    /// Submit a PVP match result via RPC.
+    /// Submit a PVP match result via RPC (v2: stanceless).
     func submitArenaMatch(
         attackerID: String,
         defenderID: String,
-        attackerStance: String,
-        defenderStance: String,
         roundsJSON: String,
         winnerID: String,
         attackerRatingChange: Int,
@@ -824,8 +822,6 @@ final class SupabaseService: ObservableObject {
         let params: [String: AnyJSON] = [
             "p_attacker_id": .string(attackerID),
             "p_defender_id": .string(defenderID),
-            "p_attacker_stance": .string(attackerStance),
-            "p_defender_stance": .string(defenderStance),
             "p_rounds_json": .string(roundsJSON),
             "p_winner_id": .string(winnerID),
             "p_attacker_rating_change": .integer(attackerRatingChange),

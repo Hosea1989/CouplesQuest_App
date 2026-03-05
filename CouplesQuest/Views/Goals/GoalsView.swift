@@ -15,6 +15,9 @@ struct GoalsView: View {
     private var character: PlayerCharacter? { characters.first }
     private var bond: Bond? { bonds.first }
     
+    /// When true, the view is embedded inside an existing NavigationStack (e.g. as a tab) and omits its own nav title/toolbar.
+    var isEmbedded: Bool = false
+    
     /// Whether this view is filtered to show only party goals (set by parent when navigating from Party tab)
     var partyOnly: Bool = false
     
@@ -39,20 +42,26 @@ struct GoalsView: View {
     }
     
     var body: some View {
+        goalsContent
+            .modifier(GoalsNavModifier(isEmbedded: isEmbedded, showCreateGoal: $showCreateGoal))
+    }
+    
+    private var goalsContent: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            if !isEmbedded {
+                LinearGradient(
+                    colors: [Color("BackgroundTop"), Color("BackgroundBottom")],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
             
             if allGoals.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Filter picker
                         Picker("Filter", selection: $selectedFilter) {
                             ForEach(GoalFilter.allCases, id: \.self) { filter in
                                 Text(filter.rawValue).tag(filter)
@@ -76,17 +85,6 @@ struct GoalsView: View {
                         }
                     }
                     .padding()
-                }
-            }
-        }
-        .navigationTitle("Goals")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showCreateGoal = true }) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(Color("AccentGold"))
-                        .font(.title2)
                 }
             }
         }
@@ -272,6 +270,32 @@ struct GoalsView: View {
     
     func completedLinkedCount(for goal: Goal) -> Int {
         allTasks.filter { $0.goalID == goal.id && ($0.status == .completed || ($0.isHabit && $0.habitStreak > 0)) }.count
+    }
+}
+
+// MARK: - Navigation Modifier
+
+private struct GoalsNavModifier: ViewModifier {
+    let isEmbedded: Bool
+    @Binding var showCreateGoal: Bool
+    
+    func body(content: Content) -> some View {
+        if isEmbedded {
+            content
+        } else {
+            content
+                .navigationTitle("Goals")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: { showCreateGoal = true }) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(Color("AccentGold"))
+                                .font(.title2)
+                        }
+                    }
+                }
+        }
     }
 }
 

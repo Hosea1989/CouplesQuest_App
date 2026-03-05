@@ -126,7 +126,7 @@ struct ResearchNode: Identifiable, Codable, Equatable {
     /// Crafting materials required
     let materialCosts: [ResearchMaterialCost]
     
-    /// Research Tokens required
+    /// Tomes required
     let researchTokenCost: Int
     
     /// Gold required

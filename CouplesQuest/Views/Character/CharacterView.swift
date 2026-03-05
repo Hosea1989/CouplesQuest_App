@@ -18,7 +18,6 @@ struct CharacterView: View {
         case achievements = "Achievements"
         case wellness = "Wellness"
         case bestiary = "Bestiary"
-        case research = "Research"
     }
     
     var body: some View {
@@ -56,8 +55,6 @@ struct CharacterView: View {
                                 WellnessTabContent(character: character)
                             case .bestiary:
                                 BestiaryTabContent(character: character)
-                            case .research:
-                                ResearchTabContent(character: character)
                             }
                         }
                         .padding()
@@ -1031,6 +1028,7 @@ struct EquipmentSlotRow: View {
                     if let equipment = equipment {
                         Text(equipment.name)
                             .font(.custom("Avenir-Heavy", size: 16))
+                            .rarityShimmer(equipment.rarity)
                         Text(equipment.statSummary)
                             .font(.custom("Avenir-Medium", size: 12))
                             .foregroundColor(Color("AccentGreen"))
@@ -1094,9 +1092,10 @@ struct EquipmentSlotPickerView: View {
             .sorted { rarityOrder($0.rarity) > rarityOrder($1.rarity) }
     }
     
-    /// Whether the player meets the level requirement for an item
+    /// Whether the player meets level and class requirements for an item
     private func canEquip(_ item: Equipment) -> Bool {
         character.level >= item.levelRequirement
+            && (character.characterClass?.canEquip(item) ?? true)
     }
     
     /// Stat delta between a candidate item and the currently equipped item
@@ -1212,6 +1211,7 @@ struct EquipmentSlotPickerView: View {
                     Text(equipped.name)
                         .font(.custom("Avenir-Heavy", size: 15))
                         .foregroundColor(Color(equipped.rarity.color))
+                        .rarityShimmer(equipped.rarity)
                     Text(equipped.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(Color("AccentGreen"))
@@ -1306,6 +1306,7 @@ struct EquipmentSlotPickerView: View {
                     Text(item.name)
                         .font(.custom("Avenir-Heavy", size: 14))
                         .foregroundColor(meetsLevel ? Color(item.rarity.color) : .secondary)
+                        .rarityShimmer(meetsLevel ? item.rarity : .common)
                     
                     Text(item.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))

@@ -747,7 +747,7 @@ struct OnboardingView: View {
         // Starter weapon
         let weapon = Equipment(
             name: starterWeaponName,
-            description: "A trusty weapon for a new adventurer.",
+            description: "Your first weapon. It's not much, but it's honest work. Mostly honest.",
             slot: .weapon,
             rarity: .common,
             primaryStat: primaryStat,
@@ -763,7 +763,7 @@ struct OnboardingView: View {
         // Starter armor
         let armor = Equipment(
             name: starterArmorName,
-            description: "Basic protection for a budding hero.",
+            description: "Offers the protection of a firm suggestion. Better than nothing. Barely.",
             slot: .armor,
             rarity: .common,
             primaryStat: .defense,

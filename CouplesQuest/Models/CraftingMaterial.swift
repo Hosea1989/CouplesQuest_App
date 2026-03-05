@@ -69,10 +69,15 @@ enum MaterialType: String, Codable, CaseIterable {
     /// Obtained by dismantling equipment
     case fragment = "Fragment"
     
-    /// Earned exclusively from AFK missions — used for the Research Tree
+    /// Ancient tomes earned from AFK missions — used at the Scholar's Study
     case researchToken = "Research Token"
     
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .researchToken: return "Tome"
+        default: return rawValue
+        }
+    }
     
     var icon: String {
         switch self {
@@ -87,6 +92,12 @@ enum MaterialType: String, Codable, CaseIterable {
     }
     
     func imageName(rarity: ItemRarity) -> String? {
+        if self == .researchToken {
+            let tinted = "equip-tome-\(rarity.rawValue.lowercased())"
+            if UIImage(named: tinted) != nil { return tinted }
+            if UIImage(named: "equip-tome") != nil { return "equip-tome" }
+            return nil
+        }
         let base = "material-\(rawValue.lowercased().replacingOccurrences(of: " ", with: ""))"
         let tinted = "\(base)-\(rarity.rawValue.lowercased())"
         if UIImage(named: tinted) != nil { return tinted }
@@ -115,7 +126,7 @@ enum MaterialType: String, Codable, CaseIterable {
         case .hide: return "Found in dungeon trap and boss rooms"
         case .herb: return "Gathered from AFK missions"
         case .fragment: return "Obtained by dismantling equipment"
-        case .researchToken: return "Earned exclusively from AFK missions"
+        case .researchToken: return "Ancient tomes earned from AFK missions"
         }
     }
     
@@ -128,7 +139,7 @@ enum MaterialType: String, Codable, CaseIterable {
         case .hide: return "Used to craft equipment at the Forge"
         case .herb: return "Used to craft equipment at the Forge"
         case .fragment: return "Used for equipment enhancement at the Forge"
-        case .researchToken: return "Used to unlock upgrades in the Research Tree"
+        case .researchToken: return "Used to unlock research at the Scholar's Study"
         }
     }
 }

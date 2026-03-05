@@ -158,12 +158,12 @@ struct GearSetCatalog {
     static let warriorSet = GearSetDefinition(
         id: "set_warrior",
         name: "Vanguard's Resolve",
-        description: "The armor of frontline champions. Equip any 2 pieces for +10% Defense in dungeons.",
+        description: "The official uniform of people who solve problems by standing in front of them. Equip any 2 pieces for +10% Defense in dungeons.",
         characterClass: .warrior,
         weapon: GearSetPiece(
             id: "set_warrior_weapon",
             name: "Vanguard Broadsword",
-            description: "A broad, heavy blade forged for those who lead the charge.",
+            description: "So broad it's basically a shield that got confused about its career path.",
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
@@ -172,7 +172,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_warrior_armor",
             name: "Vanguard War Plate",
-            description: "Thick plated armor bearing the crest of the vanguard.",
+            description: "Comes pre-dented for authenticity. The crest on the front says 'vanguard,' which is medieval for 'hit me first.'",
             slot: .armor, rarity: .epic,
             primaryStat: .defense, statBonus: 8,
             secondaryStat: .strength, secondaryStatBonus: 3,
@@ -181,7 +181,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_warrior_accessory",
             name: "Vanguard's Oath Amulet",
-            description: "A sworn amulet of protection carried by every member of the vanguard.",
+            description: "Every member of the vanguard wears one. Losing it voids your warranty and your dental plan.",
             slot: .accessory, rarity: .epic,
             primaryStat: .defense, statBonus: 7,
             secondaryStat: .charisma, secondaryStatBonus: 2,
@@ -198,12 +198,12 @@ struct GearSetCatalog {
     static let mageSet = GearSetDefinition(
         id: "set_mage",
         name: "Arcanum's Embrace",
-        description: "Garments of pure arcane energy. Equip any 2 pieces for -10% AFK mission time.",
+        description: "Robes that hug you with pure arcane energy. It's not weird, it's magical. Equip any 2 pieces for -10% AFK mission time.",
         characterClass: .mage,
         weapon: GearSetPiece(
             id: "set_mage_weapon",
             name: "Arcanum Focus Staff",
-            description: "A staff carved from crystallized mana, pulsing with ancient knowledge.",
+            description: "Carved from crystallized mana by someone who never heard of ergonomic design. Your wrist will hate you, but your spells will slap.",
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -212,7 +212,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_mage_armor",
             name: "Arcanum Silk Vestment",
-            description: "Robes threaded with arcane filaments that amplify the wearer's spells.",
+            description: "Amplifies your spells at the minor cost of looking like a haunted curtain. Fashion is subjective.",
             slot: .armor, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
@@ -221,7 +221,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_mage_accessory",
             name: "Arcanum Resonance Charm",
-            description: "A charm that vibrates at the frequency of raw mana.",
+            description: "Vibrates at the frequency of raw mana. Also pairs with most Bluetooth speakers, if you're curious.",
             slot: .accessory, rarity: .epic,
             primaryStat: .wisdom, statBonus: 7,
             secondaryStat: .luck, secondaryStatBonus: 2,
@@ -238,12 +238,12 @@ struct GearSetCatalog {
     static let archerSet = GearSetDefinition(
         id: "set_archer",
         name: "Windstrider's Mark",
-        description: "Gear of the swift and silent. Equip any 2 pieces for +10% loot drop chance.",
+        description: "For archers who want to look fast while standing completely still. Equip any 2 pieces for +10% loot drop chance.",
         characterClass: .archer,
         weapon: GearSetPiece(
             id: "set_archer_weapon",
             name: "Windstrider Longbow",
-            description: "A sleek bow engineered for speed. Arrows fly true even in storms.",
+            description: "Engineered for speed and silence. The arrows make a dramatic whistling sound because the designer had a flair for theater.",
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -252,7 +252,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_archer_armor",
             name: "Windstrider Leather",
-            description: "Featherlight leather armor treated for maximum mobility.",
+            description: "So featherlight you'll forget you're wearing armor. You'll remember when something hits you, though.",
             slot: .armor, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .defense, secondaryStatBonus: 3,
@@ -261,7 +261,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_archer_accessory",
             name: "Windstrider's Signet Ring",
-            description: "A ring bearing the mark of the windstriders — an elite order of archers.",
+            description: "Bears the mark of an elite archer order that mostly argues about what counts as a 'fair shot.'",
             slot: .accessory, rarity: .epic,
             primaryStat: .dexterity, statBonus: 7,
             secondaryStat: .luck, secondaryStatBonus: 2,
@@ -282,12 +282,12 @@ struct GearSetCatalog {
     static let berserkerSet = GearSetDefinition(
         id: "set_berserker",
         name: "Bloodrage",
-        description: "Forged in fury and tempered by wrath. Equip any 2 pieces for +15% EXP from Physical tasks.",
+        description: "For those who think anger management is a stat build. Equip any 2 pieces for +15% EXP from Physical tasks.",
         characterClass: .berserker,
         weapon: GearSetPiece(
             id: "set_berserker_weapon",
             name: "Bloodrage Cleaver",
-            description: "A massive axe that drinks in the wielder's rage and channels it into devastating blows.",
+            description: "Channels your rage into devastating blows. Therapy was considered as an alternative but tested poorly in focus groups.",
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
@@ -296,7 +296,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_berserker_armor",
             name: "Bloodrage Warplate",
-            description: "Scarred plate armor that grows lighter the angrier its wearer becomes.",
+            description: "Gets lighter the angrier you become, which raises some unsettling questions about physics that nobody wants to ask.",
             slot: .armor, rarity: .epic,
             primaryStat: .strength, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
@@ -305,7 +305,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_berserker_accessory",
             name: "Bloodrage Band",
-            description: "A crimson band that pulses in time with its wearer's heartbeat. Faster when fighting.",
+            description: "Pulses with your heartbeat. Your doctor says that's concerning. Your damage output says otherwise.",
             slot: .accessory, rarity: .epic,
             primaryStat: .strength, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -322,12 +322,12 @@ struct GearSetCatalog {
     static let paladinSet = GearSetDefinition(
         id: "set_paladin",
         name: "Oathkeeper",
-        description: "Blessed armor of the sworn protectors. Equip any 2 pieces for -20% party damage in dungeons.",
+        description: "Blessed armor for people who took 'protect and serve' way too literally. Equip any 2 pieces for -20% party damage in dungeons.",
         characterClass: .paladin,
         weapon: GearSetPiece(
             id: "set_paladin_weapon",
             name: "Oathkeeper Mace",
-            description: "A holy mace that blazes brighter when defending allies. Justice incarnate.",
+            description: "Blazes brighter when defending allies. Burns calories at a frankly irresponsible rate. Pack snacks.",
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 9,
             secondaryStat: .charisma, secondaryStatBonus: 5,
@@ -336,7 +336,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_paladin_armor",
             name: "Oathkeeper Plate",
-            description: "Consecrated plate inscribed with binding oaths. It absorbs blows meant for others.",
+            description: "Inscribed with so many binding oaths that returning it to the shop requires a team of lawyers.",
             slot: .armor, rarity: .epic,
             primaryStat: .defense, statBonus: 11,
             secondaryStat: .strength, secondaryStatBonus: 4,
@@ -345,7 +345,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_paladin_accessory",
             name: "Oathkeeper Seal",
-            description: "A signet ring bearing the seal of the sworn protectors. Its light shields allies.",
+            description: "The official ring of the sworn protectors. Flashing it gets you 10% off at most taverns and zero respect from rogues.",
             slot: .accessory, rarity: .epic,
             primaryStat: .defense, statBonus: 8,
             secondaryStat: .charisma, secondaryStatBonus: 4,
@@ -362,12 +362,12 @@ struct GearSetCatalog {
     static let sorcererSet = GearSetDefinition(
         id: "set_sorcerer",
         name: "Voidweave",
-        description: "Woven from the threads between dimensions. Equip any 2 pieces for +15% EXP from Mental tasks.",
+        description: "Woven from the fabric between dimensions by a tailor who really needs to talk about boundaries. Equip any 2 pieces for +15% EXP from Mental tasks.",
         characterClass: .sorcerer,
         weapon: GearSetPiece(
             id: "set_sorcerer_weapon",
             name: "Voidweave Staff",
-            description: "A staff that bends reality around its tip. Spells cast through it arrive before they're spoken.",
+            description: "Spells cast through it arrive before they're spoken, which makes trash talk completely obsolete.",
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
@@ -376,7 +376,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_sorcerer_armor",
             name: "Voidweave Robes",
-            description: "Robes that exist in multiple dimensions simultaneously. Magic flows through them unimpeded.",
+            description: "Exist in multiple dimensions simultaneously, which makes doing laundry a cross-dimensional logistics problem.",
             slot: .armor, rarity: .epic,
             primaryStat: .wisdom, statBonus: 10,
             secondaryStat: .defense, secondaryStatBonus: 4,
@@ -385,7 +385,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_sorcerer_accessory",
             name: "Voidweave Ring",
-            description: "A ring of condensed void-matter. It amplifies magical resonance tenfold.",
+            description: "Amplifies magical resonance tenfold. Side effects include mild omniscience and an overwhelming urge to correct people.",
             slot: .accessory, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 4,
@@ -402,12 +402,12 @@ struct GearSetCatalog {
     static let enchanterSet = GearSetDefinition(
         id: "set_enchanter",
         name: "Resonance Threads",
-        description: "Harmonic attire of the support master. Equip any 2 pieces for +20% party bond EXP.",
+        description: "Clothes that literally vibrate with friendship. Your party loves you. They have no choice. Equip any 2 pieces for +20% party bond EXP.",
         characterClass: .enchanter,
         weapon: GearSetPiece(
             id: "set_enchanter_weapon",
             name: "Resonance Wand",
-            description: "A wand that harmonizes with nearby allies, amplifying everyone's potential.",
+            description: "Amplifies everyone's potential whether they asked for it or not. The fantasy equivalent of a motivational speaker with a weapon.",
             slot: .weapon, rarity: .epic,
             primaryStat: .charisma, statBonus: 10,
             secondaryStat: .wisdom, secondaryStatBonus: 4,
@@ -416,7 +416,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_enchanter_armor",
             name: "Resonance Vestments",
-            description: "Robes that vibrate at the frequency of friendship. Bonds strengthen in their presence.",
+            description: "Vibrate at the frequency of friendship, which turns out to be a low B-flat. Musicians find this deeply unsettling.",
             slot: .armor, rarity: .epic,
             primaryStat: .charisma, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
@@ -425,7 +425,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_enchanter_accessory",
             name: "Resonance Amulet",
-            description: "An amulet that glows brighter with each ally nearby. Isolation dims it completely.",
+            description: "Glows brighter with each nearby ally. Alone in your room at 2 AM? Complete darkness. It knows.",
             slot: .accessory, rarity: .epic,
             primaryStat: .charisma, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 4,
@@ -442,12 +442,12 @@ struct GearSetCatalog {
     static let rangerSet = GearSetDefinition(
         id: "set_ranger",
         name: "Stalker",
-        description: "Silent hunter's gear, perfected over centuries. Equip any 2 pieces for -15% AFK mission time.",
+        description: "Silent hunter's gear, perfected by someone who took 'personal space' as a challenge. Equip any 2 pieces for -15% AFK mission time.",
         characterClass: .ranger,
         weapon: GearSetPiece(
             id: "set_ranger_weapon",
             name: "Stalker Bow",
-            description: "A bow that makes no sound when drawn. Its arrows are heard only by the target.",
+            description: "Makes absolutely no sound when drawn. Your target's last thought will be 'huh, that's weird' and honestly that's the dream.",
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 10,
             secondaryStat: .luck, secondaryStatBonus: 4,
@@ -456,7 +456,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_ranger_armor",
             name: "Stalker Leather",
-            description: "Leather treated to blend with any terrain. The wearer becomes part of the landscape.",
+            description: "Blends with any terrain so effectively that your own party will lose you during bathroom breaks.",
             slot: .armor, rarity: .epic,
             primaryStat: .dexterity, statBonus: 9,
             secondaryStat: .defense, secondaryStatBonus: 5,
@@ -465,7 +465,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_ranger_trinket",
             name: "Stalker Charm",
-            description: "A charm carved from the heartwood of an ancient forest. Nature conceals its bearer.",
+            description: "Carved from the heartwood of an ancient forest. The forest filed a complaint, but no court has jurisdiction over charm-carving.",
             slot: .trinket, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -482,12 +482,12 @@ struct GearSetCatalog {
     static let tricksterSet = GearSetDefinition(
         id: "set_trickster",
         name: "Shadow Gambit",
-        description: "Gear of chance and misdirection. Equip any 2 pieces for +15% loot drop chance.",
+        description: "For the discerning rogue who believes fairness is a spectrum. Equip any 2 pieces for +15% loot drop chance.",
         characterClass: .trickster,
         weapon: GearSetPiece(
             id: "set_trickster_weapon",
             name: "Shadow Gambit Dagger",
-            description: "A dagger that flickers between shadows. Each strike is a roll of the dice.",
+            description: "Flickers between shadows mid-stab. Your enemies will call it cheap. You'll call it tactical.",
             slot: .weapon, rarity: .epic,
             primaryStat: .luck, statBonus: 10,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
@@ -496,7 +496,7 @@ struct GearSetCatalog {
         armor: GearSetPiece(
             id: "set_trickster_armor",
             name: "Shadow Gambit Cloak",
-            description: "A cloak that shifts probability. Blows meant to connect somehow miss.",
+            description: "Shifts probability so that attacks somehow miss. The cloak insists this is skill, not luck. The stats say otherwise.",
             slot: .cloak, rarity: .epic,
             primaryStat: .luck, statBonus: 9,
             secondaryStat: .dexterity, secondaryStatBonus: 5,
@@ -505,7 +505,7 @@ struct GearSetCatalog {
         accessory: GearSetPiece(
             id: "set_trickster_accessory",
             name: "Shadow Gambit Ring",
-            description: "A ring that whispers odds. Its wearer always knows when to hold and when to fold.",
+            description: "Whispers the odds of everything. Yes, everything. You can't turn it off. You learn to live with it.",
             slot: .accessory, rarity: .epic,
             primaryStat: .luck, statBonus: 8,
             secondaryStat: .charisma, secondaryStatBonus: 4,

@@ -697,6 +697,7 @@ struct ShopEquipmentCard: View {
                     Text(item.name)
                         .font(.custom("Avenir-Heavy", size: 14))
                         .foregroundColor(Color(item.rarity.color))
+                        .rarityShimmer(item.rarity)
                     Text(item.statSummary)
                         .font(.custom("Avenir-Medium", size: 12))
                         .foregroundColor(.secondary)
@@ -865,6 +866,7 @@ struct EquipmentBuySheet: View {
                         Text(item.name)
                             .font(.custom("Avenir-Heavy", size: 20))
                             .foregroundColor(Color(item.rarity.color))
+                            .rarityShimmer(item.rarity)
                             .multilineTextAlignment(.center)
                         
                         // Tag row: rarity, slot, base type, level, armor weight
@@ -951,6 +953,7 @@ struct EquipmentBuySheet: View {
                                     Text(equipped.name)
                                         .font(.custom("Avenir-Heavy", size: 12))
                                         .foregroundColor(Color(equipped.rarity.color))
+                                        .rarityShimmer(equipped.rarity)
                                         .lineLimit(1)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1000,7 +1003,7 @@ struct EquipmentBuySheet: View {
                             HStack(spacing: 12) {
                                 ForEach([ClassLine.warrior, .mage, .archer], id: \.self) { line in
                                     let starterClass = starterForLine(line)
-                                    let canWear = starterClass.armorProficiency.contains(item.armorWeight)
+                                    let canWear = starterClass.canEquip(item)
                                     let isPlayerLine = character?.characterClass?.classLine == line
                                     
                                     VStack(spacing: 4) {

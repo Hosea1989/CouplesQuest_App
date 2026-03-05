@@ -206,13 +206,14 @@ final class Equipment {
         if let bt = baseType { return bt.lowercased() }
         let lower = name.lowercased()
         let keywords = [
-            "sword", "axe", "staff", "dagger", "bow", "orb", "wand", "mace",
+            "sword", "axe", "staff", "dagger", "bow", "wand", "mace",
             "spear", "shield", "crossbow", "tome", "halberd",
-            "plate", "chainmail", "robes", "leather armor", "breastplate",
+            "plate", "chainmail", "tunic", "leather armor", "breastplate",
             "heavy helm", "helm", "heavy gauntlets", "gauntlets",
-            "heavy boots", "boots", "greaves", "pauldrons", "cape", "mantle",
+            "heavy boots", "boots", "greaves", "pauldrons",
             "ring", "amulet", "pendant", "earring", "brooch", "talisman",
-            "cloak", "bracelet", "charm", "belt"
+            "robes", "cloak", "cape", "mantle",
+            "orb", "bracelet", "charm", "belt"
         ]
         return keywords.first(where: { lower.contains($0) }) ?? "sword"
     }
@@ -225,8 +226,8 @@ final class Equipment {
         case "plate", "chainmail", "breastplate", "pauldrons",
              "heavy helm", "heavy gauntlets", "heavy boots":
             return .heavy
-        case "robes", "leather armor", "helm", "gauntlets",
-             "boots", "greaves":
+        case "leather armor", "helm", "gauntlets",
+             "boots", "greaves", "tunic":
             return .light
         default:
             return .universal
@@ -263,7 +264,6 @@ final class Equipment {
             ("staff", "equip-staff"),
             ("dagger", "equip-dagger"),
             ("bow", "equip-bow"),
-            ("orb", "equip-wand"),
             ("wand", "equip-wand"),
             ("mace", "equip-mace"),
             ("spear", "equip-spear"),
@@ -278,7 +278,7 @@ final class Equipment {
             ("plate", "equip-plate"),
             ("chainmail", "equip-chainmail"),
             ("breastplate", "equip-breastplate"),
-            ("robes", "equip-robes"),
+            ("tunic", "equip-leather-armor"),
             ("leather armor", "equip-leather-armor"),
             ("heavy helm", "equip-heavy-helm"),
             ("helm", "equip-helm"),
@@ -302,18 +302,20 @@ final class Equipment {
             ("talisman", "equip-talisman"),
         ]
         
-        // Trinket base types (Belts, Charms, Bracelets)
+        // Trinket base types (Belts, Charms, Bracelets, Orbs)
         let trinketMap: [(keyword: String, asset: String)] = [
+            ("orb", "equip-orb"),
             ("charm", "equip-charm"),
             ("bracelet", "equip-bracelet"),
             ("belt", "equip-belt"),
         ]
         
-        // Cloak base types
+        // Cloak base types (robes moved here from armor)
         let cloakMap: [(keyword: String, asset: String)] = [
+            ("robes", "equip-robes"),
             ("cloak", "equip-cloak"),
             ("cape", "equip-cape"),
-            ("mantle", "equip-cloak"),
+            ("mantle", "equip-cape"),
             ("shroud", "equip-cloak"),
         ]
         

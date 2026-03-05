@@ -83,7 +83,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_warrior_lv5",
             name: "Warrior's Faithful Blade",
-            description: "A sturdy sword forged for those who prove their strength on the battlefield.",
+            description: "Technically just a sword, but the merchant who sold it insists the loyalty is built-in.",
             slot: .weapon, rarity: .uncommon,
             primaryStat: .strength, statBonus: 4,
             secondaryStat: .defense, secondaryStatBonus: 1,
@@ -93,7 +93,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_warrior_lv10",
             name: "Guardian's Iron Plate",
-            description: "Battle-hardened armor worn by those who stand between danger and the defenseless.",
+            description: "Commissioned by a knight who was tired of dying. The blacksmith added extra iron where the complaints were loudest.",
             slot: .armor, rarity: .rare,
             primaryStat: .defense, statBonus: 6,
             secondaryStat: .strength, secondaryStatBonus: 2,
@@ -103,7 +103,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_warrior_lv15",
             name: "Warcry Pendant",
-            description: "A medallion that amplifies the wearer's battle cry, inspiring allies and striking fear in foes.",
+            description: "Originally a dinner bell from a very angry chef. Turns out screaming at people is transferable technology.",
             slot: .accessory, rarity: .rare,
             primaryStat: .strength, statBonus: 5,
             secondaryStat: .charisma, secondaryStatBonus: 3,
@@ -113,7 +113,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_warrior_lv20",
             name: "Champion's Greatsword",
-            description: "A legendary two-handed blade awarded to warriors who have proven their mastery in every trial.",
+            description: "Wielded by a champion who defeated 10,000 foes, then retired to open a bakery. The sword did not approve.",
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 9,
             secondaryStat: .dexterity, secondaryStatBonus: 4,
@@ -128,7 +128,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_mage_lv5",
             name: "Apprentice's Focus Staff",
-            description: "A crystalline-tipped staff that helps channel raw magical energy with precision.",
+            description: "Helps you focus your magic. Also works as a walking stick, which honestly sees more use.",
             slot: .weapon, rarity: .uncommon,
             primaryStat: .wisdom, statBonus: 4,
             secondaryStat: .luck, secondaryStatBonus: 1,
@@ -138,7 +138,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_mage_lv10",
             name: "Arcane Silk Robes",
-            description: "Woven from threads infused with mana, these robes offer both protection and power amplification.",
+            description: "Woven by spiders who minored in thaumaturgy. They still send invoices.",
             slot: .armor, rarity: .rare,
             primaryStat: .wisdom, statBonus: 6,
             secondaryStat: .defense, secondaryStatBonus: 2,
@@ -148,7 +148,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_mage_lv15",
             name: "Mystic Charm",
-            description: "A shimmering charm that hums with arcane resonance, sharpening the wearer's magical intuition.",
+            description: "Found in a wizard's junk drawer labeled 'miscellaneous power.' Nobody knows what it does, but the stats don't lie.",
             slot: .accessory, rarity: .rare,
             primaryStat: .wisdom, statBonus: 5,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -158,12 +158,12 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_mage_lv20",
             name: "Sorcerer's Orb Staff",
-            description: "An ancient staff topped with a floating orb of pure mana, radiating overwhelming arcane force.",
+            description: "The orb floats menacingly. The staff is just there for emotional support. Together, they make your enemies deeply uncomfortable.",
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 9,
             secondaryStat: .charisma, secondaryStatBonus: 4,
             levelRequirement: 20, characterClass: .mage,
-            goldCost: 3000, baseType: "wand"
+            goldCost: 3000, baseType: "staff"
         ),
     ]
     
@@ -173,7 +173,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_archer_lv5",
             name: "Scout's Shortbow",
-            description: "A lightweight, fast-draw bow favored by scouts and skirmishers.",
+            description: "Light enough that you'll forget you're carrying it. You'll also forget to reload, but that's a you problem.",
             slot: .weapon, rarity: .uncommon,
             primaryStat: .dexterity, statBonus: 4,
             secondaryStat: .luck, secondaryStatBonus: 1,
@@ -183,7 +183,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_archer_lv10",
             name: "Ranger's Leather Armor",
-            description: "Supple leather armor treated with oils for silence and flexibility in the field.",
+            description: "Crafted by a tanner who was also a ninja. It's silent because the tanner refuses to tell anyone his secrets.",
             slot: .armor, rarity: .rare,
             primaryStat: .dexterity, statBonus: 6,
             secondaryStat: .defense, secondaryStatBonus: 2,
@@ -193,7 +193,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_archer_lv15",
             name: "Eagle-Eye Ring",
-            description: "A ring enchanted to sharpen the wearer's sight far beyond mortal limits.",
+            description: "Enchanted by an optometrist who got lost on the way to a wizarding convention. You can read signs from three kingdoms away.",
             slot: .accessory, rarity: .rare,
             primaryStat: .dexterity, statBonus: 5,
             secondaryStat: .luck, secondaryStatBonus: 3,
@@ -203,7 +203,7 @@ struct MilestoneGearCatalog {
         MilestoneItem(
             id: "ms_archer_lv20",
             name: "Windrunner's Longbow",
-            description: "A masterwork bow that fires arrows with the speed and precision of the wind itself.",
+            description: "Arrows arrive before the archer finishes their dramatic one-liner. Very inconsiderate.",
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 9,
             secondaryStat: .strength, secondaryStatBonus: 4,
@@ -217,28 +217,28 @@ struct MilestoneGearCatalog {
     static let berserkerItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_berserker_lv25", name: "Rage-Forged Axe",
-            description: "An axe tempered in fury, its edge grows sharper with each swing.",
+            description: "The blacksmith was having a really bad day. Like, a historically bad day. Anyway, the axe turned out great.",
             slot: .weapon, rarity: .epic,
             primaryStat: .strength, statBonus: 10, secondaryStat: .dexterity, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .berserker, goldCost: 5000, baseType: "axe"
         ),
         MilestoneItem(
             id: "ms_berserker_lv30", name: "Berserker's War Plate",
-            description: "Spiked armor that channels the wearer's rage into devastating counterattacks.",
+            description: "The spikes are decorative. The rage is structural. Enemies don't know the difference, and that's the whole point.",
             slot: .armor, rarity: .epic,
             primaryStat: .strength, statBonus: 8, secondaryStat: .defense, secondaryStatBonus: 5,
             levelRequirement: 30, characterClass: .berserker, goldCost: 7500, baseType: "plate"
         ),
         MilestoneItem(
             id: "ms_berserker_lv40", name: "Blood Fury Ring",
-            description: "A crimson-stained ring that pulses with primal energy.",
+            description: "Forged in the heart of a dying star by an ancient being of unfathomable power. He was also running late for dinner, so the craftsmanship is a bit uneven.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .strength, statBonus: 14, secondaryStat: .dexterity, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .berserker, goldCost: 12000, baseType: "ring"
         ),
         MilestoneItem(
             id: "ms_berserker_lv50", name: "Worldsplitter",
-            description: "A legendary axe said to cleave mountains. Its weight is immense, but so is its power.",
+            description: "Prophesied to cleave the world in two. It hasn't yet, but everyone's too afraid to ask if it's even trying.",
             slot: .weapon, rarity: .legendary,
             primaryStat: .strength, statBonus: 16, secondaryStat: .defense, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .berserker, goldCost: 20000, baseType: "axe"
@@ -248,28 +248,28 @@ struct MilestoneGearCatalog {
     static let paladinItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_paladin_lv25", name: "Oathkeeper Mace",
-            description: "A holy mace that glows brighter when evil is near.",
+            description: "Glows when evil is near, which is convenient. Also glows near expired milk, which is less heroic but arguably more useful.",
             slot: .weapon, rarity: .epic,
             primaryStat: .defense, statBonus: 10, secondaryStat: .strength, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .paladin, goldCost: 5000, baseType: "mace"
         ),
         MilestoneItem(
             id: "ms_paladin_lv30", name: "Sanctified Shield Plate",
-            description: "Blessed plate armor that absorbs blows and heals the wearer's resolve.",
+            description: "Blessed by seventeen different clerics as a precaution. Fourteen of those blessings are redundant, but nobody wants to say so.",
             slot: .armor, rarity: .epic,
             primaryStat: .defense, statBonus: 9, secondaryStat: .wisdom, secondaryStatBonus: 4,
             levelRequirement: 30, characterClass: .paladin, goldCost: 7500, baseType: "plate"
         ),
         MilestoneItem(
             id: "ms_paladin_lv40", name: "Amulet of Devotion",
-            description: "An ancient relic that shields the faithful from harm.",
+            description: "Handed down through generations of paladins, each adding their own prayer. The last one accidentally added a grocery list, but the amulet accepted it anyway.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .defense, statBonus: 14, secondaryStat: .charisma, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .paladin, goldCost: 12000, baseType: "amulet"
         ),
         MilestoneItem(
             id: "ms_paladin_lv50", name: "Dawn's Embrace",
-            description: "Legendary armor forged from crystallized sunlight. Impervious to darkness.",
+            description: "Forged from crystallized sunlight by an angel on a deadline. Impervious to darkness, criticism, and mild staining.",
             slot: .armor, rarity: .legendary,
             primaryStat: .defense, statBonus: 16, secondaryStat: .strength, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .paladin, goldCost: 20000, baseType: "plate"
@@ -279,28 +279,28 @@ struct MilestoneGearCatalog {
     static let sorcererItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_sorcerer_lv25", name: "Voidweaver Staff",
-            description: "A staff that draws power from the void between worlds.",
+            description: "Draws power from the void between worlds. The void didn't agree to this arrangement, but what's it going to do? It's a void.",
             slot: .weapon, rarity: .epic,
             primaryStat: .wisdom, statBonus: 10, secondaryStat: .luck, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .sorcerer, goldCost: 5000, baseType: "staff"
         ),
         MilestoneItem(
             id: "ms_sorcerer_lv30", name: "Astral Silk Vestment",
-            description: "Robes sewn from starlight threads that amplify arcane channeling.",
+            description: "Sewn from actual starlight, which was a logistical nightmare. The tailor charged triple and honestly deserved more.",
             slot: .armor, rarity: .epic,
             primaryStat: .wisdom, statBonus: 8, secondaryStat: .defense, secondaryStatBonus: 5,
             levelRequirement: 30, characterClass: .sorcerer, goldCost: 7500, baseType: "robes"
         ),
         MilestoneItem(
             id: "ms_sorcerer_lv40", name: "Infinity Loop Ring",
-            description: "A ring that bends mana in a perpetual cycle, granting seemingly limitless power.",
+            description: "Bends mana in a perpetual cycle, granting limitless power. The ring's terms of service are 400 pages long and nobody has read them.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .wisdom, statBonus: 14, secondaryStat: .luck, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .sorcerer, goldCost: 12000, baseType: "ring"
         ),
         MilestoneItem(
             id: "ms_sorcerer_lv50", name: "Archmage's Epoch Staff",
-            description: "The legendary staff of an archmage who transcended mortality through pure knowledge.",
+            description: "Its creator transcended mortality through pure knowledge. He's still out there somewhere, refusing to answer questions about the warranty.",
             slot: .weapon, rarity: .legendary,
             primaryStat: .wisdom, statBonus: 16, secondaryStat: .charisma, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .sorcerer, goldCost: 20000, baseType: "staff"
@@ -310,28 +310,28 @@ struct MilestoneGearCatalog {
     static let enchanterItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_enchanter_lv25", name: "Harmonist's Wand",
-            description: "A wand that resonates with the emotions of allies, amplifying their potential.",
+            description: "Resonates with the emotions of allies. Unfortunately, this includes when they're annoyed at you for standing in the fire.",
             slot: .weapon, rarity: .epic,
             primaryStat: .charisma, statBonus: 10, secondaryStat: .wisdom, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .enchanter, goldCost: 5000, baseType: "wand"
         ),
         MilestoneItem(
             id: "ms_enchanter_lv30", name: "Moonshadow Robes",
-            description: "Enchanted robes that shimmer under moonlight, weaving protective wards around the wearer.",
+            description: "Shimmer beautifully under moonlight. Under fluorescent lighting, they just look like a bathrobe. Choose your battles wisely.",
             slot: .armor, rarity: .epic,
             primaryStat: .charisma, statBonus: 8, secondaryStat: .defense, secondaryStatBonus: 5,
             levelRequirement: 30, characterClass: .enchanter, goldCost: 7500, baseType: "robes"
         ),
         MilestoneItem(
             id: "ms_enchanter_lv40", name: "Crown of Whispers",
-            description: "A delicate circlet that lets the wearer hear the unspoken needs of allies.",
+            description: "Lets the wearer hear the unspoken needs of allies. Mostly it's snacks. The unspoken need is almost always snacks.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .charisma, statBonus: 14, secondaryStat: .wisdom, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .enchanter, goldCost: 12000, baseType: "charm"
         ),
         MilestoneItem(
-            id: "ms_enchanter_lv50", name: "Eternal Harmony Staff",
-            description: "A legendary staff that binds the spirits of allies together, creating an unbreakable bond.",
+            id: "ms_enchanter_lv50", name: "Eternal Harmony Wand",
+            description: "Binds the spirits of allies into an unbreakable bond. Previous owners report a strong urge to start a book club. There is no known cure.",
             slot: .weapon, rarity: .legendary,
             primaryStat: .charisma, statBonus: 16, secondaryStat: .wisdom, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .enchanter, goldCost: 20000, baseType: "wand"
@@ -341,28 +341,28 @@ struct MilestoneGearCatalog {
     static let rangerItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_ranger_lv25", name: "Galeforce Bow",
-            description: "A bow strung with wind-enchanted sinew, firing arrows faster than the eye can follow.",
+            description: "Fires arrows faster than the eye can follow, which makes showing off to your friends completely pointless.",
             slot: .weapon, rarity: .epic,
             primaryStat: .dexterity, statBonus: 10, secondaryStat: .luck, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .ranger, goldCost: 5000, baseType: "bow"
         ),
         MilestoneItem(
             id: "ms_ranger_lv30", name: "Forestwalker Armor",
-            description: "Living armor grown from enchanted bark, offering protection without sacrificing agility.",
+            description: "Grown from enchanted bark that's technically still alive. It judges your posture silently but constantly.",
             slot: .armor, rarity: .epic,
             primaryStat: .dexterity, statBonus: 8, secondaryStat: .defense, secondaryStatBonus: 5,
             levelRequirement: 30, characterClass: .ranger, goldCost: 7500, baseType: "leather armor"
         ),
         MilestoneItem(
             id: "ms_ranger_lv40", name: "Hawk's Talon Ring",
-            description: "A ring carved from the claw of a great hawk, granting supernatural reflexes.",
+            description: "Carved from the claw of a great hawk who reportedly gave it willingly. The hawk's lawyer tells a different story.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .dexterity, statBonus: 14, secondaryStat: .luck, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .ranger, goldCost: 12000, baseType: "ring"
         ),
         MilestoneItem(
             id: "ms_ranger_lv50", name: "Skypierce, the Eternal Bow",
-            description: "A legendary bow said to have been wielded by the first ranger who walked the wilds.",
+            description: "Wielded by the first ranger who ever walked the wilds. She later trademarked the word 'nature' and this bow is the receipt.",
             slot: .weapon, rarity: .legendary,
             primaryStat: .dexterity, statBonus: 16, secondaryStat: .strength, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .ranger, goldCost: 20000, baseType: "bow"
@@ -372,28 +372,28 @@ struct MilestoneGearCatalog {
     static let tricksterItems: [MilestoneItem] = [
         MilestoneItem(
             id: "ms_trickster_lv25", name: "Fate's Edge Dagger",
-            description: "A dagger that seems to guide itself toward weak points, as if destiny wills it.",
+            description: "Guides itself toward weak points, as if destiny wills it. Destiny is apparently very passive-aggressive.",
             slot: .weapon, rarity: .epic,
             primaryStat: .luck, statBonus: 10, secondaryStat: .dexterity, secondaryStatBonus: 4,
             levelRequirement: 25, characterClass: .trickster, goldCost: 5000, baseType: "dagger"
         ),
         MilestoneItem(
             id: "ms_trickster_lv30", name: "Phantom Cloak",
-            description: "A cloak woven from shadow that lets the wearer slip between moments unnoticed.",
+            description: "Woven from shadow itself, which was surprisingly cooperative once you offered it health insurance.",
             slot: .cloak, rarity: .epic,
             primaryStat: .luck, statBonus: 8, secondaryStat: .dexterity, secondaryStatBonus: 5,
             levelRequirement: 30, characterClass: .trickster, goldCost: 7500, baseType: "cloak"
         ),
         MilestoneItem(
             id: "ms_trickster_lv40", name: "Gambler's Loaded Dice",
-            description: "An enchanted charm that bends probability in the wielder's favor.",
+            description: "Bends probability in your favor, which technically isn't cheating because nobody wrote a rule against magical dice. Yet.",
             slot: .accessory, rarity: .legendary,
             primaryStat: .luck, statBonus: 14, secondaryStat: .charisma, secondaryStatBonus: 6,
             levelRequirement: 40, characterClass: .trickster, goldCost: 12000, baseType: "charm"
         ),
         MilestoneItem(
             id: "ms_trickster_lv50", name: "Whisper of Chaos",
-            description: "A legendary dagger that exists in multiple timelines at once. Its strikes are inevitable.",
+            description: "Exists in multiple timelines simultaneously. In three of them, you already won. In one, you're a duck. Best not to think about it.",
             slot: .weapon, rarity: .legendary,
             primaryStat: .luck, statBonus: 16, secondaryStat: .dexterity, secondaryStatBonus: 8,
             levelRequirement: 50, characterClass: .trickster, goldCost: 20000, baseType: "dagger"
