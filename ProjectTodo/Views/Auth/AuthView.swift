@@ -2,7 +2,7 @@ import SwiftUI
 import AuthenticationServices
 import CryptoKit
 
-/// Sign Up / Sign In form for Swords & Chores.
+/// Sign Up / Sign In form for Project Todo.
 struct AuthView: View {
     @ObservedObject private var supabase = SupabaseService.shared
     
@@ -62,7 +62,7 @@ struct AuthView: View {
                                     )
                             }
                             
-                            Text("Swords & Chores")
+                            Text("Project Todo")
                                 .font(.custom("Avenir-Heavy", size: 32))
                                 .foregroundColor(.primary)
                             

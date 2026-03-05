@@ -91,7 +91,7 @@
 		ED1TASK0003A0B0C0D0E0F001 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1TASK0003A0B0C0D0E0F002 /* NotificationService.swift */; };
 		EE55FF66112233445566AABB /* PartnerDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF66112233445566AABBCCDD /* PartnerDashboardView.swift */; };
 		EE55FF67112233445566AABC /* PlayerInspectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF66112233445566AABBCCDE /* PlayerInspectView.swift */; };
-		EFB615D1170C64483B4B461F /* CouplesQuestApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6716587C73288884F8F3C11 /* CouplesQuestApp.swift */; };
+		EFB615D1170C64483B4B461F /* ProjectTodoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6716587C73288884F8F3C11 /* ProjectTodoApp.swift */; };
 		EXP90001MODEL00BUILD00001 /* Expedition.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXP90002MODEL00SWIFT00001 /* Expedition.swift */; };
 		EXP90003VIEW000BUILD00001 /* ExpeditionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EXP90004VIEW000SWIFT00001 /* ExpeditionView.swift */; };
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B3C4D5E6F7A8B9C0D1E2F3 /* TaskDetailView.swift */; };
@@ -214,7 +214,7 @@
 		8A1B2C3D4E5F6A7B8C9D0E1F /* SyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncManager.swift; sourceTree = "<group>"; };
 		8A1B2C3D4E5F6A7B8C9D0E21 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		964FC4C3BDB87EAE36012A78 /* Stats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stats.swift; sourceTree = "<group>"; };
-		983798B5E800B622D90A049D /* Swords & Chores.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Swords & Chores.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		983798B5E800B622D90A049D /* Project Todo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Project Todo.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C30002A0B0C0D0E0F001 /* RoutineBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineBundle.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7890002SD01 /* SudokuGameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SudokuGameView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* Dungeon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dungeon.swift; sourceTree = "<group>"; };
@@ -267,7 +267,7 @@
 		E1A2B3C4D5E6F7A8B9C0E103 /* VerificationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationEngine.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F7A8B9C0E105 /* PendingConfirmationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingConfirmationsView.swift; sourceTree = "<group>"; };
 		E5F6A7B8C9D0E1F2A3B4C5D6 /* DungeonRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DungeonRunView.swift; sourceTree = "<group>"; };
-		E6716587C73288884F8F3C11 /* CouplesQuestApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouplesQuestApp.swift; sourceTree = "<group>"; };
+		E6716587C73288884F8F3C11 /* ProjectTodoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTodoApp.swift; sourceTree = "<group>"; };
 		E7D8AF35336A6EBE7E4EF3DC /* CreateTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateTaskView.swift; sourceTree = "<group>"; };
 		EAFX0001AFFIXMOD0SWIFT02 /* EquipmentAffix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentAffix.swift; sourceTree = "<group>"; };
 		EQRK0001QUIRKMOD0SWIFT02 /* EquipmentQuirk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentQuirk.swift; sourceTree = "<group>"; };
@@ -471,7 +471,7 @@
 			isa = PBXGroup;
 			children = (
 				SUPA0001SECRETS0XCCONFIG01 /* Secrets.xcconfig */,
-				54BCD4CADB589D4117D04A4C /* CouplesQuest */,
+				54BCD4CADB589D4117D04A4C /* ProjectTodo */,
 				7B4D09264EAFADA58AADBB81 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -531,7 +531,7 @@
 			path = Tasks;
 			sourceTree = "<group>";
 		};
-		54BCD4CADB589D4117D04A4C /* CouplesQuest */ = {
+		54BCD4CADB589D4117D04A4C /* ProjectTodo */ = {
 			isa = PBXGroup;
 			children = (
 				58BF7479C8C62ADFB42E3F63 /* Info.plist */,
@@ -541,7 +541,7 @@
 				2430319F7C8E5A1C81A28428 /* Services */,
 				86C2D2062206F9D200E7F920 /* Views */,
 			);
-			path = CouplesQuest;
+			path = ProjectTodo;
 			sourceTree = "<group>";
 		};
 		6A278A4072BA8861912D6651 /* Home */ = {
@@ -573,7 +573,7 @@
 		7B4D09264EAFADA58AADBB81 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				983798B5E800B622D90A049D /* Swords & Chores.app */,
+				983798B5E800B622D90A049D /* Project Todo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -612,7 +612,7 @@
 			isa = PBXGroup;
 			children = (
 				47534ADCB2F01A2A1785F608 /* ContentView.swift */,
-				E6716587C73288884F8F3C11 /* CouplesQuestApp.swift */,
+				E6716587C73288884F8F3C11 /* ProjectTodoApp.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -840,9 +840,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		142493C9BFFFDB2E96C77EEA /* CouplesQuest */ = {
+		142493C9BFFFDB2E96C77EEA /* ProjectTodo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 727A7ED76ACE87D2CEA0699C /* Build configuration list for PBXNativeTarget "CouplesQuest" */;
+			buildConfigurationList = 727A7ED76ACE87D2CEA0699C /* Build configuration list for PBXNativeTarget "ProjectTodo" */;
 			buildPhases = (
 				C7248F99AA4DE79E8EB5B393 /* Sources */,
 				SUPA00FW0001FRAMEWORKS0001 /* Frameworks */,
@@ -852,13 +852,13 @@
 			);
 			dependencies = (
 			);
-			name = CouplesQuest;
+			name = ProjectTodo;
 			packageProductDependencies = (
 				SUPA000APKGDEP00000000001 /* Supabase */,
 				ONESIG002PKGDEP000000001 /* OneSignalFramework */,
 			);
-			productName = CouplesQuest;
-			productReference = 983798B5E800B622D90A049D /* Swords & Chores.app */;
+			productName = ProjectTodo;
+			productReference = 983798B5E800B622D90A049D /* Project Todo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -870,7 +870,7 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
 			};
-			buildConfigurationList = B98B83AF6C9DB8A478C07F12 /* Build configuration list for PBXProject "CouplesQuest" */;
+			buildConfigurationList = B98B83AF6C9DB8A478C07F12 /* Build configuration list for PBXProject "ProjectTodo" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -887,7 +887,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				142493C9BFFFDB2E96C77EEA /* CouplesQuest */,
+				142493C9BFFFDB2E96C77EEA /* ProjectTodo */,
 			);
 		};
 /* End PBXProject section */
@@ -1011,7 +1011,7 @@
 				G0AL0003A0B0C0D0E0F00001 /* GoalsView.swift in Sources */,
 				G0AL0005A0B0C0D0E0F00001 /* GoalDetailView.swift in Sources */,
 				W3LL0001A0B0C0D0E0F00001 /* WellnessTabContent.swift in Sources */,
-				EFB615D1170C64483B4B461F /* CouplesQuestApp.swift in Sources */,
+				EFB615D1170C64483B4B461F /* ProjectTodoApp.swift in Sources */,
 				07F003B5749E3D36C35E29BA /* CreateTaskView.swift in Sources */,
 				ED1TASK0001A0B0C0D0E0F001 /* EditTaskView.swift in Sources */,
 				ED1TASK0002A0B0C0D0E0F001 /* TaskAnalyticsView.swift in Sources */,
@@ -1105,11 +1105,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentGold;
-				CODE_SIGN_ENTITLEMENTS = CouplesQuest/CouplesQuest.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ProjectTodo/ProjectTodo.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = S33Z8G3RR4;
-				INFOPLIST_FILE = CouplesQuest/Info.plist;
+				INFOPLIST_FILE = ProjectTodo/Info.plist;
 				INFOPLIST_GENERATION_MODE = GeneratedFile;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1118,7 +1118,7 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.damienhosea.DuoCraft;
-				PRODUCT_NAME = "Swords & Chores";
+				PRODUCT_NAME = "Project Todo";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1188,11 +1188,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentGold;
-				CODE_SIGN_ENTITLEMENTS = CouplesQuest/CouplesQuest.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ProjectTodo/ProjectTodo.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = S33Z8G3RR4;
-				INFOPLIST_FILE = CouplesQuest/Info.plist;
+				INFOPLIST_FILE = ProjectTodo/Info.plist;
 				INFOPLIST_GENERATION_MODE = GeneratedFile;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1201,7 +1201,7 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.damienhosea.DuoCraft;
-				PRODUCT_NAME = "Swords & Chores";
+				PRODUCT_NAME = "Project Todo";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1275,7 +1275,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		727A7ED76ACE87D2CEA0699C /* Build configuration list for PBXNativeTarget "CouplesQuest" */ = {
+		727A7ED76ACE87D2CEA0699C /* Build configuration list for PBXNativeTarget "ProjectTodo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A071F026BE2DFD58B0EEBEE9 /* Debug */,
@@ -1284,7 +1284,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		B98B83AF6C9DB8A478C07F12 /* Build configuration list for PBXProject "CouplesQuest" */ = {
+		B98B83AF6C9DB8A478C07F12 /* Build configuration list for PBXProject "ProjectTodo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A50337C6FE56D3B0F94D25A7 /* Debug */,

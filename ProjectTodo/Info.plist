@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Swords &amp; Chores</string>
+	<string>Project Todo</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,15 +23,15 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Swords &amp; Chores needs camera access to take photo proof for task verification and scan QR codes for pairing.</string>
+	<string>Project Todo needs camera access to take photo proof for task verification and scan QR codes for pairing.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Swords &amp; Chores uses your location to verify task completion at specific locations and award bonus rewards.</string>
+	<string>Project Todo uses your location to verify task completion at specific locations and award bonus rewards.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Swords &amp; Chores reads your health data to automatically verify physical task completion and award bonus rewards.</string>
+	<string>Project Todo reads your health data to automatically verify physical task completion and award bonus rewards.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Swords &amp; Chores may save workout summaries related to your verified physical tasks.</string>
+	<string>Project Todo may save workout summaries related to your verified physical tasks.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Swords &amp; Chores uses motion data to verify photo authenticity during task verification.</string>
+	<string>Project Todo uses motion data to verify photo authenticity during task verification.</string>
 	<key>SupabaseURL</key>
 	<string>$(SUPABASE_URL)</string>
 	<key>SupabaseAnonKey</key>

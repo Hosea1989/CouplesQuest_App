@@ -1,4 +1,4 @@
-name: CouplesQuest
+name: ProjectTodo
 options:
   bundleIdPrefix: com.damienhosea
   deploymentTarget:
@@ -12,29 +12,29 @@ settings:
     DEVELOPMENT_TEAM: ""
 
 targets:
-  CouplesQuest:
+  ProjectTodo:
     type: application
     platform: iOS
     sources:
-      - path: CouplesQuest
+      - path: ProjectTodo
         excludes:
           - "**/*.xcassets"
     resources:
-      - path: CouplesQuest/Resources/Colors.xcassets
+      - path: ProjectTodo/Resources/Colors.xcassets
     settings:
       base:
         INFOPLIST_GENERATION_MODE: GeneratedFile
-        PRODUCT_BUNDLE_IDENTIFIER: com.damienhosea.CouplesQuest
-        PRODUCT_NAME: CouplesQuest
+        PRODUCT_BUNDLE_IDENTIFIER: com.damienhosea.DuoCraft
+        PRODUCT_NAME: "Project Todo"
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_EMIT_LOC_STRINGS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentGold
     info:
-      path: CouplesQuest/Info.plist
+      path: ProjectTodo/Info.plist
       properties:
-        CFBundleDisplayName: CouplesQuest
+        CFBundleDisplayName: "Project Todo"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

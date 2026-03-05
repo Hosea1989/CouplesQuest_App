@@ -314,7 +314,7 @@ struct JoinPartySheet: View {
     
     private func handleScannedCode(_ code: String) {
         guard let pairingData = PairingData.fromJSON(code) else {
-            errorMessage = "Invalid QR code. Make sure you're scanning a Swords & Chores pairing code."
+            errorMessage = "Invalid QR code. Make sure you're scanning a Project Todo pairing code."
             showError = true
             return
         }

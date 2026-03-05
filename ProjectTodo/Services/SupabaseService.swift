@@ -1,7 +1,7 @@
 import Foundation
 import Supabase
 
-/// Centralized Supabase client and service methods for Swords & Chores.
+/// Centralized Supabase client and service methods for Project Todo.
 /// Reads credentials from Info.plist (injected via Secrets.xcconfig at build time).
 @MainActor
 final class SupabaseService: ObservableObject {
@@ -558,11 +558,11 @@ final class SupabaseService: ObservableObject {
             .value
         
         guard case .object(let dict) = response else {
-            throw NSError(domain: "CouplesQuest", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid RPC response"])
+            throw NSError(domain: "ProjectTodo", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid RPC response"])
         }
         
         if case .string(let error) = dict["error"] {
-            throw NSError(domain: "CouplesQuest", code: -1, userInfo: [NSLocalizedDescriptionKey: error])
+            throw NSError(domain: "ProjectTodo", code: -1, userInfo: [NSLocalizedDescriptionKey: error])
         }
         
         let newHp: Int
@@ -1076,7 +1076,7 @@ final class SupabaseService: ObservableObject {
         await PushNotificationService.shared.notifyPartner(
             type: "pair_request",
             title: "Partner Request!",
-            body: "\(senderName) wants to pair with you in Swords & Chores!"
+            body: "\(senderName) wants to pair with you in Project Todo!"
         )
     }
     
@@ -1104,7 +1104,7 @@ final class SupabaseService: ObservableObject {
         await PushNotificationService.shared.notifyPartner(
             type: "pair_request",
             title: "Party Request!",
-            body: "\(senderName) wants to join your party in Swords & Chores!"
+            body: "\(senderName) wants to join your party in Project Todo!"
         )
     }
     

@@ -27,7 +27,7 @@ enum DeepLinkDestination: Equatable {
     case party                   // Party tab
 }
 
-/// Centralized push notification service for Swords & Chores.
+/// Centralized push notification service for Project Todo.
 /// Handles both personal (local) and partner (cross-device) notifications.
 @MainActor
 final class PushNotificationService {
@@ -531,7 +531,7 @@ final class PushNotificationService {
         await notifyPartner(
             type: "pair_request",
             title: "Partner Request!",
-            body: "\(fromName) wants to pair with you in Swords & Chores!"
+            body: "\(fromName) wants to pair with you in Project Todo!"
         )
     }
     

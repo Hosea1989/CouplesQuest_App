@@ -4,7 +4,7 @@ import OneSignalFramework
 import Supabase
 import os.log
 
-private let startupLog = OSLog(subsystem: "com.damienhosea.DuoCraft", category: "Startup")
+private let startupLog = OSLog(subsystem: "com.damienhosea.ProjectTodo", category: "Startup")
 private let appStartTime = CFAbsoluteTimeGetCurrent()
 
 // #region agent log
@@ -89,7 +89,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 }
 
 @main
-struct SwordsAndChoresApp: App {
+struct ProjectTodoApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     let modelContainer: ModelContainer
     
